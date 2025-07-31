@@ -1,1 +1,78 @@
-# phony
+# Phony - Voice AI Agent
+
+Phony is a voice AI agent built in Python that uses **Twilio ConversationRelay** and the **OpenAI Realtime API** to automate outbound phone calls and hold natural conversations. It connects to Twilio over WebSockets, streams audio and transcripts to GPT‑4o, and responds in real time.
+
+## Prerequisites
+
+- Python 3.9+
+- Environment variables:
+  - `TWILIO_ACCOUNT_SID`
+  - `TWILIO_AUTH_TOKEN`
+  - `TWILIO_PHONE_NUMBER`
+  - `OPENAI_API_KEY` (Realtime API access required)
+- A tunneling tool such as **ngrok** for exposing your local server when testing
+
+## Setup Instructions
+
+1. **Clone the repository**
+
+   ```bash
+   git clone <repo-url>
+   cd phony
+   ```
+
+2. **Create a virtual environment**
+
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+
+3. **Install dependencies**
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Configure environment variables**
+
+   Copy `.env.example` to `.env` and fill in your credentials.
+
+   ```bash
+   cp .env.example .env
+   # edit .env
+   ```
+
+5. **Expose your local server**
+
+   Use ngrok (or similar) to expose port `8000` so Twilio can reach your server.
+
+   ```bash
+   ngrok http 8000
+   ```
+
+   Update your Twilio webhook URLs to point to the ngrok HTTPS address.
+
+6. **Run the application**
+
+   The main FastAPI app will live in `main.py`. Start it with:
+
+   ```bash
+   uvicorn main:app --reload
+   ```
+
+7. **Initiate an outbound call**
+
+   A helper script `make_call.py` will be provided to trigger a call using the Twilio API.
+
+   ```bash
+   python make_call.py +15551234567
+   ```
+
+## Project Structure
+
+- `main.py` – FastAPI entry point
+- `relay_ws.py` – WebSocket handler for Twilio ConversationRelay
+- `make_call.py` – Script to initiate outbound calls
+- `dashboard/` – (future) web dashboard for real‑time oversight
+
