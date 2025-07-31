@@ -1,0 +1,124 @@
+"""OpenAI Realtime WebSocket proxy logic.
+
+This module manages a persistent WebSocket connection to the OpenAI
+Realtime API. It receives transcription events from Twilio's
+ConversationRelay and forwards them to the LLM. Token responses are
+streamed back to Twilio so they can be played to the caller in real
+ time.
+
+The session is configured with the ``gpt-4o-realtime-preview`` model and
+supports both audio and text modalities. Incoming caller speech is sent
+as ``text`` events. The model's audio tokens are forwarded to Twilio in
+the expected JSON schema.
+
+``relay_ws.py`` delegates all LLM interaction to ``proxy_call`` defined
+here, allowing this component to be tested in isolation.
+"""
+
+import os
+import json
+import asyncio
+from typing import Any, Dict, Optional
+
+from fastapi import WebSocket, WebSocketDisconnect
+from websockets import connect
+
+OPENAI_URL = "wss://api.openai.com/v1/realtime"
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-realtime-preview")
+SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "You are a helpful phone assistant.")
+API_KEY = os.getenv("OPENAI_API_KEY")
+
+
+class OpenAISession:
+    """Manage a single OpenAI Realtime API session."""
+
+    def __init__(self, model: str = OPENAI_MODEL, system_prompt: str = SYSTEM_PROMPT) -> None:
+        self.model = model
+        self.system_prompt = system_prompt
+        self.ws = None  # type: Optional[Any]
+        self.history = []
+
+    async def __aenter__(self) -> "OpenAISession":
+        headers = {"Authorization": f"Bearer {API_KEY}"}
+        self.ws = await connect(OPENAI_URL, extra_headers=headers)
+        start = {
+            "type": "start",
+            "model": self.model,
+            "modality": ["audio", "text"],
+            "system": self.system_prompt,
+        }
+        await self.ws.send(json.dumps(start))
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        if self.ws:
+            await self.ws.close()
+
+    async def send_text(self, text: str) -> None:
+        if not self.ws:
+            return
+        await self.ws.send(json.dumps({"type": "text", "text": text}))
+        self.history.append({"role": "user", "text": text})
+
+    async def cancel_response(self) -> None:
+        if self.ws:
+            await self.ws.send(json.dumps({"type": "cancel"}))
+
+    async def aiter_messages(self):
+        if not self.ws:
+            return
+        async for message in self.ws:
+            yield json.loads(message)
+
+
+async def proxy_call(twilio_ws: WebSocket) -> None:
+    """Proxy transcripts from Twilio to OpenAI and stream responses back."""
+    await twilio_ws.accept()
+
+    session: Dict[str, Optional[str]] = {"callSid": None, "streamSid": None}
+
+    async with OpenAISession() as openai_session:
+
+        async def from_twilio() -> None:
+            while True:
+                try:
+                    data = await twilio_ws.receive_text()
+                except WebSocketDisconnect:
+                    await openai_session.ws.close()
+                    break
+
+                event = json.loads(data)
+                if event.get("event") == "disconnect":
+                    await openai_session.ws.send(json.dumps({"type": "stop"}))
+                    break
+
+                if "callSid" in event:
+                    session["callSid"] = event.get("callSid")
+                if "streamSid" in event:
+                    session["streamSid"] = event.get("streamSid")
+
+                if event.get("type") == "transcription":
+                    text = event.get("text", "")
+                    await openai_session.send_text(text)
+
+                if event.get("interruptible") is False or event.get("preemptible"):
+                    await openai_session.cancel_response()
+
+        async def from_openai() -> None:
+            async for message in openai_session.aiter_messages():
+                if message.get("type") in {"end", "error"}:
+                    break
+
+                out: Dict[str, Any] = {
+                    "audio": message.get("audio"),
+                    "text": message.get("text"),
+                    "last": message.get("last", False),
+                }
+                if "interruptible" in message:
+                    out["interruptible"] = message["interruptible"]
+
+                await twilio_ws.send_text(json.dumps(out))
+
+        await asyncio.gather(from_twilio(), from_openai())
+
+    await twilio_ws.close()

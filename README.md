@@ -111,3 +111,11 @@ minimal latency. Incoming events from Twilio include transcription text,
 back provide audio chunks, optional text, an `interruptible` flag, and a `last`
 indicator marking the end of a turn.
 
+
+## OpenAI Realtime Proxy
+
+The `openai_ws.py` module acts as a bridge between Twilio and OpenAI. It
+opens a WebSocket session to `gpt-4o-realtime-preview`, forwards caller
+transcripts to the model and streams token responses back to the call.
+The implementation mirrors the ConversationRelay + OpenAI integration
+pattern demonstrated in Twilio's official blog post and sample repo.
