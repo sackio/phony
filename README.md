@@ -119,3 +119,19 @@ opens a WebSocket session to `gpt-4o-realtime-preview`, forwards caller
 transcripts to the model and streams token responses back to the call.
 The implementation mirrors the ConversationRelay + OpenAI integration
 pattern demonstrated in Twilio's official blog post and sample repo.
+
+## Interactive Commands
+
+The assistant can embed special tokens in its responses to control the call:
+
+- `[[press:digits]]` &ndash; send the specified DTMF digits.
+- `[[transfer:number]]` &ndash; end the ConversationRelay session and dial the given number.
+- `[[end_call]]` &ndash; immediately hang up.
+
+Include these commands exactly in the LLM's output. For example:
+
+```
+You selected account balance [[press:1]]
+```
+
+Any detected command will be executed server-side and the spoken output for that turn will be suppressed.
