@@ -169,3 +169,27 @@ Available routes and payloads:
 Each action is published on the event stream so connected dashboards update in
 real time.
 
+
+## Docker Deployment
+
+Docker files are provided to run the backend API and dashboard with Docker Compose.
+
+### Build the images
+
+```bash
+docker-compose build
+```
+
+### Run the stack
+
+```bash
+docker-compose up
+```
+
+The backend will be available on `http://localhost:8000` and the dashboard UI on
+`http://localhost:3000`. Configure your environment variables in a `.env` file in
+this directory which will be loaded into the containers. When testing locally you
+may expose the backend to Twilio using a tunnel such as `ngrok http 8000`.
+
+In production deploy the containers behind HTTPS and update your Twilio webhooks
+to point at the public address.
