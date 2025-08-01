@@ -23,8 +23,9 @@ from typing import Any, Dict, Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 from websockets import connect
-from events import start_session, end_session, publish_event, timestamp
-from logging import CallLogger
+
+from .events import start_session, end_session, publish_event, timestamp
+from .logging import CallLogger
 
 OPENAI_URL = "wss://api.openai.com/v1/realtime"
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-realtime-preview")
