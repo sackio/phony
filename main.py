@@ -51,3 +51,9 @@ async def events_ws(websocket: WebSocket, callSid: str):
             await websocket.send_json(event)
     finally:
         await websocket.close()
+
+
+@app.get("/healthz")
+async def healthz():
+    """Simple health check endpoint."""
+    return {"status": "ok"}
