@@ -9,6 +9,9 @@
   const ws = new WebSocket(`${protocol}://${window.location.host}/events/ws?callSid=${callSid}`);
 
   const transcript = document.getElementById('transcript');
+  const queryArea = document.getElementById('query-area');
+  const queryPrompt = document.getElementById('query-prompt');
+  const queryInput = document.getElementById('query-input');
 
   function addLine(text) {
     const div = document.createElement('div');
@@ -34,6 +37,12 @@
       addLine(`[${time}] Assistant: ${data.text}`);
     } else if (data.type === 'command_executed') {
       addLine(`[${time}] Command: ${data.command} ${data.value || ''}`);
+    } else if (data.type === 'query') {
+      addLine(`[${time}] AI is waiting for your input: ${data.prompt}`);
+      queryPrompt.textContent = data.prompt;
+      queryArea.style.display = 'block';
+    } else if (data.type === 'query_response') {
+      addLine(`[${time}] Supervisor answered: ${data.text}`);
     } else {
       addLine(`[${time}] ${data.type}`);
     }
@@ -93,5 +102,19 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ callSid, number }),
     });
+  });
+
+  document.getElementById('query-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = queryInput.value.trim();
+    if (!text) return;
+    addLine(`Supervisor answered: ${text}`);
+    fetch('/override/clarification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callSid, response: text }),
+    });
+    queryInput.value = '';
+    queryArea.style.display = 'none';
   });
 })();

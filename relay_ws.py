@@ -6,7 +6,7 @@ from fastapi import WebSocket
 from events import publish_event, timestamp
 from logging import CallLogger
 
-from openai_ws import proxy_call
+from openai_ws import proxy_call, ACTIVE_SESSIONS
 from commands import detect_command, execute_command
 
 
@@ -53,16 +53,46 @@ class InterceptWebSocket:
 
         cmd = detect_command(message.get("text", ""))
         if cmd:
-            if self.call_sid:
-                await publish_event(self.call_sid, {"type": "command_executed", "timestamp": timestamp(), "callSid": self.call_sid, "command": cmd.action, "value": cmd.value})
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, execute_command, cmd, self.call_sid)
-                self.logger.log_command(self.call_sid, cmd.action, cmd.value)
-            if not message.get("last", False):
+            if cmd.action == "request_user":
+                if self.call_sid:
+                    await publish_event(
+                        self.call_sid,
+                        {
+                            "type": "query",
+                            "timestamp": timestamp(),
+                            "callSid": self.call_sid,
+                            "prompt": cmd.value or "",
+                        },
+                    )
+                    session = ACTIVE_SESSIONS.get(self.call_sid)
+                    if session:
+                        session.awaiting_user_input = True
+                        session.query_prompt = cmd.value
+                        await session.cancel_response()
+                await self.ws.send_text(
+                    json.dumps({"text": "Please hold while I check that.", "last": True})
+                )
+                self.logger.log_command(self.call_sid, "request_user", cmd.value)
                 self.suppress = True
-            return
-                self.suppress = True
-            return
+                return
+            else:
+                if self.call_sid:
+                    await publish_event(
+                        self.call_sid,
+                        {
+                            "type": "command_executed",
+                            "timestamp": timestamp(),
+                            "callSid": self.call_sid,
+                            "command": cmd.action,
+                            "value": cmd.value,
+                        },
+                    )
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(None, execute_command, cmd, self.call_sid)
+                    self.logger.log_command(self.call_sid, cmd.action, cmd.value)
+                if not message.get("last", False):
+                    self.suppress = True
+                return
 
         await self.ws.send_text(data)
 

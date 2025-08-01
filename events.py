@@ -17,6 +17,10 @@ from typing import Any, Dict, Optional
 #                        "callSid": str, "command": str, "value": Optional[str]}
 # session_transfer   -> {"type": "session_transfer", "timestamp": ISO8601,
 #                        "callSid": str, "target": str}
+# query              -> {"type": "query", "timestamp": ISO8601,
+#                        "callSid": str, "prompt": str}
+# query_response     -> {"type": "query_response", "timestamp": ISO8601,
+#                        "callSid": str, "text": str}
 
 _queues: Dict[str, asyncio.Queue] = {}
 
