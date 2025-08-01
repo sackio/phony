@@ -11,8 +11,12 @@ from typing import Any, Dict, Optional
 #                        "speaker": "caller", "text": str}
 # assistant_response -> {"type": "assistant_response", "timestamp": ISO8601,
 #                        "callSid": str, "text": str}
+# assistant_override -> {"type": "assistant_override", "timestamp": ISO8601,
+#                        "callSid": str, "text": str}
 # command_executed   -> {"type": "command_executed", "timestamp": ISO8601,
 #                        "callSid": str, "command": str, "value": Optional[str]}
+# session_transfer   -> {"type": "session_transfer", "timestamp": ISO8601,
+#                        "callSid": str, "target": str}
 
 _queues: Dict[str, asyncio.Queue] = {}
 

@@ -29,6 +29,10 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-realtime-preview")
 SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "You are a helpful phone assistant.")
 API_KEY = os.getenv("OPENAI_API_KEY")
 
+# Mapping of active callSid to their OpenAI session objects. Used to inject
+# supervisor overrides via the REST API.
+ACTIVE_SESSIONS: Dict[str, "OpenAISession"] = {}
+
 
 class OpenAISession:
     """Manage a single OpenAI Realtime API session."""
@@ -60,6 +64,13 @@ class OpenAISession:
             return
         await self.ws.send(json.dumps({"type": "text", "text": text}))
         self.history.append({"role": "user", "text": text})
+
+    async def inject_assistant_text(self, text: str) -> None:
+        """Inject a supervisor-provided message to be spoken to the caller."""
+        if not self.ws:
+            return
+        await self.ws.send(json.dumps({"type": "assistant_override", "text": text}))
+        self.history.append({"role": "assistant", "text": text})
 
     async def cancel_response(self) -> None:
         if self.ws:
@@ -96,6 +107,7 @@ async def proxy_call(twilio_ws: WebSocket) -> None:
                     if session["callSid"] is None:
                         session["callSid"] = event.get("callSid")
                         await start_session(session["callSid"])
+                        ACTIVE_SESSIONS[session["callSid"]] = openai_session
                 if "streamSid" in event:
                     session["streamSid"] = event.get("streamSid")
 
@@ -127,6 +139,7 @@ async def proxy_call(twilio_ws: WebSocket) -> None:
 
         await asyncio.gather(from_twilio(), from_openai())
         if session["callSid"]:
+            ACTIVE_SESSIONS.pop(session["callSid"], None)
             await end_session(session["callSid"])
 
     await twilio_ws.close()

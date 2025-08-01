@@ -1,6 +1,7 @@
 """FastAPI application exposing Twilio webhooks."""
 
 from fastapi import FastAPI, HTTPException, WebSocket
+from override_api import router as override_router
 from fastapi.responses import Response
 from events import subscribe
 from twilio.twiml.voice_response import VoiceResponse, Connect
@@ -8,6 +9,7 @@ from twilio.twiml.voice_response import VoiceResponse, Connect
 from relay_ws import relay_ws_handler
 
 app = FastAPI()
+app.include_router(override_router, prefix="/override")
 
 
 @app.post("/start_call")

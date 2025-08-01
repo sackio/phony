@@ -149,3 +149,23 @@ Example command event:
 {"type": "command_executed", "callSid": "CA123", "command": "press", "value": "1", "timestamp": "2024-01-01T00:00:01Z"}
 ```
 
+## Manual Override via Dashboard
+
+The dashboard provides simple controls for a supervisor to intervene during a
+live call. Overrides are sent to the backend which then acts on the active
+Twilio session.
+
+Available routes and payloads:
+
+- `POST /override/text` – `{ "callSid": "CA123", "text": "hello" }`
+  Sends the text to the caller immediately using the OpenAI session.
+- `POST /override/dtmf` – `{ "callSid": "CA123", "digit": "1" }`
+  Injects a single DTMF digit into the call.
+- `POST /override/end` – `{ "callSid": "CA123" }`
+  Terminates the call.
+- `POST /override/transfer` – `{ "callSid": "CA123", "target": "+15551234567" }`
+  Transfers the caller to the given phone number.
+
+Each action is published on the event stream so connected dashboards update in
+real time.
+
