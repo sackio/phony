@@ -3,6 +3,7 @@
 import asyncio
 import json
 from fastapi import WebSocket
+from events import publish_event, timestamp
 
 from openai_ws import proxy_call
 from commands import detect_command, execute_command
@@ -47,9 +48,12 @@ class InterceptWebSocket:
         cmd = detect_command(message.get("text", ""))
         if cmd:
             if self.call_sid:
+                await publish_event(self.call_sid, {"type": "command_executed", "timestamp": timestamp(), "callSid": self.call_sid, "command": cmd.action, "value": cmd.value})
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, execute_command, cmd, self.call_sid)
             if not message.get("last", False):
+                self.suppress = True
+            return
                 self.suppress = True
             return
 

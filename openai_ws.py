@@ -22,6 +22,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 from websockets import connect
+from events import start_session, end_session, publish_event, timestamp
 
 OPENAI_URL = "wss://api.openai.com/v1/realtime"
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-realtime-preview")
@@ -91,14 +92,17 @@ async def proxy_call(twilio_ws: WebSocket) -> None:
                 if event.get("event") == "disconnect":
                     await openai_session.ws.send(json.dumps({"type": "stop"}))
                     break
-
                 if "callSid" in event:
-                    session["callSid"] = event.get("callSid")
+                    if session["callSid"] is None:
+                        session["callSid"] = event.get("callSid")
+                        await start_session(session["callSid"])
                 if "streamSid" in event:
                     session["streamSid"] = event.get("streamSid")
 
                 if event.get("type") == "transcription":
                     text = event.get("text", "")
+                    if session["callSid"]:
+                        await publish_event(session["callSid"], {"type": "transcript", "timestamp": timestamp(), "callSid": session["callSid"], "speaker": "caller", "text": text})
                     await openai_session.send_text(text)
 
                 if event.get("interruptible") is False or event.get("preemptible"):
@@ -116,9 +120,13 @@ async def proxy_call(twilio_ws: WebSocket) -> None:
                 }
                 if "interruptible" in message:
                     out["interruptible"] = message["interruptible"]
+                if session["callSid"]:
+                    await publish_event(session["callSid"], {"type": "assistant_response", "timestamp": timestamp(), "callSid": session["callSid"], "text": message.get("text")})
 
                 await twilio_ws.send_text(json.dumps(out))
 
         await asyncio.gather(from_twilio(), from_openai())
+        if session["callSid"]:
+            await end_session(session["callSid"])
 
     await twilio_ws.close()

@@ -135,3 +135,17 @@ You selected account balance [[press:1]]
 ```
 
 Any detected command will be executed server-side and the spoken output for that turn will be suppressed.
+## Real-Time Event Streaming to Dashboard
+
+The endpoint `/events/ws` streams structured JSON events for an active call. Connect with the query parameter `callSid` to receive updates for that session only. Events include transcripts from the caller, assistant replies and commands that were executed.
+
+Example transcript event:
+```json
+{"type": "transcript", "callSid": "CA123", "speaker": "caller", "text": "hello", "timestamp": "2024-01-01T00:00:00Z"}
+```
+
+Example command event:
+```json
+{"type": "command_executed", "callSid": "CA123", "command": "press", "value": "1", "timestamp": "2024-01-01T00:00:01Z"}
+```
+
