@@ -3,7 +3,7 @@ import os
 import re
 from typing import Optional
 
-from logging import CallLogger
+from .logging import CallLogger
 
 from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse

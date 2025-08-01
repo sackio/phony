@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional
 
 import logging as pylogging
 
-from events import timestamp
+from .events import timestamp
 
 
 class CallLogger:

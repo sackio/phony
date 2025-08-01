@@ -2,10 +2,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 import re
 
-from events import publish_event, end_session, timestamp
-from commands import Command, execute_command
-from logging import CallLogger
-from openai_ws import ACTIVE_SESSIONS
+from .events import publish_event, end_session, timestamp
+from .commands import Command, execute_command
+from .logging import CallLogger
+from .openai_ws import ACTIVE_SESSIONS
 
 router = APIRouter()
 

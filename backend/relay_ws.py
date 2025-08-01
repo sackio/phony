@@ -3,11 +3,11 @@
 import asyncio
 import json
 from fastapi import WebSocket
-from events import publish_event, timestamp
-from logging import CallLogger
 
-from openai_ws import proxy_call, ACTIVE_SESSIONS
-from commands import detect_command, execute_command
+from .events import publish_event, timestamp
+from .logging import CallLogger
+from .openai_ws import proxy_call, ACTIVE_SESSIONS
+from .commands import detect_command, execute_command
 
 
 class InterceptWebSocket:
