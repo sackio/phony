@@ -169,6 +169,29 @@ Available routes and payloads:
 Each action is published on the event stream so connected dashboards update in
 real time.
 
+## Logging & Monitoring
+
+All calls emit structured JSON logs to both the console and a `call.log` file.
+Entries include transcripts, assistant replies, executed commands and any
+manual overrides. Latency metrics measure the delay from transcription receipt
+to the GPT request, the time until the first token is streamed back, and when
+playback begins.
+
+Example log line:
+
+```json
+{"event": "transcript", "callSid": "CA123", "speaker": "caller", "text": "hello", "timestamp": "2024-01-01T00:00:00Z"}
+```
+
+Latency metrics are emitted as separate `latency` events:
+
+```json
+{"event": "latency", "callSid": "CA123", "metric": "gpt_response_ms", "ms": 520.5, "timestamp": "2024-01-01T00:00:00Z"}
+```
+
+Enable debug output by setting the `PHONY_DEBUG` environment variable before
+starting the application.
+
 
 ## Docker Deployment
 

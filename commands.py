@@ -3,6 +3,8 @@ import os
 import re
 from typing import Optional
 
+from logging import CallLogger
+
 from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse
 
@@ -15,6 +17,8 @@ class Command:
 
 
 _COMMAND_RE = re.compile(r"\[\[(.*?)\]\]")
+
+LOGGER = CallLogger()
 
 
 def detect_command(text: str) -> Optional[Command]:
@@ -72,3 +76,5 @@ def execute_command(cmd: Command, call_sid: str) -> None:
         # End the call gracefully
         client.calls(call_sid).update(status="completed")
         print(f"Ended call {call_sid}")
+
+    LOGGER.log_command(call_sid, cmd.action, cmd.value)

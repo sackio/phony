@@ -4,9 +4,12 @@ import re
 
 from events import publish_event, end_session, timestamp
 from commands import Command, execute_command
+from logging import CallLogger
 from openai_ws import ACTIVE_SESSIONS
 
 router = APIRouter()
+
+LOGGER = CallLogger()
 
 _digit_re = re.compile(r'^[0-9*#]$')
 _phone_re = re.compile(r'^\+?[0-9]{7,15}$')
@@ -69,6 +72,7 @@ async def override_text(payload: TextPayload):
         'callSid': payload.callSid,
         'text': payload.text,
     })
+    LOGGER.log_override(payload.callSid, 'text', payload.text)
     return {'status': 'ok'}
 
 
@@ -88,6 +92,7 @@ async def override_dtmf(payload: DtmfPayload):
         'command': 'press',
         'value': payload.digit,
     })
+    LOGGER.log_override(payload.callSid, 'dtmf', payload.digit)
     return {'status': 'ok'}
 
 
@@ -106,6 +111,7 @@ async def override_end(payload: EndPayload):
         'callSid': payload.callSid,
     })
     await end_session(payload.callSid)
+    LOGGER.log_override(payload.callSid, 'end_call')
     return {'status': 'ok'}
 
 
@@ -124,4 +130,5 @@ async def override_transfer(payload: TransferPayload):
         'callSid': payload.callSid,
         'target': payload.target,
     })
+    LOGGER.log_override(payload.callSid, 'transfer', payload.target)
     return {'status': 'ok'}

@@ -1,15 +1,18 @@
 """FastAPI application exposing Twilio webhooks."""
 
+import time
 from fastapi import FastAPI, HTTPException, WebSocket
 from override_api import router as override_router
 from fastapi.responses import Response
 from events import subscribe
 from twilio.twiml.voice_response import VoiceResponse, Connect
+from openai_ws import ACTIVE_SESSIONS
 
 from relay_ws import relay_ws_handler
 
 app = FastAPI()
 app.include_router(override_router, prefix="/override")
+_start_time = time.time()
 
 
 @app.post("/start_call")
@@ -56,4 +59,9 @@ async def events_ws(websocket: WebSocket, callSid: str):
 @app.get("/healthz")
 async def healthz():
     """Simple health check endpoint."""
-    return {"status": "ok"}
+    uptime = time.time() - _start_time
+    return {
+        "status": "ok",
+        "uptime": int(uptime),
+        "activeCalls": len(ACTIVE_SESSIONS),
+    }
