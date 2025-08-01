@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.responses import Response
+from events import subscribe
 from twilio.twiml.voice_response import VoiceResponse, Connect
 
 from relay_ws import relay_ws_handler
@@ -34,3 +35,17 @@ async def start_call():
 async def relay_ws_endpoint(websocket: WebSocket):
     """WebSocket endpoint for Twilio ConversationRelay."""
     await relay_ws_handler(websocket)
+
+@app.websocket("/events/ws")
+async def events_ws(websocket: WebSocket, callSid: str):
+    """Stream real-time call events to the dashboard."""
+    await websocket.accept()
+    queue = subscribe(callSid)
+    try:
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            await websocket.send_json(event)
+    finally:
+        await websocket.close()
