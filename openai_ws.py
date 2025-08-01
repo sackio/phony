@@ -18,11 +18,13 @@ here, allowing this component to be tested in isolation.
 import os
 import json
 import asyncio
+import time
 from typing import Any, Dict, Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 from websockets import connect
 from events import start_session, end_session, publish_event, timestamp
+from logging import CallLogger
 
 OPENAI_URL = "wss://api.openai.com/v1/realtime"
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-realtime-preview")
@@ -32,6 +34,9 @@ API_KEY = os.getenv("OPENAI_API_KEY")
 # Mapping of active callSid to their OpenAI session objects. Used to inject
 # supervisor overrides via the REST API.
 ACTIVE_SESSIONS: Dict[str, "OpenAISession"] = {}
+
+# Structured logger instance used across the session
+LOGGER = CallLogger()
 
 
 class OpenAISession:
@@ -87,7 +92,12 @@ async def proxy_call(twilio_ws: WebSocket) -> None:
     """Proxy transcripts from Twilio to OpenAI and stream responses back."""
     await twilio_ws.accept()
 
-    session: Dict[str, Optional[str]] = {"callSid": None, "streamSid": None}
+    session: Dict[str, Any] = {
+        "callSid": None,
+        "streamSid": None,
+        "request_ts": None,
+        "response_logged": False,
+    }
 
     async with OpenAISession() as openai_session:
 
@@ -114,8 +124,27 @@ async def proxy_call(twilio_ws: WebSocket) -> None:
                 if event.get("type") == "transcription":
                     text = event.get("text", "")
                     if session["callSid"]:
-                        await publish_event(session["callSid"], {"type": "transcript", "timestamp": timestamp(), "callSid": session["callSid"], "speaker": "caller", "text": text})
+                        await publish_event(
+                            session["callSid"],
+                            {
+                                "type": "transcript",
+                                "timestamp": timestamp(),
+                                "callSid": session["callSid"],
+                                "speaker": "caller",
+                                "text": text,
+                            },
+                        )
+                        LOGGER.log_transcript(session["callSid"], "caller", text)
+                    start_ts = time.perf_counter()
                     await openai_session.send_text(text)
+                    if session["callSid"]:
+                        LOGGER.log_latency(
+                            session["callSid"],
+                            "stt_to_gpt_ms",
+                            (time.perf_counter() - start_ts) * 1000,
+                        )
+                        session["request_ts"] = time.perf_counter()
+                        session["response_logged"] = False
 
                 if event.get("interruptible") is False or event.get("preemptible"):
                     await openai_session.cancel_response()
@@ -133,9 +162,33 @@ async def proxy_call(twilio_ws: WebSocket) -> None:
                 if "interruptible" in message:
                     out["interruptible"] = message["interruptible"]
                 if session["callSid"]:
-                    await publish_event(session["callSid"], {"type": "assistant_response", "timestamp": timestamp(), "callSid": session["callSid"], "text": message.get("text")})
+                    first_chunk = session["request_ts"] is not None and not session["response_logged"]
+                    if first_chunk:
+                        LOGGER.log_latency(
+                            session["callSid"],
+                            "gpt_response_ms",
+                            (time.perf_counter() - session["request_ts"]) * 1000,
+                        )
+                    await publish_event(
+                        session["callSid"],
+                        {
+                            "type": "assistant_response",
+                            "timestamp": timestamp(),
+                            "callSid": session["callSid"],
+                            "text": message.get("text"),
+                        },
+                    )
+                    LOGGER.log_assistant_response(session["callSid"], message.get("text", ""))
 
                 await twilio_ws.send_text(json.dumps(out))
+                if session["callSid"] and first_chunk:
+                    LOGGER.log_latency(
+                        session["callSid"],
+                        "playback_start_ms",
+                        (time.perf_counter() - session["request_ts"]) * 1000,
+                    )
+                    session["request_ts"] = None
+                    session["response_logged"] = True
 
         await asyncio.gather(from_twilio(), from_openai())
         if session["callSid"]:

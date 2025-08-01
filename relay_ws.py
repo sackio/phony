@@ -4,6 +4,7 @@ import asyncio
 import json
 from fastapi import WebSocket
 from events import publish_event, timestamp
+from logging import CallLogger
 
 from openai_ws import proxy_call
 from commands import detect_command, execute_command
@@ -16,6 +17,7 @@ class InterceptWebSocket:
         self.ws = websocket
         self.call_sid = None
         self.suppress = False
+        self.logger = CallLogger()
 
     async def accept(self):
         return await self.ws.accept()
@@ -29,6 +31,10 @@ class InterceptWebSocket:
             event = json.loads(data)
             if not self.call_sid and "callSid" in event:
                 self.call_sid = event["callSid"]
+            if event.get("type") == "transcription" and self.call_sid:
+                self.logger.log_transcript(
+                    self.call_sid, "caller", event.get("text", "")
+                )
         except Exception:
             pass
         return data
@@ -51,6 +57,7 @@ class InterceptWebSocket:
                 await publish_event(self.call_sid, {"type": "command_executed", "timestamp": timestamp(), "callSid": self.call_sid, "command": cmd.action, "value": cmd.value})
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, execute_command, cmd, self.call_sid)
+                self.logger.log_command(self.call_sid, cmd.action, cmd.value)
             if not message.get("last", False):
                 self.suppress = True
             return
