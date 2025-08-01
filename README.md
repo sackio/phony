@@ -169,6 +169,23 @@ Available routes and payloads:
 Each action is published on the event stream so connected dashboards update in
 real time.
 
+## Clarification Escalation Flow
+
+The assistant can request additional information from a supervising user during a
+call using the special `[[request_user:...]]` command. When the backend detects
+this token, it:
+
+1. Tells the caller "Please hold while I check that." and pauses the
+   conversation.
+2. Emits a `query` event on the dashboard WebSocket containing the prompt.
+3. Waits for the supervisor to answer via `POST /override/clarification` with
+   `{ "callSid": "CA...", "response": "the account number" }`.
+4. Sends the supervisor's text to the model as `supervisor: ...` and resumes the
+   call with the assistant's next reply.
+
+While awaiting input, caller transcripts are still logged but not forwarded to
+the LLM. Only one outstanding query can exist at a time.
+
 ## Logging & Monitoring
 
 All calls emit structured JSON logs to both the console and a `call.log` file.

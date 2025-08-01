@@ -47,6 +47,9 @@ class OpenAISession:
         self.system_prompt = system_prompt
         self.ws = None  # type: Optional[Any]
         self.history = []
+        # Flags controlling clarification hold flow
+        self.awaiting_user_input: bool = False
+        self.query_prompt: Optional[str] = None
 
     async def __aenter__(self) -> "OpenAISession":
         headers = {"Authorization": f"Bearer {API_KEY}"}
@@ -76,6 +79,13 @@ class OpenAISession:
             return
         await self.ws.send(json.dumps({"type": "assistant_override", "text": text}))
         self.history.append({"role": "assistant", "text": text})
+
+    async def inject_supervisor_text(self, text: str) -> None:
+        """Send clarification text from supervisor to the model only."""
+        if not self.ws:
+            return
+        await self.ws.send(json.dumps({"type": "text", "text": f"supervisor: {text}"}))
+        self.history.append({"role": "supervisor", "text": text})
 
     async def cancel_response(self) -> None:
         if self.ws:
@@ -135,16 +145,17 @@ async def proxy_call(twilio_ws: WebSocket) -> None:
                             },
                         )
                         LOGGER.log_transcript(session["callSid"], "caller", text)
-                    start_ts = time.perf_counter()
-                    await openai_session.send_text(text)
-                    if session["callSid"]:
-                        LOGGER.log_latency(
-                            session["callSid"],
-                            "stt_to_gpt_ms",
-                            (time.perf_counter() - start_ts) * 1000,
-                        )
-                        session["request_ts"] = time.perf_counter()
-                        session["response_logged"] = False
+                    if not openai_session.awaiting_user_input:
+                        start_ts = time.perf_counter()
+                        await openai_session.send_text(text)
+                        if session["callSid"]:
+                            LOGGER.log_latency(
+                                session["callSid"],
+                                "stt_to_gpt_ms",
+                                (time.perf_counter() - start_ts) * 1000,
+                            )
+                            session["request_ts"] = time.perf_counter()
+                            session["response_logged"] = False
 
                 if event.get("interruptible") is False or event.get("preemptible"):
                     await openai_session.cancel_response()

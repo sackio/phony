@@ -54,6 +54,11 @@ class TransferPayload(BaseModel):
         self.target = self.validate_target(self.target)
 
 
+class ClarificationPayload(BaseModel):
+    callSid: str
+    response: str = Field(..., min_length=1)
+
+
 @router.post('/text')
 async def override_text(payload: TextPayload):
     """Inject a supervisor text message into the active session."""
@@ -131,4 +136,31 @@ async def override_transfer(payload: TransferPayload):
         'target': payload.target,
     })
     LOGGER.log_override(payload.callSid, 'transfer', payload.target)
+    return {'status': 'ok'}
+
+
+@router.post('/clarification')
+async def override_clarification(payload: ClarificationPayload):
+    """Provide the supervisor's answer to a pending query."""
+    session = ACTIVE_SESSIONS.get(payload.callSid)
+    if not session:
+        raise HTTPException(status_code=404, detail='call not active')
+    if not session.awaiting_user_input:
+        raise HTTPException(status_code=400, detail='no clarification pending')
+
+    try:
+        await session.inject_supervisor_text(payload.response)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    session.awaiting_user_input = False
+    session.query_prompt = None
+
+    await publish_event(payload.callSid, {
+        'type': 'query_response',
+        'timestamp': timestamp(),
+        'callSid': payload.callSid,
+        'text': payload.response,
+    })
+    LOGGER.log_override(payload.callSid, 'clarification', payload.response)
     return {'status': 'ok'}

@@ -25,9 +25,10 @@ def detect_command(text: str) -> Optional[Command]:
     """Parse GPT text for embedded commands.
 
     Supported syntax:
-        [[press:digits]]     - Send DTMF digits.
-        [[transfer:number]]  - Transfer call to another number.
-        [[end_call]]         - Hang up the call.
+        [[press:digits]]        - Send DTMF digits.
+        [[transfer:number]]     - Transfer call to another number.
+        [[end_call]]            - Hang up the call.
+        [[request_user:prompt]] - Pause and ask the supervisor for input.
     """
     if not text:
         return None
@@ -42,7 +43,7 @@ def detect_command(text: str) -> Optional[Command]:
         action, value = token, None
     action = action.lower()
 
-    if action in {"press", "transfer", "end_call"}:
+    if action in {"press", "transfer", "end_call", "request_user"}:
         return Command(action=action, value=value)
 
     return None

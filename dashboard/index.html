@@ -8,6 +8,13 @@
 <body>
   <h1>Phony Call Dashboard</h1>
   <div id="transcript" class="transcript"></div>
+  <div id="query-area" class="query" style="display:none;">
+    <p id="query-prompt"></p>
+    <form id="query-form">
+      <input id="query-input" autocomplete="off" />
+      <button type="submit">Answer</button>
+    </form>
+  </div>
   <div class="controls">
     <form id="speak-form">
       <input id="speak-input" placeholder="Type message" autocomplete="off" />

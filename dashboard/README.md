@@ -16,10 +16,11 @@ Then open `http://localhost:3000/index.html?callSid=<CALL_SID>` in your browser.
 
 - The dashboard establishes a WebSocket connection to `/events/ws?callSid=...` on the same host to receive real-time events.
 - Override actions are sent to the backend via POST requests:
-  - `/override/text` – `{"callSid": "CA...", "text": "hello"}`
-  - `/override/dtmf` – `{"callSid": "CA...", "digit": "1"}`
-  - `/override/end` – `{"callSid": "CA..."}`
-  - `/override/transfer` – `{"callSid": "CA...", "number": "+15551234567"}`
+  - `/override/text` – `{ "callSid": "CA...", "text": "hello" }`
+  - `/override/dtmf` – `{ "callSid": "CA...", "digit": "1" }`
+  - `/override/end` – `{ "callSid": "CA..." }`
+  - `/override/transfer` – `{ "callSid": "CA...", "number": "+15551234567" }`
+  - `/override/clarification` – `{ "callSid": "CA...", "response": "text" }`
 
 ## UI Components
 
@@ -27,5 +28,6 @@ Then open `http://localhost:3000/index.html?callSid=<CALL_SID>` in your browser.
 - **Manual Speak Input** – Text box to send a typed message to the caller.
 - **DTMF Pad** – Buttons 0-9, `*`, `#` for sending DTMF digits.
 - **Call Control Buttons** – `End Call` and `Transfer` buttons for ending or transferring the call.
+- **Clarification Prompt** – Displayed when the AI requests supervisor input.
 
 Supervisor actions are appended to the transcript area immediately when triggered.

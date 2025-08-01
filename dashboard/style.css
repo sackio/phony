@@ -25,3 +25,10 @@ body {
 .call-controls button {
   margin-right: 5px;
 }
+
+.query {
+  border: 1px solid #f80;
+  padding: 5px;
+  margin-bottom: 10px;
+  background: #fff8e1;
+}
