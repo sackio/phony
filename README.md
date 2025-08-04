@@ -11,6 +11,7 @@ Phony is a voice AI agent built in Python that uses **Twilio ConversationRelay**
   - `TWILIO_PHONE_NUMBER`
   - `OPENAI_API_KEY` (Realtime API access required)
   - `HOST` - public URL where Twilio can reach your app (e.g. `abcd.ngrok.io`)
+  - `OPENAI_VOICE` (optional) - OpenAI voice for generated speech (e.g. `alloy`, `aria`)
 - A tunneling tool such as **ngrok** for exposing your local server when testing
 
 ## Setup Instructions
@@ -55,8 +56,18 @@ Phony is a voice AI agent built in Python that uses **Twilio ConversationRelay**
    A helper script `scripts/make_call.py` is provided to trigger a call using the Twilio API.
 
    ```bash
-   python scripts/make_call.py +15551234567
-   ```
+  python scripts/make_call.py +15551234567
+  ```
+
+### Selecting a Voice
+
+Specify the voice for synthesized speech by setting `OPENAI_VOICE` in your `.env` file. Choose any voice supported by OpenAI, such as `alloy`, `aria`, or `verse`:
+
+```bash
+OPENAI_VOICE=aria
+```
+
+Restart the backend after changing this setting.
 
 ## Outbound Call
 

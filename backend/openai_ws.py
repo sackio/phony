@@ -30,6 +30,7 @@ from .logging import CallLogger
 OPENAI_URL = "wss://api.openai.com/v1/realtime"
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-realtime-preview")
 SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "You are a helpful phone assistant.")
+OPENAI_VOICE = os.getenv("OPENAI_VOICE", "alloy")
 API_KEY = os.getenv("OPENAI_API_KEY")
 REQUIRE_FEEDBACK = os.getenv("REQUIRE_SUPERVISOR_FEEDBACK", "false").lower() == "true"
 
@@ -44,9 +45,15 @@ LOGGER = CallLogger()
 class OpenAISession:
     """Manage a single OpenAI Realtime API session."""
 
-    def __init__(self, model: str = OPENAI_MODEL, system_prompt: str = SYSTEM_PROMPT) -> None:
+    def __init__(
+        self,
+        model: str = OPENAI_MODEL,
+        system_prompt: str = SYSTEM_PROMPT,
+        voice: str = OPENAI_VOICE,
+    ) -> None:
         self.model = model
         self.system_prompt = system_prompt
+        self.voice = voice
         self.ws = None  # type: Optional[Any]
         self.history = []
         # Flags controlling clarification hold flow
@@ -66,6 +73,7 @@ class OpenAISession:
             "model": self.model,
             "modality": ["audio", "text"],
             "system": self.system_prompt,
+            "voice": self.voice,
         }
         await self.ws.send(json.dumps(start))
         return self

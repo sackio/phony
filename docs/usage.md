@@ -6,6 +6,7 @@
    ```
 
 2. Set environment variables (see `.env.example`).
+   To change the assistant's voice, set `OPENAI_VOICE` to an OpenAI voice name such as `alloy` or `aria`.
 
 3. Start the API:
    ```bash
