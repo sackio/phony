@@ -1,10 +1,10 @@
 # Phony Dashboard
 
-A lightweight web dashboard for monitoring active calls in real time and sending supervisor overrides.
+A lightweight React dashboard built with Material UI for monitoring active calls in real time and sending supervisor overrides.
 
 ## Setup
 
-No build step is required. Serve the files in this directory with any static web server.
+No build step is required. All dependencies (React, Material UI, Babel) are loaded from CDNs, so you can serve the files in this directory with any static web server.
 
 ```bash
 python3 -m http.server 3000
