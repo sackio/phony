@@ -197,6 +197,20 @@ this token, it:
 While awaiting input, caller transcripts are still logged but not forwarded to
 the LLM. Only one outstanding query can exist at a time.
 
+## LLM-to-LLM Demo
+
+A standalone script is provided to showcase two GPT agents conversing with
+each other while still leveraging the existing dashboard for supervision.
+Run the demo and open two dashboard tabs, one for each printed ``callSid`` to
+observe and intervene in real time:
+
+```bash
+python scripts/llm_duet_demo.py
+```
+
+Each agent is assigned a synthetic ``callSid`` and publishes the same event
+stream as a real phone call, so overrides and other controls work unchanged.
+
 ## Logging & Monitoring
 
 All calls emit structured JSON logs to both the console and a `call.log` file.
