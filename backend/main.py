@@ -3,12 +3,11 @@
 import time
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.responses import Response
-from twilio.twiml.voice_response import VoiceResponse, Connect
-
 from .override_api import router as override_router
 from .events import subscribe
 from .openai_ws import ACTIVE_SESSIONS
 from .relay_ws import relay_ws_handler
+from .twiml import conversation_relay_response
 
 app = FastAPI()
 app.include_router(override_router, prefix="/override")
@@ -19,19 +18,7 @@ _start_time = time.time()
 async def start_call():
     """Return TwiML instructions for a new outbound call."""
     try:
-        # Create the root TwiML response object
-        response = VoiceResponse()
-
-        # ConversationRelay connects the call audio to our WebSocket backend
-        connect = Connect()
-        connect.conversation_relay(
-            url="wss://<YOUR_HOST>/relay/ws",
-            welcome_greeting="Hello, connecting you now",
-            welcome_greeting_interruptible="speech",
-        )
-        response.append(connect)
-
-        return Response(content=str(response), media_type="application/xml")
+        return conversation_relay_response()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -40,15 +27,7 @@ async def start_call():
 async def receive_call():
     """Return TwiML instructions for an inbound call."""
     try:
-        response = VoiceResponse()
-        connect = Connect()
-        connect.conversation_relay(
-            url="wss://<YOUR_HOST>/relay/ws",
-            welcome_greeting="Hello, connecting you now",
-            welcome_greeting_interruptible="speech",
-        )
-        response.append(connect)
-        return Response(content=str(response), media_type="application/xml")
+        return conversation_relay_response()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
