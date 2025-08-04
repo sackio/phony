@@ -36,6 +36,23 @@ async def start_call():
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.post("/receive_call")
+async def receive_call():
+    """Return TwiML instructions for an inbound call."""
+    try:
+        response = VoiceResponse()
+        connect = Connect()
+        connect.conversation_relay(
+            url="wss://<YOUR_HOST>/relay/ws",
+            welcome_greeting="Hello, connecting you now",
+            welcome_greeting_interruptible="speech",
+        )
+        response.append(connect)
+        return Response(content=str(response), media_type="application/xml")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.websocket("/relay/ws")
 async def relay_ws_endpoint(websocket: WebSocket):
     """WebSocket endpoint for Twilio ConversationRelay."""

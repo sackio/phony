@@ -71,6 +71,12 @@ async def override_text(payload: TextPayload):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
+    session.awaiting_user_input = False
+    if hasattr(session, "awaiting_feedback"):
+        session.awaiting_feedback = False
+        session.pending_response = None
+        session.skip_next_feedback = True
+
     await publish_event(payload.callSid, {
         'type': 'assistant_override',
         'timestamp': timestamp(),
