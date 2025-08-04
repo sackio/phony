@@ -81,6 +81,16 @@ When the call is answered Twilio will request `https://$HOST/start_call`. If you
 initiate calls directly from the Twilio Console, set the Voice webhook URL to
 the same endpoint so your application returns the ConversationRelay TwiML.
 
+## Inbound Call
+
+Configure your Twilio phone number's **Voice webhook** to point to
+`https://$HOST/receive_call`. Incoming calls will be connected to the same
+ConversationRelay flow and proxied to the LLM.
+
+Set the environment variable `REQUIRE_SUPERVISOR_FEEDBACK=true` to pause before
+sending the assistant's reply to the caller. The draft response will appear on
+the dashboard where a supervisor can edit or approve it before it is spoken.
+
 ## Project Structure
 
 - `backend/` – Python backend package

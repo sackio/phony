@@ -12,6 +12,8 @@
   const queryArea = document.getElementById('query-area');
   const queryPrompt = document.getElementById('query-prompt');
   const queryInput = document.getElementById('query-input');
+  const feedbackArea = document.getElementById('feedback-area');
+  const feedbackInput = document.getElementById('feedback-input');
 
   function addLine(text) {
     const div = document.createElement('div');
@@ -43,6 +45,10 @@
       queryArea.style.display = 'block';
     } else if (data.type === 'query_response') {
       addLine(`[${time}] Supervisor answered: ${data.text}`);
+    } else if (data.type === 'pending_response') {
+      addLine(`[${time}] Pending assistant reply: ${data.text}`);
+      feedbackInput.value = data.text || '';
+      feedbackArea.style.display = 'block';
     } else {
       addLine(`[${time}] ${data.type}`);
     }
@@ -116,5 +122,19 @@
     });
     queryInput.value = '';
     queryArea.style.display = 'none';
+  });
+
+  document.getElementById('feedback-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = feedbackInput.value.trim();
+    if (!text) return;
+    addLine(`Supervisor approved: ${text}`);
+    fetch('/override/text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callSid, text }),
+    });
+    feedbackInput.value = '';
+    feedbackArea.style.display = 'none';
   });
 })();

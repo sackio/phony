@@ -31,6 +31,7 @@ OPENAI_URL = "wss://api.openai.com/v1/realtime"
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-realtime-preview")
 SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "You are a helpful phone assistant.")
 API_KEY = os.getenv("OPENAI_API_KEY")
+REQUIRE_FEEDBACK = os.getenv("REQUIRE_SUPERVISOR_FEEDBACK", "false").lower() == "true"
 
 # Mapping of active callSid to their OpenAI session objects. Used to inject
 # supervisor overrides via the REST API.
@@ -51,6 +52,11 @@ class OpenAISession:
         # Flags controlling clarification hold flow
         self.awaiting_user_input: bool = False
         self.query_prompt: Optional[str] = None
+        # Supervisor feedback flow
+        self.require_feedback: bool = REQUIRE_FEEDBACK
+        self.awaiting_feedback: bool = False
+        self.pending_response: Optional[str] = None
+        self.skip_next_feedback: bool = False
 
     async def __aenter__(self) -> "OpenAISession":
         headers = {"Authorization": f"Bearer {API_KEY}"}
@@ -166,6 +172,31 @@ async def proxy_call(twilio_ws: WebSocket) -> None:
                 if message.get("type") in {"end", "error"}:
                     break
 
+                if (
+                    openai_session.require_feedback
+                    and not openai_session.awaiting_feedback
+                    and not openai_session.skip_next_feedback
+                    and message.get("text")
+                ):
+                    openai_session.awaiting_feedback = True
+                    openai_session.awaiting_user_input = True
+                    openai_session.pending_response = message.get("text")
+                    if session["callSid"]:
+                        await publish_event(
+                            session["callSid"],
+                            {
+                                "type": "pending_response",
+                                "timestamp": timestamp(),
+                                "callSid": session["callSid"],
+                                "text": message.get("text"),
+                            },
+                        )
+                    await openai_session.cancel_response()
+                    await twilio_ws.send_text(
+                        json.dumps({"text": "Please hold while I check that.", "last": True})
+                    )
+                    continue
+
                 out: Dict[str, Any] = {
                     "audio": message.get("audio"),
                     "text": message.get("text"),
@@ -201,6 +232,7 @@ async def proxy_call(twilio_ws: WebSocket) -> None:
                     )
                     session["request_ts"] = None
                     session["response_logged"] = True
+                    openai_session.skip_next_feedback = False
 
         await asyncio.gather(from_twilio(), from_openai())
         if session["callSid"]:
