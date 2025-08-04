@@ -1,12 +1,9 @@
-import json
 import asyncio
-from fastapi.testclient import TestClient
 
-from backend.main import app
 from backend.override_api import ACTIVE_SESSIONS
 from backend import events
+from tests.helpers import assert_conversation_relay
 
-client = TestClient(app)
 
 class DummySession:
     def __init__(self):
@@ -17,13 +14,19 @@ class DummySession:
         self.injected.append(text)
 
 
-def test_start_call_returns_twiml():
+def test_start_call_returns_twiml(client):
     resp = client.post('/start_call')
     assert resp.status_code == 200
-    assert '<Response>' in resp.text
+    assert_conversation_relay(resp.text)
 
 
-def test_override_text(monkeypatch):
+def test_receive_call_returns_twiml(client):
+    resp = client.post('/receive_call')
+    assert resp.status_code == 200
+    assert_conversation_relay(resp.text)
+
+
+def test_override_text(monkeypatch, client):
     session = DummySession()
     ACTIVE_SESSIONS['CA1'] = session
     events_queue = asyncio.Queue()

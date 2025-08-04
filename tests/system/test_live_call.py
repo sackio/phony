@@ -1,10 +1,7 @@
 import os
-import json
 import pytest
-import asyncio
-from httpx import AsyncClient
 
-from backend.main import app
+from tests.helpers import assert_conversation_relay
 
 
 @pytest.mark.skipif(
@@ -12,11 +9,13 @@ from backend.main import app
     reason='Set LIVE_TESTS=1 to run system tests'
 )
 @pytest.mark.asyncio
-async def test_health_and_start_call():
-    async with AsyncClient(app=app, base_url="http://test") as ac:
-        health = await ac.get('/healthz')
-        assert health.status_code == 200
-        start = await ac.post('/start_call')
-        assert start.status_code == 200
-        assert '<Response>' in start.text
+async def test_health_and_start_call(async_client):
+    health = await async_client.get('/healthz')
+    assert health.status_code == 200
+    start = await async_client.post('/start_call')
+    assert start.status_code == 200
+    assert_conversation_relay(start.text)
+    receive = await async_client.post('/receive_call')
+    assert receive.status_code == 200
+    assert_conversation_relay(receive.text)
 

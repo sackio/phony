@@ -1,16 +1,11 @@
 import asyncio
-import json
 import pytest
-from fastapi.testclient import TestClient
 
-from backend.main import app
 from backend import events
-
-client = TestClient(app)
 
 
 @pytest.mark.asyncio
-async def test_events_websocket():
+async def test_events_websocket(client):
     sid = 'CAWS'
     queue = asyncio.Queue()
     events._queues[sid] = queue
