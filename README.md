@@ -33,7 +33,17 @@ Phony is a voice AI agent built in Python that uses **Twilio ConversationRelay**
    ./scripts/setup.sh
    ```
 
-3. **Expose your local server**
+3. **Configure Twilio**
+
+   An interactive helper is provided to purchase a phone number and set the
+   appropriate Voice webhook. It will save your credentials and selected number
+   to the `.env` file.
+
+   ```bash
+   python scripts/setup_twilio.py
+   ```
+
+4. **Expose your local server**
 
    Use ngrok (or similar) to expose port `8000` so Twilio can reach your server.
 
@@ -43,7 +53,7 @@ Phony is a voice AI agent built in Python that uses **Twilio ConversationRelay**
 
    Update your Twilio webhook URLs to point to the ngrok HTTPS address.
 
-4. **Run the application**
+5. **Run the application**
 
    The main FastAPI app lives in `backend/main.py`. Start it with:
 
@@ -51,13 +61,13 @@ Phony is a voice AI agent built in Python that uses **Twilio ConversationRelay**
    uvicorn backend.main:app --reload
    ```
 
-5. **Initiate an outbound call**
+6. **Initiate an outbound call**
 
    A helper script `scripts/make_call.py` is provided to trigger a call using the Twilio API.
 
    ```bash
-  python scripts/make_call.py +15551234567
-  ```
+   python scripts/make_call.py +15551234567
+   ```
 
 ### Selecting a Voice
 
