@@ -19,6 +19,10 @@ def conversation_relay_response() -> Response:
         url=f"wss://{host}/relay/ws",
         welcome_greeting="Hello, connecting you now",
         welcome_greeting_interruptible="speech",
+        language="en-US",
+        tts_provider="google",
+        transcription_provider="deepgram",
+        dtmf_detection="true"
     )
     response.append(connect)
     return Response(content=str(response), media_type="application/xml")

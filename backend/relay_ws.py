@@ -31,9 +31,9 @@ class InterceptWebSocket:
             event = json.loads(data)
             if not self.call_sid and "callSid" in event:
                 self.call_sid = event["callSid"]
-            if event.get("type") == "transcription" and self.call_sid:
+            if event.get("type") == "prompt" and self.call_sid:
                 self.logger.log_transcript(
-                    self.call_sid, "caller", event.get("text", "")
+                    self.call_sid, "caller", event.get("voicePrompt", "")
                 )
         except Exception:
             pass
@@ -70,7 +70,12 @@ class InterceptWebSocket:
                         session.query_prompt = cmd.value
                         await session.cancel_response()
                 await self.ws.send_text(
-                    json.dumps({"text": "Please hold while I check that.", "last": True})
+                    json.dumps({
+                        "type": "text",
+                        "token": "Please hold while I check that.",
+                        "last": True,
+                        "interruptible": False
+                    })
                 )
                 self.logger.log_command(self.call_sid, "request_user", cmd.value)
                 self.suppress = True

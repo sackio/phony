@@ -66,16 +66,33 @@ class OpenAISession:
         self.skip_next_feedback: bool = False
 
     async def __aenter__(self) -> "OpenAISession":
-        headers = {"Authorization": f"Bearer {API_KEY}"}
-        self.ws = await connect(OPENAI_URL, extra_headers=headers)
-        start = {
-            "type": "start",
-            "model": self.model,
-            "modality": ["audio", "text"],
-            "system": self.system_prompt,
-            "voice": self.voice,
+        headers = {
+            "Authorization": f"Bearer {API_KEY}",
+            "OpenAI-Beta": "realtime=v1"
         }
-        await self.ws.send(json.dumps(start))
+        self.ws = await connect(OPENAI_URL, extra_headers=headers)
+        session_config = {
+            "type": "session.update",
+            "session": {
+                "model": self.model,
+                "modalities": ["audio", "text"],
+                "instructions": self.system_prompt,
+                "voice": self.voice,
+                "input_audio_format": "pcm16",
+                "output_audio_format": "pcm16",
+                "turn_detection": {
+                    "type": "server_vad",
+                    "threshold": 0.5,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 200
+                },
+                "input_audio_transcription": {
+                    "model": "whisper-1"
+                },
+                "temperature": 0.8
+            }
+        }
+        await self.ws.send(json.dumps(session_config))
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -85,26 +102,47 @@ class OpenAISession:
     async def send_text(self, text: str) -> None:
         if not self.ws:
             return
-        await self.ws.send(json.dumps({"type": "text", "text": text}))
+        await self.ws.send(json.dumps({
+            "type": "conversation.item.create",
+            "item": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": text}]
+            }
+        }))
         self.history.append({"role": "user", "text": text})
 
     async def inject_assistant_text(self, text: str) -> None:
         """Inject a supervisor-provided message to be spoken to the caller."""
         if not self.ws:
             return
-        await self.ws.send(json.dumps({"type": "assistant_override", "text": text}))
+        await self.ws.send(json.dumps({
+            "type": "conversation.item.create", 
+            "item": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": text}]
+            }
+        }))
         self.history.append({"role": "assistant", "text": text})
 
     async def inject_supervisor_text(self, text: str) -> None:
         """Send clarification text from supervisor to the model only."""
         if not self.ws:
             return
-        await self.ws.send(json.dumps({"type": "text", "text": f"supervisor: {text}"}))
+        await self.ws.send(json.dumps({
+            "type": "conversation.item.create",
+            "item": {
+                "type": "message", 
+                "role": "user",
+                "content": [{"type": "input_text", "text": f"supervisor: {text}"}]
+            }
+        }))
         self.history.append({"role": "supervisor", "text": text})
 
     async def cancel_response(self) -> None:
         if self.ws:
-            await self.ws.send(json.dumps({"type": "cancel"}))
+            await self.ws.send(json.dumps({"type": "response.cancel"}))
 
     async def aiter_messages(self):
         if not self.ws:
@@ -136,7 +174,7 @@ async def proxy_call(twilio_ws: WebSocket) -> None:
 
                 event = json.loads(data)
                 if event.get("event") == "disconnect":
-                    await openai_session.ws.send(json.dumps({"type": "stop"}))
+                    await openai_session.ws.send(json.dumps({"type": "session.update", "session": {"turn_detection": None}}))
                     break
                 if "callSid" in event:
                     if session["callSid"] is None:
@@ -146,8 +184,8 @@ async def proxy_call(twilio_ws: WebSocket) -> None:
                 if "streamSid" in event:
                     session["streamSid"] = event.get("streamSid")
 
-                if event.get("type") == "transcription":
-                    text = event.get("text", "")
+                if event.get("type") == "prompt":
+                    text = event.get("voicePrompt", "")
                     if session["callSid"]:
                         await publish_event(
                             session["callSid"],
@@ -201,17 +239,34 @@ async def proxy_call(twilio_ws: WebSocket) -> None:
                         )
                     await openai_session.cancel_response()
                     await twilio_ws.send_text(
-                        json.dumps({"text": "Please hold while I check that.", "last": True})
+                        json.dumps({
+                            "type": "text", 
+                            "token": "Please hold while I check that.",
+                            "last": True,
+                            "interruptible": False
+                        })
                     )
                     continue
 
-                out: Dict[str, Any] = {
-                    "audio": message.get("audio"),
-                    "text": message.get("text"),
-                    "last": message.get("last", False),
-                }
-                if "interruptible" in message:
-                    out["interruptible"] = message["interruptible"]
+                # Format response according to Twilio ConversationRelay specification
+                if message.get("audio"):
+                    # Audio response
+                    out: Dict[str, Any] = {
+                        "type": "audio",
+                        "media": {
+                            "payload": message.get("audio"),
+                            "format": "audio/x-mulaw"
+                        },
+                        "last": message.get("last", False)
+                    }
+                else:
+                    # Text response  
+                    out: Dict[str, Any] = {
+                        "type": "text",
+                        "token": message.get("text", ""),
+                        "last": message.get("last", False),
+                        "interruptible": message.get("interruptible", True)
+                    }
                 if session["callSid"]:
                     first_chunk = session["request_ts"] is not None and not session["response_logged"]
                     if first_chunk:

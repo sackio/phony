@@ -1,5 +1,14 @@
+# Core dependencies
 fastapi
 uvicorn
 python-dotenv
 websockets
 twilio
+
+# Testing dependencies
+pytest
+pytest-asyncio
+pytest-mock
+pytest-cov
+httpx
+websockets-client
