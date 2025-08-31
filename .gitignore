@@ -205,3 +205,37 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# NFS temporary files
+.nfs*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# Editor files
+*~
+.#*
+\#*#
+
+# OS generated files
+*.pid
+*.lock
+
+# Claude Code temporary files
+.claude/
