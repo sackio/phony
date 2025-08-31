@@ -1,8 +1,11 @@
 """FastAPI application exposing Twilio webhooks."""
 
+import os
 import time
+from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket
-from fastapi.responses import Response
+from fastapi.responses import Response, FileResponse
+from fastapi.staticfiles import StaticFiles
 from .override_api import router as override_router
 from .events import subscribe
 from .openai_ws import ACTIVE_SESSIONS
@@ -12,6 +15,20 @@ from .twiml import conversation_relay_response
 app = FastAPI()
 app.include_router(override_router, prefix="/override")
 _start_time = time.time()
+
+# Serve dashboard static files
+dashboard_path = Path(__file__).parent.parent / "dashboard"
+if dashboard_path.exists():
+    app.mount("/dashboard", StaticFiles(directory=str(dashboard_path), html=True), name="dashboard")
+
+
+@app.get("/")
+async def root():
+    """Redirect to dashboard."""
+    return Response(
+        content='<html><head><meta http-equiv="refresh" content="0; url=/dashboard/"></head><body>Redirecting to <a href="/dashboard/">dashboard</a>...</body></html>',
+        media_type="text/html"
+    )
 
 
 @app.post("/start_call")

@@ -4,13 +4,16 @@ A lightweight React dashboard built with Material UI for monitoring active calls
 
 ## Setup
 
-No build step is required. All dependencies (React, Material UI, Babel) are loaded from CDNs, so you can serve the files in this directory with any static web server.
+The dashboard is automatically served by the FastAPI backend at `/dashboard/`. No separate server is needed.
 
+Start the main application:
 ```bash
-python3 -m http.server 3000
+./start.sh
+# or
+uvicorn backend.main:app --port 24187 --reload
 ```
 
-Then open `http://localhost:3000/index.html?callSid=<CALL_SID>` in your browser. Replace `<CALL_SID>` with the active call's identifier.
+Then open `http://localhost:24187/dashboard/index.html?callSid=<CALL_SID>` in your browser. Replace `<CALL_SID>` with the active call's identifier.
 
 ## Configuration
 
