@@ -17,8 +17,10 @@ services:
       retries: 3
     depends_on:
       - redis
+      - mongodb
     environment:
       - PYTHONPATH=/app
+      - MONGODB_URL=mongodb://mongodb:27017
 
   demo:
     build:
@@ -114,3 +116,16 @@ services:
     container_name: phony-redis
     ports:
       - "6380:6379"
+
+  mongodb:
+    image: mongo:7
+    container_name: phony-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=phony
+    volumes:
+      - mongodb_data:/data/db
+
+volumes:
+  mongodb_data:

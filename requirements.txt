@@ -6,6 +6,11 @@ python-multipart
 websockets
 twilio
 
+# Database
+motor  # Async MongoDB driver
+pymongo
+pydantic
+
 # Testing dependencies
 pytest
 pytest-asyncio
