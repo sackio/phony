@@ -20,6 +20,78 @@ services:
     environment:
       - PYTHONPATH=/app
 
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: phony-demo
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    working_dir: /app
+    depends_on:
+      - backend
+      - redis
+    environment:
+      - PYTHONPATH=/app
+      - DEMO_MODE=true
+    command: /bin/bash
+
+  human-demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: phony-human-demo
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    working_dir: /app
+    depends_on:
+      - backend
+      - redis
+    environment:
+      - PYTHONPATH=/app
+    command: python3 scripts/docker_human_demo.py
+    profiles:
+      - human
+
+  twilio-setup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: phony-twilio-setup
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    working_dir: /app
+    environment:
+      - PYTHONPATH=/app
+    command: python3 scripts/docker_twilio_setup.py
+    profiles:
+      - setup
+
+  e2e-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: phony-e2e-test
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    working_dir: /app
+    depends_on:
+      - backend
+    environment:
+      - PYTHONPATH=/app
+      - E2E_TEST_MODE=true
+    command: /bin/bash
+    profiles:
+      - test
+
   test:
     build:
       context: .
@@ -41,4 +113,4 @@ services:
     image: redis:alpine
     container_name: phony-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"

@@ -337,3 +337,4 @@ Open dashboard: `http://localhost:24187/dashboard/index.html?callSid=CA...`
 - **Inbound Calls**: $0.0085/minute
 - **Outbound Calls**: Starting at $0.013/minute
 - See [Twilio Pricing](https://www.twilio.com/voice/pricing) for details
+- always run in docker compose

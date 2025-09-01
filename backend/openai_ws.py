@@ -70,7 +70,7 @@ class OpenAISession:
             "Authorization": f"Bearer {API_KEY}",
             "OpenAI-Beta": "realtime=v1"
         }
-        self.ws = await connect(OPENAI_URL, extra_headers=headers)
+        self.ws = await connect(OPENAI_URL, additional_headers=headers)
         session_config = {
             "type": "session.update",
             "session": {
