@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# direnv configuration for Phony Voice AI Agent
+# Copy this file to .envrc and run 'direnv allow .' to use
+
+# Load environment variables from .env file
+if [ -f .env ]; then
+    set -a
+    source .env
+    set +a
+fi
+
+# Python virtual environment setup (optional)
+# Uncomment the following lines if you want to auto-activate a virtual environment
+# if [ -d venv ]; then
+#     source venv/bin/activate
+# fi
+
+# Add local scripts to PATH for easier execution
+export PATH="$PWD/scripts:$PATH"
+
+# Set Python path to include project root
+export PYTHONPATH="$PWD:$PYTHONPATH"
+
+# Docker compose project name
+export COMPOSE_PROJECT_NAME="phony"
+
+# Development environment indicator
+export PHONY_ENV="development"
+
+# Helpful aliases for this project
+alias run-backend="uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-24187} --reload"
+alias run-docker="docker-compose up -d backend redis"
+alias run-tests="docker-compose run --rm demo python3 scripts/test_human_demo_suite.py"
+alias run-edge-tests="docker-compose run --rm demo python3 scripts/test_edge_cases.py"
+alias run-human-demo="docker-compose --profile human run --rm human-demo"
+alias check-health="curl -s http://localhost:${PORT:-24187}/healthz | python3 -m json.tool"
+alias view-logs="docker-compose logs -f backend"
+alias stop-all="docker-compose down"
+
+# Display project info when entering directory
+echo "🎭 Phony Voice AI Agent Development Environment"
+echo "================================================"
+echo "📞 Twilio Number: $TWILIO_PHONE_NUMBER"
+echo "🌐 Host: $HOST"
+echo "🚪 Port: ${PORT:-24187}"
+echo "🤖 OpenAI Voice: ${OPENAI_VOICE:-alloy}"
+echo ""
+echo "Quick commands:"
+echo "  run-backend     - Start FastAPI server"
+echo "  run-docker      - Start Docker services"
+echo "  run-tests       - Run test suite"
+echo "  run-human-demo  - Run human call demo"
+echo "  check-health    - Check backend health"
+echo "  view-logs       - View backend logs"
+echo "  stop-all        - Stop all services"
+echo ""
