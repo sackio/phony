@@ -18,9 +18,19 @@ services:
     depends_on:
       - redis
       - mongodb
+      - frontend-build
     environment:
       - PYTHONPATH=/app
       - MONGODB_URL=mongodb://mongodb:27017
+
+  frontend-build:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: phony-frontend-build
+    volumes:
+      - ./dashboard:/app/output
+    command: sh -c "cp -r /app/build/* /app/output/"
 
   demo:
     build:

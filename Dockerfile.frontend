@@ -1,0 +1,23 @@
+# Frontend build Dockerfile
+FROM node:18-alpine AS build
+
+WORKDIR /app
+
+# Copy package files
+COPY frontend/package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source code
+COPY frontend/src ./src
+COPY frontend/public ./public
+COPY frontend/tsconfig.json ./
+
+# Build the app
+RUN npm run build
+
+# Final stage - just the built files
+FROM alpine:latest
+COPY --from=build /app/build /app/build
+WORKDIR /app
