@@ -2,6 +2,7 @@
 fastapi
 uvicorn
 python-dotenv
+python-multipart
 websockets
 twilio
 
@@ -11,4 +12,4 @@ pytest-asyncio
 pytest-mock
 pytest-cov
 httpx
-websockets-client
+websocket-client

@@ -17,6 +17,26 @@ services:
       retries: 3
     depends_on:
       - redis
+    environment:
+      - PYTHONPATH=/app
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: phony-test
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    working_dir: /app
+    depends_on:
+      - redis
+    environment:
+      - PYTHONPATH=/app
+      - TESTING=true
+    command: /bin/bash
+
   redis:
     image: redis:alpine
     container_name: phony-redis
