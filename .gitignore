@@ -239,3 +239,22 @@ Desktop.ini
 
 # Claude Code temporary files
 .claude/
+
+# Playwright MCP test artifacts
+.playwright-mcp/
+playwright-report/
+test-results/
+
+# Test result JSON files
+*test_results*.json
+*test_result*.json
+edge_case_test_results*.json
+human_demo_test_results*.json
+
+# Test screenshots
+test-screenshots/
+*.test.png
+
+# Demo temporary files
+test_human_demo.py
+run_demo.py
