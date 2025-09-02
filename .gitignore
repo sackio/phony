@@ -136,13 +136,79 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
 .envrc
+.envrc.*
+!.envrc.example
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Secrets and credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+credentials.json
+secrets.json
+token.json
+auth.json
+config.json
+service-account*.json
+firebase*.json
+
+# API Keys and tokens
+*api_key*
+*api_token*
+*auth_token*
+!*example*
+!*template*
+
+# Database files with potential credentials
+*.db
+*.sqlite
+*.sqlite3
+
+# AWS credentials
+.aws/
+aws_credentials
+
+# SSH keys
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+*.ppk
+
+# Terraform state files (may contain secrets)
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+!terraform.tfvars.example
+
+# Docker secrets
+docker-compose.override.yml
+docker-compose.*.yml
+!docker-compose.example.yml
+
+# Backup files that might contain secrets
+*.backup
+*.bak.env
+*.env.backup
+
+# Twilio specific
+twilio_credentials*
+!twilio_credentials.example
+
+# OpenAI specific  
+openai_config*
+!openai_config.example
 
 # Spyder project settings
 .spyderproject

@@ -104,9 +104,9 @@ Phone Call → Twilio → WebSocket → FastAPI Backend → OpenAI Realtime API
 ### Required Environment Variables
 ```bash
 # Twilio Configuration
-TWILIO_ACCOUNT_SID=AC4adc0ce78df3d4e73ed3eab1fdd2acbb
-TWILIO_AUTH_TOKEN=<auth_token>
-TWILIO_PHONE_NUMBER=+18578167225
+TWILIO_ACCOUNT_SID=<your_account_sid>
+TWILIO_AUTH_TOKEN=<your_auth_token>
+TWILIO_PHONE_NUMBER=<your_phone_number>
 
 # OpenAI Configuration
 OPENAI_API_KEY=<your_api_key>
