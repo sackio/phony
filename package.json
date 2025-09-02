@@ -1,0 +1,39 @@
+{
+  "name": "phony-voice-ai-system",
+  "version": "1.0.0",
+  "description": "Voice AI Agent Deployment System with comprehensive testing",
+  "scripts": {
+    "test": "pytest tests/ -v",
+    "test:unit": "pytest tests/unit/ -v",
+    "test:integration": "pytest tests/integration/ -v",
+    "test:system": "pytest tests/system/ -v",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug",
+    "test:demos": "./scripts/run_playwright_demos.sh",
+    "test:comprehensive": "python3 scripts/run_comprehensive_tests.py",
+    "install:browsers": "playwright install",
+    "dev:frontend": "cd frontend && npm start",
+    "build:frontend": "cd frontend && npm run build",
+    "start:backend": "docker-compose up -d backend mongodb redis",
+    "start:full": "docker-compose up -d"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0"
+  },
+  "keywords": [
+    "voice-ai",
+    "agent-deployment",
+    "twilio",
+    "openai",
+    "testing",
+    "playwright",
+    "pytest"
+  ],
+  "author": "AI Agent Development Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "python": ">=3.8.0"
+  }
+}

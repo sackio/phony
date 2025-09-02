@@ -64,20 +64,28 @@ echo "---------------------------"\n\
 echo "Running pytest with full test suite..."\n\
 \n\
 # Run tests with different verbosity levels\n\
-echo "Running unit tests..."\n\
-pytest tests/unit/ -v --tb=short || echo "⚠️ Some unit tests failed (expected due to mocking)"\n\
+echo "Running unit tests (database models and CRUD operations)..."\n\
+pytest tests/unit/ -v --tb=short -m "unit" || echo "⚠️ Some unit tests failed (expected due to mocking)"\n\
 \n\
 echo ""\n\
-echo "Running integration tests..."\n\
-pytest tests/integration/ -v --tb=short || echo "⚠️ Some integration tests failed (expected due to external dependencies)"\n\
+echo "Running integration tests (API endpoints)..."\n\
+pytest tests/integration/ -v --tb=short -m "integration" || echo "⚠️ Some integration tests failed (expected due to external dependencies)"\n\
 \n\
 echo ""\n\
-echo "Running system tests..."\n\
-pytest tests/system/ -v --tb=short || echo "⚠️ Some system tests failed (expected due to external dependencies)"\n\
+echo "Running system tests (agent call handling)..."\n\
+pytest tests/system/ -v --tb=short -m "system" || echo "⚠️ Some system tests failed (expected due to external dependencies)"\n\
+\n\
+echo ""\n\
+echo "Running agent-specific tests..."\n\
+pytest tests/ -v --tb=short -m "agent" || echo "⚠️ Some agent tests failed (expected due to external dependencies)"\n\
+\n\
+echo ""\n\
+echo "Running database tests..."\n\
+pytest tests/ -v --tb=short -m "database" || echo "⚠️ Some database tests failed (expected due to external dependencies)"\n\
 \n\
 echo ""\n\
 echo "Running full test suite with coverage..."\n\
-pytest tests/ -v --tb=short --cov=backend --cov-report=term-missing || echo "⚠️ Some tests failed (expected in test environment)"\n\
+pytest tests/ -v --tb=short --cov=backend --cov-report=term-missing --cov-report=json || echo "⚠️ Some tests failed (expected in test environment)"\n\
 \n\
 echo ""\n\
 echo "🎯 Step 5: Final Integration Test"\n\

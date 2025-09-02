@@ -258,3 +258,4 @@ test-screenshots/
 # Demo temporary files
 test_human_demo.py
 run_demo.py
+node_modules/

@@ -16,5 +16,10 @@ pytest
 pytest-asyncio
 pytest-mock
 pytest-cov
+pytest-mongodb
 httpx
 websocket-client
+faker
+mongomock-motor
+playwright
+aioresponses
