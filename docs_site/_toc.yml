@@ -1,0 +1,54 @@
+# Table of Contents for Phony Voice AI Agent Documentation
+
+format: jb-book
+root: intro
+title: Phony Voice AI Agent
+
+chapters:
+  - file: features/overview
+    title: Features
+    sections:
+      - file: features/voice-ai-core
+      - file: features/real-time-dashboard  
+      - file: features/multi-tenant-architecture
+      - file: features/docker-deployment
+      - file: features/testing-suite
+
+  - file: guides/getting-started
+    title: User Guides  
+    sections:
+      - file: guides/installation
+      - file: guides/configuration
+      - file: guides/making-calls
+      - file: guides/monitoring-calls
+      - file: guides/troubleshooting
+
+  - file: api/index
+    title: API Reference
+    sections:
+      - file: api/endpoints
+      - file: api/websockets
+      - file: api/models
+      - file: api/authentication
+      
+  - file: tutorials/quickstart
+    title: Tutorials
+    sections:
+      - file: tutorials/first-call
+      - file: tutorials/dashboard-demo
+      - file: tutorials/custom-agent
+      - file: tutorials/deployment-guide
+
+  - file: examples/notebooks
+    title: Examples
+    sections:
+      - file: examples/api-examples
+      - file: examples/integration-patterns
+      - file: examples/performance-testing
+
+  - file: ui-guide/dashboard-overview
+    title: UI Guide
+    sections:
+      - file: ui-guide/call-monitoring
+      - file: ui-guide/agent-management
+      - file: ui-guide/settings-configuration

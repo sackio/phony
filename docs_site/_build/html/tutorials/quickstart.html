@@ -1,0 +1,1226 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>📞 Phony Voice AI Quick Start Tutorial &#8212; Phony Documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/sphinx-book-theme.css?v=eba8b062" />
+    <link rel="stylesheet" type="text/css" href="../_static/togglebutton.css?v=13237357" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/mystnb.8ecb98da25f57f5357bf6f572d296f466b2cfe2517ffebfabe82451661e28f02.css?v=6644e6bb" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script src="../_static/scripts/sphinx-book-theme.js?v=887ef09a"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../_static/togglebutton.js?v=4a39c7ea"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'tutorials/quickstart';</script>
+    <link rel="canonical" href="https://sackio.github.io/phony/tutorials/quickstart.html" />
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="prev" title="🚀 Getting Started" href="../guides/getting-started.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../intro.html">
+  
+  
+  
+  
+  
+  
+    <p class="title logo__title">Phony Documentation</p>
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../intro.html">
+                    Welcome to Phony Voice AI Agent Documentation
+                </a>
+            </li>
+        </ul>
+        <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../guides/quickstart.html">Quick Start Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../features/overview.html">Features Overview</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../features/voice-ai-core.html">🎙️ Voice AI Core Features</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../features/multi-tenant-architecture.html">👥 Multi-Tenant Architecture</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../api/index.html">API Documentation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../ui-guide/overview.html">Dashboard UI Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="basic-setup.html">Tutorial: Basic Setup and Your First Call</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples/customer-service.html">Customer Service Bot Example</a></li>
+</ul>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../features/overview.html">Features</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../features/voice-ai-core.html">🎙️ Voice AI Core Features</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../features/multi-tenant-architecture.html">👥 Multi-Tenant Architecture</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../guides/getting-started.html">User Guides</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../api/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l1 current active has-children"><a class="current reference internal" href="#">Tutorials</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/sackio/phony" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/sackio/phony/edit/main/docs_site/tutorials/quickstart.ipynb" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/sackio/phony/issues/new?title=Issue%20on%20page%20%2Ftutorials/quickstart.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../_sources/tutorials/quickstart.ipynb" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.ipynb</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm pst-navbar-icon search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<button class="sidebar-toggle secondary-toggle btn btn-sm" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>📞 Phony Voice AI Quick Start Tutorial</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-you-ll-learn">🎯 What You’ll Learn</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">📋 Prerequisites</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#environment-setup">🔧 Environment Setup</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#health-check">✅ Health Check</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-management">🤖 Agent Management</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#ai-personalities-demo">🎭 AI Personalities Demo</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#making-api-calls">📱 Making API Calls</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dashboard-integration">📊 Dashboard Integration</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#testing-voice-ai-features">🧪 Testing Voice AI Features</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#performance-monitoring">📈 Performance Monitoring</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next-steps">🎯 Next Steps</a></li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="phony-voice-ai-quick-start-tutorial">
+<h1>📞 Phony Voice AI Quick Start Tutorial<a class="headerlink" href="#phony-voice-ai-quick-start-tutorial" title="Link to this heading">#</a></h1>
+<p>This interactive notebook will guide you through setting up and making your first AI phone call with Phony.</p>
+<section id="what-you-ll-learn">
+<h2>🎯 What You’ll Learn<a class="headerlink" href="#what-you-ll-learn" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p>How to configure Phony for voice AI calls</p></li>
+<li><p>Making outbound AI calls to humans</p></li>
+<li><p>Handling inbound calls from humans</p></li>
+<li><p>Monitoring calls with the dashboard</p></li>
+<li><p>Using the REST API</p></li>
+</ul>
+</section>
+<section id="prerequisites">
+<h2>📋 Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">#</a></h2>
+<p>Before running this notebook, ensure you have:</p>
+<ul class="simple">
+<li><p>Docker and Docker Compose installed</p></li>
+<li><p>OpenAI API key with Realtime API access</p></li>
+<li><p>Twilio account with a phone number</p></li>
+<li><p>Phony services running (<code class="docutils literal notranslate"><span class="pre">docker-compose</span> <span class="pre">up</span> <span class="pre">-d</span></code>)</p></li>
+</ul>
+</section>
+<section id="environment-setup">
+<h2>🔧 Environment Setup<a class="headerlink" href="#environment-setup" title="Link to this heading">#</a></h2>
+<p>First, let’s verify our environment and check that Phony is running correctly.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+
+<span class="c1"># Configuration</span>
+<span class="n">BASE_URL</span> <span class="o">=</span> <span class="s2">&quot;http://localhost:24187&quot;</span>
+<span class="n">API_KEY</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;PHONY_API_KEY&quot;</span><span class="p">,</span> <span class="s2">&quot;demo-key&quot;</span><span class="p">)</span>  <span class="c1"># Replace with actual API key</span>
+
+<span class="c1"># Headers for API requests</span>
+<span class="n">headers</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;Authorization&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;Bearer </span><span class="si">{</span><span class="n">API_KEY</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Content-Type&quot;</span><span class="p">:</span> <span class="s2">&quot;application/json&quot;</span>
+<span class="p">}</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;🔧 Phony QuickStart Configuration&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Base URL: </span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;API Key: </span><span class="si">{</span><span class="n">API_KEY</span><span class="p">[:</span><span class="mi">12</span><span class="p">]</span><span class="si">}</span><span class="s2">...&quot;</span> <span class="k">if</span> <span class="n">API_KEY</span> <span class="o">!=</span> <span class="s2">&quot;demo-key&quot;</span> <span class="k">else</span> <span class="s2">&quot;API Key: demo-key (update for production)&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Timestamp: </span><span class="si">{</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>🔧 Phony QuickStart Configuration
+Base URL: http://localhost:24187
+API Key: demo-key (update for production)
+Timestamp: 2025-09-10 09:08:47.171872
+</pre></div>
+</div>
+</div>
+</div>
+</section>
+<section id="health-check">
+<h2>✅ Health Check<a class="headerlink" href="#health-check" title="Link to this heading">#</a></h2>
+<p>Let’s verify that Phony is running and healthy:</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Check system health</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/healthz&quot;</span><span class="p">)</span>
+    <span class="n">health_data</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+    
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;🟢 System Health Check&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Status: </span><span class="si">{</span><span class="n">health_data</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Uptime: </span><span class="si">{</span><span class="n">health_data</span><span class="p">[</span><span class="s1">&#39;uptime&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> seconds&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Active Calls: </span><span class="si">{</span><span class="n">health_data</span><span class="p">[</span><span class="s1">&#39;activeCalls&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="n">health_data</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;ok&#39;</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;✅ Phony is running correctly!&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;❌ System is not healthy&quot;</span><span class="p">)</span>
+        
+<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;❌ Error connecting to Phony: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;🔧 Make sure Docker services are running: docker-compose up -d&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>🟢 System Health Check
+Status: ok
+Uptime: 738519 seconds
+Active Calls: 0
+✅ Phony is running correctly!
+</pre></div>
+</div>
+</div>
+</div>
+</section>
+<section id="agent-management">
+<h2>🤖 Agent Management<a class="headerlink" href="#agent-management" title="Link to this heading">#</a></h2>
+<p>Let’s explore the AI agents available in your Phony installation:</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># List available agents</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/agents/&quot;</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">headers</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+        <span class="n">agents_data</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+        <span class="n">agents</span> <span class="o">=</span> <span class="n">agents_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;agents&#39;</span><span class="p">,</span> <span class="p">[])</span>
+        
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;🤖 Available AI Agents (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">agents</span><span class="p">)</span><span class="si">}</span><span class="s2"> total)&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">50</span><span class="p">)</span>
+        
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">agent</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">agents</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">. </span><span class="si">{</span><span class="n">agent</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   ID: </span><span class="si">{</span><span class="n">agent</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   Voice: </span><span class="si">{</span><span class="n">agent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;voice&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;alloy&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   Status: </span><span class="si">{</span><span class="s1">&#39;🟢 Active&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">agent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;is_active&#39;</span><span class="p">)</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;🔴 Inactive&#39;</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   Phone Numbers: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;phone_numbers&#39;</span><span class="p">,</span><span class="w"> </span><span class="p">[]))</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   Created: </span><span class="si">{</span><span class="n">agent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;created_at&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;Unknown&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">()</span>
+            
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;❌ Error fetching agents: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;💡 This might be expected if multi-tenancy is not set up&quot;</span><span class="p">)</span>
+        
+<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;❌ Error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;💡 Agent management may not be available in single-tenant mode&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>❌ Error fetching agents: 404
+💡 This might be expected if multi-tenancy is not set up
+</pre></div>
+</div>
+</div>
+</div>
+</section>
+<section id="ai-personalities-demo">
+<h2>🎭 AI Personalities Demo<a class="headerlink" href="#ai-personalities-demo" title="Link to this heading">#</a></h2>
+<p>Phony comes with 5 pre-configured AI personalities. Let’s explore what each one does:</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Define the AI personalities</span>
+<span class="n">personalities</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="mi">1</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Professional Assistant&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;voice&quot;</span><span class="p">:</span> <span class="s2">&quot;alloy&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Business helper and support specialist&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;use_cases&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;Customer service&quot;</span><span class="p">,</span> <span class="s2">&quot;Technical support&quot;</span><span class="p">,</span> <span class="s2">&quot;Business inquiries&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;greeting&quot;</span><span class="p">:</span> <span class="s2">&quot;Hello! This is your professional assistant. How may I help you today?&quot;</span>
+    <span class="p">},</span>
+    <span class="mi">2</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Customer Service Rep&quot;</span><span class="p">,</span> 
+        <span class="s2">&quot;voice&quot;</span><span class="p">:</span> <span class="s2">&quot;echo&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Technical support and issue resolution&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;use_cases&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;Technical troubleshooting&quot;</span><span class="p">,</span> <span class="s2">&quot;Product support&quot;</span><span class="p">,</span> <span class="s2">&quot;Account issues&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;greeting&quot;</span><span class="p">:</span> <span class="s2">&quot;Hi there! I&#39;m here to help resolve any technical issues you might have.&quot;</span>
+    <span class="p">},</span>
+    <span class="mi">3</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Appointment Scheduler&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;voice&quot;</span><span class="p">:</span> <span class="s2">&quot;nova&quot;</span><span class="p">,</span> 
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Booking coordination and scheduling&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;use_cases&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;Appointment booking&quot;</span><span class="p">,</span> <span class="s2">&quot;Calendar management&quot;</span><span class="p">,</span> <span class="s2">&quot;Scheduling conflicts&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;greeting&quot;</span><span class="p">:</span> <span class="s2">&quot;Good day! I&#39;m your scheduling assistant. Let&#39;s find the perfect time for your appointment.&quot;</span>
+    <span class="p">},</span>
+    <span class="mi">4</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Information Hotline&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;voice&quot;</span><span class="p">:</span> <span class="s2">&quot;fable&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;General information and FAQ responses&quot;</span><span class="p">,</span> 
+        <span class="s2">&quot;use_cases&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;General inquiries&quot;</span><span class="p">,</span> <span class="s2">&quot;Information lookup&quot;</span><span class="p">,</span> <span class="s2">&quot;FAQ responses&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;greeting&quot;</span><span class="p">:</span> <span class="s2">&quot;Welcome to our information hotline! What information can I help you find today?&quot;</span>
+    <span class="p">},</span>
+    <span class="mi">5</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Survey Conductor&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;voice&quot;</span><span class="p">:</span> <span class="s2">&quot;shimmer&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Feedback collection and market research&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;use_cases&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;Customer surveys&quot;</span><span class="p">,</span> <span class="s2">&quot;Feedback collection&quot;</span><span class="p">,</span> <span class="s2">&quot;Market research&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;greeting&quot;</span><span class="p">:</span> <span class="s2">&quot;Hi! I&#39;d love to get your feedback. This will just take a couple of minutes.&quot;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;🎭 AI Personalities Overview&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">pid</span><span class="p">,</span> <span class="n">personality</span> <span class="ow">in</span> <span class="n">personalities</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="si">{</span><span class="n">pid</span><span class="si">}</span><span class="s2">. </span><span class="si">{</span><span class="n">personality</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> (Voice: </span><span class="si">{</span><span class="n">personality</span><span class="p">[</span><span class="s1">&#39;voice&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   📝 </span><span class="si">{</span><span class="n">personality</span><span class="p">[</span><span class="s1">&#39;description&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   🎯 Use Cases: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">personality</span><span class="p">[</span><span class="s1">&#39;use_cases&#39;</span><span class="p">])</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   💬 Sample Greeting: </span><span class="se">\&quot;</span><span class="si">{</span><span class="n">personality</span><span class="p">[</span><span class="s1">&#39;greeting&#39;</span><span class="p">]</span><span class="si">}</span><span class="se">\&quot;</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">📞 To test these personalities, call: +1 (857) 816-7225&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>🎭 AI Personalities Overview
+============================================================
+
+1. Professional Assistant (Voice: alloy)
+   📝 Business helper and support specialist
+   🎯 Use Cases: Customer service, Technical support, Business inquiries
+   💬 Sample Greeting: &quot;Hello! This is your professional assistant. How may I help you today?&quot;
+
+2. Customer Service Rep (Voice: echo)
+   📝 Technical support and issue resolution
+   🎯 Use Cases: Technical troubleshooting, Product support, Account issues
+   💬 Sample Greeting: &quot;Hi there! I&#39;m here to help resolve any technical issues you might have.&quot;
+
+3. Appointment Scheduler (Voice: nova)
+   📝 Booking coordination and scheduling
+   🎯 Use Cases: Appointment booking, Calendar management, Scheduling conflicts
+   💬 Sample Greeting: &quot;Good day! I&#39;m your scheduling assistant. Let&#39;s find the perfect time for your appointment.&quot;
+
+4. Information Hotline (Voice: fable)
+   📝 General information and FAQ responses
+   🎯 Use Cases: General inquiries, Information lookup, FAQ responses
+   💬 Sample Greeting: &quot;Welcome to our information hotline! What information can I help you find today?&quot;
+
+5. Survey Conductor (Voice: shimmer)
+   📝 Feedback collection and market research
+   🎯 Use Cases: Customer surveys, Feedback collection, Market research
+   💬 Sample Greeting: &quot;Hi! I&#39;d love to get your feedback. This will just take a couple of minutes.&quot;
+
+📞 To test these personalities, call: +1 (857) 816-7225
+</pre></div>
+</div>
+</div>
+</div>
+</section>
+<section id="making-api-calls">
+<h2>📱 Making API Calls<a class="headerlink" href="#making-api-calls" title="Link to this heading">#</a></h2>
+<p>Let’s demonstrate how to interact with Phony programmatically using the REST API:</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Example: Create a new agent (if multi-tenant mode is enabled)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">create_sample_agent</span><span class="p">():</span>
+    <span class="n">agent_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Demo Assistant&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;system_prompt&quot;</span><span class="p">:</span> <span class="s2">&quot;You are a helpful demo assistant for the Phony Voice AI system. Keep responses brief and friendly.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;voice&quot;</span><span class="p">:</span> <span class="s2">&quot;alloy&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="s2">&quot;gpt-4o-realtime-preview&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;greeting_message&quot;</span><span class="p">:</span> <span class="s2">&quot;Hello! This is a demo of the Phony Voice AI system. How can I assist you?&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;phone_numbers&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;+15551234567&quot;</span><span class="p">],</span>  <span class="c1"># Example number</span>
+        <span class="s2">&quot;is_active&quot;</span><span class="p">:</span> <span class="kc">True</span>
+    <span class="p">}</span>
+    
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/agents/&quot;</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">headers</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="n">agent_data</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">201</span><span class="p">:</span>
+            <span class="n">agent</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;✅ Sample agent created successfully!&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Agent ID: </span><span class="si">{</span><span class="n">agent</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Name: </span><span class="si">{</span><span class="n">agent</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">agent</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;❌ Error creating agent: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Response: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">text</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+            
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;❌ Error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+<span class="c1"># Try to create agent (this might fail if multi-tenancy is not configured)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;🤖 Testing Agent Creation&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Note: This may fail if running in single-tenant mode&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;-&quot;</span> <span class="o">*</span> <span class="mi">50</span><span class="p">)</span>
+
+<span class="n">sample_agent</span> <span class="o">=</span> <span class="n">create_sample_agent</span><span class="p">()</span>
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">sample_agent</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">💡 Agent creation failed - this is normal for single-tenant installations&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;   You can still use the pre-configured demo number: +1 (857) 816-7225&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>🤖 Testing Agent Creation
+Note: This may fail if running in single-tenant mode
+--------------------------------------------------
+❌ Error creating agent: 404
+Response: {&quot;detail&quot;:&quot;Not Found&quot;}
+
+💡 Agent creation failed - this is normal for single-tenant installations
+   You can still use the pre-configured demo number: +1 (857) 816-7225
+</pre></div>
+</div>
+</div>
+</div>
+</section>
+<section id="dashboard-integration">
+<h2>📊 Dashboard Integration<a class="headerlink" href="#dashboard-integration" title="Link to this heading">#</a></h2>
+<p>The Phony dashboard provides real-time call monitoring. Let’s generate a dashboard URL:</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Generate dashboard URLs</span>
+<span class="n">dashboard_base</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/dashboard/&quot;</span>
+<span class="n">sample_call_sid</span> <span class="o">=</span> <span class="s2">&quot;CA1234567890abcdef1234567890abcdef&quot;</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;📊 Phony Dashboard Access&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">40</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">🏠 Main Dashboard: </span><span class="si">{</span><span class="n">dashboard_base</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;📞 Call Monitor: </span><span class="si">{</span><span class="n">dashboard_base</span><span class="si">}</span><span class="s2">index.html?callSid=</span><span class="si">{</span><span class="n">sample_call_sid</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;📈 Health Status: </span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/healthz&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">💡 Dashboard Features:&quot;</span><span class="p">)</span>
+<span class="n">features</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;Real-time call transcripts&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Supervisor intervention controls&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;DTMF keypad for sending digits&quot;</span><span class="p">,</span> 
+    <span class="s2">&quot;Call transfer and termination&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Live event stream monitoring&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Audio quality metrics&quot;</span>
+<span class="p">]</span>
+
+<span class="k">for</span> <span class="n">feature</span> <span class="ow">in</span> <span class="n">features</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   ✅ </span><span class="si">{</span><span class="n">feature</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Test dashboard accessibility</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">dashboard_base</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">✅ Dashboard is accessible!&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">❌ Dashboard access issue: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">❌ Dashboard connection error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>📊 Phony Dashboard Access
+========================================
+
+🏠 Main Dashboard: http://localhost:24187/dashboard/
+📞 Call Monitor: http://localhost:24187/dashboard/index.html?callSid=CA1234567890abcdef1234567890abcdef
+📈 Health Status: http://localhost:24187/healthz
+
+💡 Dashboard Features:
+   ✅ Real-time call transcripts
+   ✅ Supervisor intervention controls
+   ✅ DTMF keypad for sending digits
+   ✅ Call transfer and termination
+   ✅ Live event stream monitoring
+   ✅ Audio quality metrics
+
+✅ Dashboard is accessible!
+</pre></div>
+</div>
+</div>
+</div>
+</section>
+<section id="testing-voice-ai-features">
+<h2>🧪 Testing Voice AI Features<a class="headerlink" href="#testing-voice-ai-features" title="Link to this heading">#</a></h2>
+<p>Let’s explore the key features you can test with Phony:</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Testing scenarios</span>
+<span class="n">test_scenarios</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;outbound&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;title&quot;</span><span class="p">:</span> <span class="s2">&quot;AI Calls Human (Outbound)&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="s2">&quot;docker-compose --profile human run --rm human-demo&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="s2">&quot;Select option 1 (AI calls human)&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;Confirm consent: yes&quot;</span><span class="p">,</span> 
+            <span class="s2">&quot;Enter target phone number&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;Choose scenario (1-4)&quot;</span>
+        <span class="p">],</span>
+        <span class="s2">&quot;scenarios&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="s2">&quot;1. Customer Service Inquiry&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;2. Survey/Feedback Request&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;3. Appointment Scheduling&quot;</span><span class="p">,</span> 
+            <span class="s2">&quot;4. Friendly Check-in&quot;</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;inbound&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;title&quot;</span><span class="p">:</span> <span class="s2">&quot;Human Calls AI (Inbound)&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="s2">&quot;docker-compose --profile human run --rm human-demo&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="s2">&quot;Select option 2 (Human calls AI)&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;Choose personality (1-5)&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;Call +1 (857) 816-7225&quot;</span>
+        <span class="p">],</span>
+        <span class="s2">&quot;personalities&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="s2">&quot;1. Professional Assistant&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;2. Customer Service Rep&quot;</span><span class="p">,</span> 
+            <span class="s2">&quot;3. Appointment Scheduler&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;4. Information Hotline&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;5. Survey Conductor&quot;</span>
+        <span class="p">]</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;🧪 Voice AI Testing Guide&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">50</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">test_type</span><span class="p">,</span> <span class="n">config</span> <span class="ow">in</span> <span class="n">test_scenarios</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">📞 </span><span class="si">{</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;title&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Command: </span><span class="si">{</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;command&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Steps:&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;steps&#39;</span><span class="p">],</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">. </span><span class="si">{</span><span class="n">step</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="s1">&#39;scenarios&#39;</span> <span class="ow">in</span> <span class="n">config</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Available Scenarios:&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">scenario</span> <span class="ow">in</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;scenarios&#39;</span><span class="p">]:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   </span><span class="si">{</span><span class="n">scenario</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="s1">&#39;personalities&#39;</span> <span class="ow">in</span> <span class="n">config</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Available Personalities:&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">personality</span> <span class="ow">in</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;personalities&#39;</span><span class="p">]:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   </span><span class="si">{</span><span class="n">personality</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">🔧 Additional Testing Commands:&quot;</span><span class="p">)</span>
+<span class="n">test_commands</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;docker-compose run --rm demo python3 scripts/test_human_demo_suite.py&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;docker-compose run --rm demo python3 scripts/test_edge_cases.py&quot;</span><span class="p">,</span> 
+    <span class="s2">&quot;docker-compose run --rm demo python3 scripts/test_websocket_fix.py&quot;</span>
+<span class="p">]</span>
+
+<span class="k">for</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">test_commands</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   </span><span class="si">{</span><span class="n">cmd</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>🧪 Voice AI Testing Guide
+==================================================
+
+📞 AI Calls Human (Outbound)
+Command: docker-compose --profile human run --rm human-demo
+
+Steps:
+   1. Select option 1 (AI calls human)
+   2. Confirm consent: yes
+   3. Enter target phone number
+   4. Choose scenario (1-4)
+
+Available Scenarios:
+   1. Customer Service Inquiry
+   2. Survey/Feedback Request
+   3. Appointment Scheduling
+   4. Friendly Check-in
+
+📞 Human Calls AI (Inbound)
+Command: docker-compose --profile human run --rm human-demo
+
+Steps:
+   1. Select option 2 (Human calls AI)
+   2. Choose personality (1-5)
+   3. Call +1 (857) 816-7225
+
+Available Personalities:
+   1. Professional Assistant
+   2. Customer Service Rep
+   3. Appointment Scheduler
+   4. Information Hotline
+   5. Survey Conductor
+
+🔧 Additional Testing Commands:
+   docker-compose run --rm demo python3 scripts/test_human_demo_suite.py
+   docker-compose run --rm demo python3 scripts/test_edge_cases.py
+   docker-compose run --rm demo python3 scripts/test_websocket_fix.py
+</pre></div>
+</div>
+</div>
+</div>
+</section>
+<section id="performance-monitoring">
+<h2>📈 Performance Monitoring<a class="headerlink" href="#performance-monitoring" title="Link to this heading">#</a></h2>
+<p>Let’s check some basic performance metrics:</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Performance monitoring</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">check_performance</span><span class="p">():</span>
+    <span class="n">metrics</span> <span class="o">=</span> <span class="p">{}</span>
+    
+    <span class="c1"># Health check with timing</span>
+    <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/healthz&quot;</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+        <span class="n">response_time</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span>
+        
+        <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+            <span class="n">health_data</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+            <span class="n">metrics</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="n">health_data</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">],</span>
+                <span class="s2">&quot;uptime&quot;</span><span class="p">:</span> <span class="n">health_data</span><span class="p">[</span><span class="s1">&#39;uptime&#39;</span><span class="p">],</span>
+                <span class="s2">&quot;active_calls&quot;</span><span class="p">:</span> <span class="n">health_data</span><span class="p">[</span><span class="s1">&#39;activeCalls&#39;</span><span class="p">],</span>
+                <span class="s2">&quot;response_time_ms&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">response_time</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">metrics</span><span class="p">[</span><span class="s2">&quot;error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;HTTP </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="si">}</span><span class="s2">&quot;</span>
+            
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">metrics</span><span class="p">[</span><span class="s2">&quot;error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+    
+    <span class="k">return</span> <span class="n">metrics</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;📈 System Performance Check&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">40</span><span class="p">)</span>
+
+<span class="n">perf_data</span> <span class="o">=</span> <span class="n">check_performance</span><span class="p">()</span>
+
+<span class="k">if</span> <span class="s2">&quot;error&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">perf_data</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;✅ Status: </span><span class="si">{</span><span class="n">perf_data</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;⏱️  Response Time: </span><span class="si">{</span><span class="n">perf_data</span><span class="p">[</span><span class="s1">&#39;response_time_ms&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> ms&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;🕐 Uptime: </span><span class="si">{</span><span class="n">perf_data</span><span class="p">[</span><span class="s1">&#39;uptime&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> seconds&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;📞 Active Calls: </span><span class="si">{</span><span class="n">perf_data</span><span class="p">[</span><span class="s1">&#39;active_calls&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    
+    <span class="c1"># Performance assessment</span>
+    <span class="k">if</span> <span class="n">perf_data</span><span class="p">[</span><span class="s1">&#39;response_time_ms&#39;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">100</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;🟢 Excellent response time&quot;</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">perf_data</span><span class="p">[</span><span class="s1">&#39;response_time_ms&#39;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">500</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;🟡 Good response time&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;🔴 Slow response time - check system load&quot;</span><span class="p">)</span>
+        
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;❌ Performance check failed: </span><span class="si">{</span><span class="n">perf_data</span><span class="p">[</span><span class="s1">&#39;error&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">💡 Performance Tips:&quot;</span><span class="p">)</span>
+<span class="n">tips</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;Monitor response times during calls&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Check Docker container resource usage&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Ensure stable internet connection for WebSockets&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Monitor OpenAI API rate limits&quot;</span>
+<span class="p">]</span>
+
+<span class="k">for</span> <span class="n">tip</span> <span class="ow">in</span> <span class="n">tips</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   • </span><span class="si">{</span><span class="n">tip</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>📈 System Performance Check
+========================================
+✅ Status: ok
+⏱️  Response Time: 6.46 ms
+🕐 Uptime: 738519 seconds
+📞 Active Calls: 0
+🟢 Excellent response time
+
+💡 Performance Tips:
+   • Monitor response times during calls
+   • Check Docker container resource usage
+   • Ensure stable internet connection for WebSockets
+   • Monitor OpenAI API rate limits
+</pre></div>
+</div>
+</div>
+</div>
+</section>
+<section id="next-steps">
+<h2>🎯 Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">#</a></h2>
+<p>Congratulations! You’ve completed the Phony Voice AI Quick Start tutorial. Here’s what to explore next:</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Next steps and resources</span>
+<span class="n">next_steps</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;🎭 Customize AI Personality&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Modify system prompts and voices&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;file&quot;</span><span class="p">:</span> <span class="s2">&quot;Edit SYSTEM_PROMPT in .env&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;docs&quot;</span><span class="p">:</span> <span class="s2">&quot;tutorials/custom-agent&quot;</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;🏗️ Production Deployment&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Deploy to production environment&quot;</span><span class="p">,</span> 
+        <span class="s2">&quot;file&quot;</span><span class="p">:</span> <span class="s2">&quot;docker-compose.prod.yml&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;docs&quot;</span><span class="p">:</span> <span class="s2">&quot;tutorials/deployment-guide&quot;</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;🔌 API Integration&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Integrate with existing systems&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;file&quot;</span><span class="p">:</span> <span class="s2">&quot;Check api/ documentation&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;docs&quot;</span><span class="p">:</span> <span class="s2">&quot;api/endpoints&quot;</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;📊 Advanced Monitoring&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Set up analytics and alerts&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;file&quot;</span><span class="p">:</span> <span class="s2">&quot;Dashboard configuration&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;docs&quot;</span><span class="p">:</span> <span class="s2">&quot;ui-guide/dashboard-overview&quot;</span> 
+    <span class="p">},</span>
+    <span class="s2">&quot;👥 Multi-Tenant Setup&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Configure multiple agents/tenants&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;file&quot;</span><span class="p">:</span> <span class="s2">&quot;Multi-tenant configuration&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;docs&quot;</span><span class="p">:</span> <span class="s2">&quot;features/multi-tenant-architecture&quot;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;🎯 Recommended Next Steps&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">50</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">title</span><span class="p">,</span> <span class="n">info</span> <span class="ow">in</span> <span class="n">next_steps</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="si">{</span><span class="n">title</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   📝 </span><span class="si">{</span><span class="n">info</span><span class="p">[</span><span class="s1">&#39;description&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   📁 </span><span class="si">{</span><span class="n">info</span><span class="p">[</span><span class="s1">&#39;file&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;   📚 Documentation: </span><span class="si">{</span><span class="n">info</span><span class="p">[</span><span class="s1">&#39;docs&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">📞 Testing Resources:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;   • Live Demo Number: +1 (857) 816-7225&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;   • Dashboard: http://localhost:24187/dashboard/&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;   • API Docs: http://localhost:24187/docs&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;   • Health Check: http://localhost:24187/healthz&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">🆘 Support:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;   • GitHub Issues: https://github.com/sackio/phony/issues&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;   • Documentation: Full guides in docs/ directory&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;   • Community: Contribute and get help&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">✅ Tutorial Complete! Happy voice AI building! 🎉&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>🎯 Recommended Next Steps
+==================================================
+
+🎭 Customize AI Personality
+   📝 Modify system prompts and voices
+   📁 Edit SYSTEM_PROMPT in .env
+   📚 Documentation: tutorials/custom-agent
+
+🏗️ Production Deployment
+   📝 Deploy to production environment
+   📁 docker-compose.prod.yml
+   📚 Documentation: tutorials/deployment-guide
+
+🔌 API Integration
+   📝 Integrate with existing systems
+   📁 Check api/ documentation
+   📚 Documentation: api/endpoints
+
+📊 Advanced Monitoring
+   📝 Set up analytics and alerts
+   📁 Dashboard configuration
+   📚 Documentation: ui-guide/dashboard-overview
+
+👥 Multi-Tenant Setup
+   📝 Configure multiple agents/tenants
+   📁 Multi-tenant configuration
+   📚 Documentation: features/multi-tenant-architecture
+
+📞 Testing Resources:
+   • Live Demo Number: +1 (857) 816-7225
+   • Dashboard: http://localhost:24187/dashboard/
+   • API Docs: http://localhost:24187/docs
+   • Health Check: http://localhost:24187/healthz
+
+🆘 Support:
+   • GitHub Issues: https://github.com/sackio/phony/issues
+   • Documentation: Full guides in docs/ directory
+   • Community: Contribute and get help
+
+✅ Tutorial Complete! Happy voice AI building! 🎉
+</pre></div>
+</div>
+</div>
+</div>
+</section>
+<div class="toctree-wrapper compound">
+</div>
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./tutorials"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="../guides/getting-started.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">🚀 Getting Started</p>
+      </div>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-you-ll-learn">🎯 What You’ll Learn</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">📋 Prerequisites</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#environment-setup">🔧 Environment Setup</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#health-check">✅ Health Check</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-management">🤖 Agent Management</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#ai-personalities-demo">🎭 AI Personalities Demo</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#making-api-calls">📱 Making API Calls</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dashboard-integration">📊 Dashboard Integration</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#testing-voice-ai-features">🧪 Testing Voice AI Features</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#performance-monitoring">📈 Performance Monitoring</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next-steps">🎯 Next Steps</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By Phony Development Team
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2024.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

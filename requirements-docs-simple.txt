@@ -1,0 +1,5 @@
+# Simplified requirements for faster setup
+jupyter-book
+sphinx-book-theme 
+myst-parser
+sphinx-design

@@ -1,0 +1,1337 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>👥 Multi-Tenant Architecture &#8212; Phony Documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/sphinx-book-theme.css?v=eba8b062" />
+    <link rel="stylesheet" type="text/css" href="../_static/togglebutton.css?v=13237357" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/mystnb.8ecb98da25f57f5357bf6f572d296f466b2cfe2517ffebfabe82451661e28f02.css?v=6644e6bb" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script src="../_static/scripts/sphinx-book-theme.js?v=887ef09a"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../_static/togglebutton.js?v=4a39c7ea"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'features/multi-tenant-architecture';</script>
+    <link rel="canonical" href="https://sackio.github.io/phony/features/multi-tenant-architecture.html" />
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="API Documentation" href="../api/index.html" />
+    <link rel="prev" title="🎙️ Voice AI Core Features" href="voice-ai-core.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search this book..."
+         aria-label="Search this book..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../intro.html">
+  
+  
+  
+  
+  
+  
+    <p class="title logo__title">Phony Documentation</p>
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../intro.html">
+                    Welcome to Phony Voice AI Agent Documentation
+                </a>
+            </li>
+        </ul>
+        <ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../guides/quickstart.html">Quick Start Guide</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="overview.html">Features Overview</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="voice-ai-core.html">🎙️ Voice AI Core Features</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">👥 Multi-Tenant Architecture</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../api/index.html">API Documentation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../ui-guide/overview.html">Dashboard UI Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/basic-setup.html">Tutorial: Basic Setup and Your First Call</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples/customer-service.html">Customer Service Bot Example</a></li>
+</ul>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="overview.html">Features</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="voice-ai-core.html">🎙️ Voice AI Core Features</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">👥 Multi-Tenant Architecture</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../guides/getting-started.html">User Guides</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../api/index.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../tutorials/quickstart.html">Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/sackio/phony" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/sackio/phony/edit/main/docs_site/features/multi-tenant-architecture.md" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/sackio/phony/issues/new?title=Issue%20on%20page%20%2Ffeatures/multi-tenant-architecture.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../_sources/features/multi-tenant-architecture.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm pst-navbar-icon search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<button class="sidebar-toggle secondary-toggle btn btn-sm" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>👥 Multi-Tenant Architecture</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#architecture-overview">🏗️ Architecture Overview</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#system-design">System Design</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tenant-isolation">🔐 Tenant Isolation</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#database-level-separation">Database-Level Separation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#api-level-security">API-Level Security</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#resource-isolation">Resource Isolation</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-deployment-system">🏢 Agent Deployment System</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#complete-implementation">Complete Implementation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-types-configuration">Agent Types &amp; Configuration</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#inbound-agents">Inbound Agents</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#outbound-agents">Outbound Agents</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#hybrid-configuration">Hybrid Configuration</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#phone-number-management">📱 Phone Number Management</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#automatic-twilio-integration">Automatic Twilio Integration</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#number-assignment-features">Number Assignment Features</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#management-dashboard">🎛️ Management Dashboard</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#web-based-agent-management">Web-Based Agent Management</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-cards-view">Agent Cards View</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#real-time-context-editor">Real-Time Context Editor</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#phone-number-assignment-interface">Phone Number Assignment Interface</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#database-architecture">🗄️ Database Architecture</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#mongodb-document-structure">MongoDB Document Structure</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#indexing-strategy">Indexing Strategy</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#real-time-features">🔄 Real-Time Features</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#live-context-updates">Live Context Updates</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#websocket-event-streams">WebSocket Event Streams</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#analytics-reporting">📊 Analytics &amp; Reporting</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#tenant-level-analytics">Tenant-Level Analytics</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#cross-tenant-comparison-admin-view">Cross-Tenant Comparison (Admin View)</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#development-features">🔧 Development Features</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#async-architecture">Async Architecture</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#type-safety-with-pydantic">Type Safety with Pydantic</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#deployment-scaling">🚀 Deployment &amp; Scaling</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#docker-configuration">Docker Configuration</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#environment-configuration">Environment Configuration</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#security-considerations">🔒 Security Considerations</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#authentication-authorization">Authentication &amp; Authorization</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#data-protection">Data Protection</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#compliance-features">Compliance Features</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#best-practices">💡 Best Practices</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#tenant-onboarding">Tenant Onboarding</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#performance-optimization">Performance Optimization</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#monitoring-maintenance">Monitoring &amp; Maintenance</a></li>
+</ul>
+</li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="multi-tenant-architecture">
+<h1>👥 Multi-Tenant Architecture<a class="headerlink" href="#multi-tenant-architecture" title="Link to this heading">#</a></h1>
+<p>Phony’s multi-tenant architecture enables organizations to deploy, manage, and scale multiple AI agents across different departments, clients, or business units while maintaining complete data isolation and security.</p>
+<section id="architecture-overview">
+<h2>🏗️ Architecture Overview<a class="headerlink" href="#architecture-overview" title="Link to this heading">#</a></h2>
+<section id="system-design">
+<h3>System Design<a class="headerlink" href="#system-design" title="Link to this heading">#</a></h3>
+<div class="highlight-mermaid notranslate"><div class="highlight"><pre><span></span>graph TB
+    subgraph &quot;Tenant A&quot;
+        AgentsA[AI Agents]
+        PhoneA[Phone Numbers]
+        DataA[Context Data]
+        CallsA[Call Sessions]
+    end
+    
+    subgraph &quot;Tenant B&quot; 
+        AgentsB[AI Agents]
+        PhoneB[Phone Numbers]
+        DataB[Context Data]
+        CallsB[Call Sessions]
+    end
+    
+    subgraph &quot;Shared Infrastructure&quot;
+        API[FastAPI Backend]
+        MongoDB[(MongoDB)]
+        Redis[(Redis Cache)]
+        Twilio[Twilio API]
+        OpenAI[OpenAI API]
+    end
+    
+    subgraph &quot;Management Layer&quot;
+        Dashboard[Management Dashboard]
+        Analytics[Analytics Engine]
+        Auth[Authentication]
+    end
+    
+    AgentsA --&gt; API
+    AgentsB --&gt; API
+    API --&gt; MongoDB
+    API --&gt; Redis
+    API --&gt; Twilio
+    API --&gt; OpenAI
+    
+    Dashboard --&gt; API
+    Analytics --&gt; MongoDB
+    Auth --&gt; API
+</pre></div>
+</div>
+</section>
+</section>
+<section id="tenant-isolation">
+<h2>🔐 Tenant Isolation<a class="headerlink" href="#tenant-isolation" title="Link to this heading">#</a></h2>
+<section id="database-level-separation">
+<h3>Database-Level Separation<a class="headerlink" href="#database-level-separation" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><strong>Document-based isolation</strong>: Each tenant’s data stored in separate MongoDB collections</p></li>
+<li><p><strong>Index optimization</strong>: Tenant-specific indexes for optimal performance</p></li>
+<li><p><strong>Query filtering</strong>: Automatic tenant context in all database operations</p></li>
+<li><p><strong>Backup isolation</strong>: Separate backup and restore procedures per tenant</p></li>
+</ul>
+</section>
+<section id="api-level-security">
+<h3>API-Level Security<a class="headerlink" href="#api-level-security" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><strong>Tenant authentication</strong>: JWT tokens with tenant context</p></li>
+<li><p><strong>Request validation</strong>: Automatic tenant verification on all endpoints</p></li>
+<li><p><strong>Rate limiting</strong>: Per-tenant API quotas and throttling</p></li>
+<li><p><strong>Access control</strong>: Role-based permissions within tenant scope</p></li>
+</ul>
+</section>
+<section id="resource-isolation">
+<h3>Resource Isolation<a class="headerlink" href="#resource-isolation" title="Link to this heading">#</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Example tenant context in API requests</span>
+<span class="p">{</span>
+    <span class="s2">&quot;tenant_id&quot;</span><span class="p">:</span> <span class="s2">&quot;acme_corp_uuid&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="s2">&quot;user_123&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;roles&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;agent_manager&quot;</span><span class="p">,</span> <span class="s2">&quot;supervisor&quot;</span><span class="p">],</span>
+    <span class="s2">&quot;permissions&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="s2">&quot;agents.create&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;agents.read&quot;</span><span class="p">,</span> 
+        <span class="s2">&quot;agents.update&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;calls.monitor&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;calls.override&quot;</span>
+    <span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="agent-deployment-system">
+<h2>🏢 Agent Deployment System<a class="headerlink" href="#agent-deployment-system" title="Link to this heading">#</a></h2>
+<section id="complete-implementation">
+<h3>Complete Implementation<a class="headerlink" href="#complete-implementation" title="Link to this heading">#</a></h3>
+<p>The agent deployment system provides:</p>
+<ol class="arabic simple">
+<li><p><strong>Visual Agent Management</strong>: Browser-based agent creation and configuration</p></li>
+<li><p><strong>Phone Number Assignment</strong>: Twilio integration with automatic number sync</p></li>
+<li><p><strong>Real-time Context Updates</strong>: Live agent behavior modification during calls</p></li>
+<li><p><strong>Call Analytics</strong>: Per-agent and per-tenant performance metrics</p></li>
+<li><p><strong>Role-Based Access Control</strong>: Granular permission management</p></li>
+</ol>
+</section>
+<section id="agent-types-configuration">
+<h3>Agent Types &amp; Configuration<a class="headerlink" href="#agent-types-configuration" title="Link to this heading">#</a></h3>
+<section id="inbound-agents">
+<h4>Inbound Agents<a class="headerlink" href="#inbound-agents" title="Link to this heading">#</a></h4>
+<ul class="simple">
+<li><p><strong>One-to-one phone mapping</strong>: Each phone number assigned to maximum one inbound agent</p></li>
+<li><p><strong>Automatic call routing</strong>: Incoming calls routed to correct agent based on number</p></li>
+<li><p><strong>Context inheritance</strong>: Tenant-specific business context automatically included</p></li>
+<li><p><strong>Performance tracking</strong>: Call volume, duration, and success metrics</p></li>
+</ul>
+</section>
+<section id="outbound-agents">
+<h4>Outbound Agents<a class="headerlink" href="#outbound-agents" title="Link to this heading">#</a></h4>
+<ul class="simple">
+<li><p><strong>Flexible usage</strong>: Multiple agents can make outbound calls</p></li>
+<li><p><strong>Context injection</strong>: Dynamic context for each outbound call</p></li>
+<li><p><strong>Scenario-based calling</strong>: Pre-configured calling scenarios</p></li>
+<li><p><strong>Consent management</strong>: Built-in consent tracking and validation</p></li>
+</ul>
+</section>
+<section id="hybrid-configuration">
+<h4>Hybrid Configuration<a class="headerlink" href="#hybrid-configuration" title="Link to this heading">#</a></h4>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+    <span class="s2">&quot;agent_id&quot;</span><span class="p">:</span> <span class="s2">&quot;agent_uuid&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;tenant_id&quot;</span><span class="p">:</span> <span class="s2">&quot;tenant_uuid&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Customer Service Agent&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;inbound&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;phone_numbers&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;+18578167225&quot;</span><span class="p">],</span>
+    <span class="s2">&quot;system_prompt&quot;</span><span class="p">:</span> <span class="s2">&quot;You are a customer service representative for </span><span class="si">{company_name}</span><span class="s2">...&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;voice&quot;</span><span class="p">:</span> <span class="s2">&quot;alloy&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;context_data&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;company_name&quot;</span><span class="p">:</span> <span class="s2">&quot;Acme Corp&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;business_hours&quot;</span><span class="p">:</span> <span class="s2">&quot;9 AM - 6 PM EST&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;support_email&quot;</span><span class="p">:</span> <span class="s2">&quot;support@acme.com&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;department&quot;</span><span class="p">:</span> <span class="s2">&quot;customer_service&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;escalation_rules&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;keywords&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;complaint&quot;</span><span class="p">,</span> <span class="s2">&quot;manager&quot;</span><span class="p">,</span> <span class="s2">&quot;cancel&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;target&quot;</span><span class="p">:</span> <span class="s2">&quot;+15551234567&quot;</span>
+        <span class="p">}</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;statistics&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;total_calls&quot;</span><span class="p">:</span> <span class="mi">245</span><span class="p">,</span>
+        <span class="s2">&quot;total_minutes&quot;</span><span class="p">:</span> <span class="mi">980</span><span class="p">,</span>
+        <span class="s2">&quot;average_duration&quot;</span><span class="p">:</span> <span class="mi">240</span><span class="p">,</span>
+        <span class="s2">&quot;success_rate&quot;</span><span class="p">:</span> <span class="mf">0.94</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+</section>
+<section id="phone-number-management">
+<h2>📱 Phone Number Management<a class="headerlink" href="#phone-number-management" title="Link to this heading">#</a></h2>
+<section id="automatic-twilio-integration">
+<h3>Automatic Twilio Integration<a class="headerlink" href="#automatic-twilio-integration" title="Link to this heading">#</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Phone number synchronization</span>
+<span class="p">{</span>
+    <span class="s2">&quot;phone_number&quot;</span><span class="p">:</span> <span class="s2">&quot;+18578167225&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;twilio_sid&quot;</span><span class="p">:</span> <span class="s2">&quot;PN1234567890abcdef&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;friendly_name&quot;</span><span class="p">:</span> <span class="s2">&quot;Customer Service Line&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;capabilities&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;voice&quot;</span><span class="p">,</span> <span class="s2">&quot;sms&quot;</span><span class="p">],</span>
+    <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;assigned&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;assigned_agent&quot;</span><span class="p">:</span> <span class="s2">&quot;agent_uuid&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;tenant_id&quot;</span><span class="p">:</span> <span class="s2">&quot;tenant_uuid&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;webhook_urls&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;voice&quot;</span><span class="p">:</span> <span class="s2">&quot;https://domain.com/receive_call&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;https://domain.com/call_status&quot;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="number-assignment-features">
+<h3>Number Assignment Features<a class="headerlink" href="#number-assignment-features" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><strong>Visual management interface</strong>: Drag-and-drop assignment</p></li>
+<li><p><strong>Availability tracking</strong>: Real-time status of all numbers</p></li>
+<li><p><strong>Automatic webhook configuration</strong>: Twilio webhooks set automatically</p></li>
+<li><p><strong>Conflict prevention</strong>: One number per inbound agent enforcement</p></li>
+<li><p><strong>Batch operations</strong>: Assign multiple numbers efficiently</p></li>
+</ul>
+</section>
+</section>
+<section id="management-dashboard">
+<h2>🎛️ Management Dashboard<a class="headerlink" href="#management-dashboard" title="Link to this heading">#</a></h2>
+<section id="web-based-agent-management">
+<h3>Web-Based Agent Management<a class="headerlink" href="#web-based-agent-management" title="Link to this heading">#</a></h3>
+<p>The complete browser-based interface includes:</p>
+<section id="agent-cards-view">
+<h4>Agent Cards View<a class="headerlink" href="#agent-cards-view" title="Link to this heading">#</a></h4>
+<div class="highlight-html notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- Visual agent representation --&gt;</span>
+<span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;agent-card&quot;</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">h3</span><span class="p">&gt;</span>Customer Service Agent<span class="p">&lt;/</span><span class="nt">h3</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;agent-stats&quot;</span><span class="p">&gt;</span>
+        <span class="p">&lt;</span><span class="nt">span</span><span class="p">&gt;</span>📞 245 calls<span class="p">&lt;/</span><span class="nt">span</span><span class="p">&gt;</span>
+        <span class="p">&lt;</span><span class="nt">span</span><span class="p">&gt;</span>⏱️ 980 minutes<span class="p">&lt;/</span><span class="nt">span</span><span class="p">&gt;</span>
+        <span class="p">&lt;</span><span class="nt">span</span><span class="p">&gt;</span>📊 94% success<span class="p">&lt;/</span><span class="nt">span</span><span class="p">&gt;</span>
+    <span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;phone-numbers&quot;</span><span class="p">&gt;</span>
+        <span class="p">&lt;</span><span class="nt">span</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;phone-assigned&quot;</span><span class="p">&gt;</span>+1 (857) 816-7225<span class="p">&lt;/</span><span class="nt">span</span><span class="p">&gt;</span>
+    <span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;agent-actions&quot;</span><span class="p">&gt;</span>
+        <span class="p">&lt;</span><span class="nt">button</span> <span class="na">onclick</span><span class="o">=</span><span class="s">&quot;editAgent()&quot;</span><span class="p">&gt;</span>Edit<span class="p">&lt;/</span><span class="nt">button</span><span class="p">&gt;</span>
+        <span class="p">&lt;</span><span class="nt">button</span> <span class="na">onclick</span><span class="o">=</span><span class="s">&quot;viewAnalytics()&quot;</span><span class="p">&gt;</span>Analytics<span class="p">&lt;/</span><span class="nt">button</span><span class="p">&gt;</span>
+    <span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+</pre></div>
+</div>
+</section>
+<section id="real-time-context-editor">
+<h4>Real-Time Context Editor<a class="headerlink" href="#real-time-context-editor" title="Link to this heading">#</a></h4>
+<ul class="simple">
+<li><p><strong>Live updates</strong>: Modify agent context during active calls</p></li>
+<li><p><strong>JSON editor</strong>: Structured data editing with validation</p></li>
+<li><p><strong>Template system</strong>: Pre-configured context templates</p></li>
+<li><p><strong>Version history</strong>: Track context changes over time</p></li>
+</ul>
+</section>
+<section id="phone-number-assignment-interface">
+<h4>Phone Number Assignment Interface<a class="headerlink" href="#phone-number-assignment-interface" title="Link to this heading">#</a></h4>
+<ul class="simple">
+<li><p><strong>Available numbers grid</strong>: Visual representation of all Twilio numbers</p></li>
+<li><p><strong>Assignment status</strong>: Clear indication of assigned/available state</p></li>
+<li><p><strong>Drag-and-drop</strong>: Intuitive number assignment</p></li>
+<li><p><strong>Bulk operations</strong>: Manage multiple assignments simultaneously</p></li>
+</ul>
+</section>
+</section>
+</section>
+<section id="database-architecture">
+<h2>🗄️ Database Architecture<a class="headerlink" href="#database-architecture" title="Link to this heading">#</a></h2>
+<section id="mongodb-document-structure">
+<h3>MongoDB Document Structure<a class="headerlink" href="#mongodb-document-structure" title="Link to this heading">#</a></h3>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="c1">// Agents Collection</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="s2">&quot;_id&quot;</span><span class="o">:</span><span class="w"> </span><span class="nx">ObjectId</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">),</span>
+<span class="w">    </span><span class="s2">&quot;tenant_id&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;tenant_uuid&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;name&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Support Agent&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;type&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;inbound&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;phone_numbers&quot;</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;+18578167225&quot;</span><span class="p">],</span>
+<span class="w">    </span><span class="s2">&quot;system_prompt&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;voice&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;alloy&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;context_data&quot;</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="cm">/* tenant-specific context */</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="s2">&quot;is_active&quot;</span><span class="o">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;created_at&quot;</span><span class="o">:</span><span class="w"> </span><span class="nx">ISODate</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">),</span>
+<span class="w">    </span><span class="s2">&quot;updated_at&quot;</span><span class="o">:</span><span class="w"> </span><span class="nx">ISODate</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">),</span>
+<span class="w">    </span><span class="s2">&quot;statistics&quot;</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="s2">&quot;total_calls&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">123</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">&quot;total_minutes&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">456</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">&quot;last_call&quot;</span><span class="o">:</span><span class="w"> </span><span class="nx">ISODate</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// Call Sessions Collection</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="s2">&quot;_id&quot;</span><span class="o">:</span><span class="w"> </span><span class="nx">ObjectId</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">),</span>
+<span class="w">    </span><span class="s2">&quot;tenant_id&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;tenant_uuid&quot;</span><span class="p">,</span><span class="w"> </span>
+<span class="w">    </span><span class="s2">&quot;agent_id&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;agent_uuid&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;call_sid&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;CA1234567890abcdef&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;from_number&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;+15559999999&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;to_number&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;+18578167225&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;direction&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;inbound&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;status&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;completed&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;started_at&quot;</span><span class="o">:</span><span class="w"> </span><span class="nx">ISODate</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">),</span>
+<span class="w">    </span><span class="s2">&quot;ended_at&quot;</span><span class="o">:</span><span class="w"> </span><span class="nx">ISODate</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">),</span>
+<span class="w">    </span><span class="s2">&quot;duration_seconds&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">240</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;context&quot;</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="cm">/* call-specific context */</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="s2">&quot;transcript&quot;</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="cm">/* conversation transcript */</span><span class="w"> </span><span class="p">],</span>
+<span class="w">    </span><span class="s2">&quot;cost&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">0.052</span>
+<span class="p">}</span>
+
+<span class="c1">// Context Updates Collection</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="s2">&quot;_id&quot;</span><span class="o">:</span><span class="w"> </span><span class="nx">ObjectId</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">),</span>
+<span class="w">    </span><span class="s2">&quot;tenant_id&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;tenant_uuid&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;agent_id&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;agent_uuid&quot;</span><span class="p">,</span><span class="w"> </span>
+<span class="w">    </span><span class="s2">&quot;call_sid&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;CA1234567890abcdef&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;context_data&quot;</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="cm">/* updated context */</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="s2">&quot;updated_by&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;user_uuid&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;updated_at&quot;</span><span class="o">:</span><span class="w"> </span><span class="nx">ISODate</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">),</span>
+<span class="w">    </span><span class="s2">&quot;reason&quot;</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Customer escalation&quot;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="indexing-strategy">
+<h3>Indexing Strategy<a class="headerlink" href="#indexing-strategy" title="Link to this heading">#</a></h3>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="c1">// Optimized indexes for multi-tenancy</span>
+<span class="nx">db</span><span class="p">.</span><span class="nx">agents</span><span class="p">.</span><span class="nx">createIndex</span><span class="p">({</span><span class="w"> </span><span class="s2">&quot;tenant_id&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">1</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;is_active&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">1</span><span class="w"> </span><span class="p">})</span>
+<span class="nx">db</span><span class="p">.</span><span class="nx">agents</span><span class="p">.</span><span class="nx">createIndex</span><span class="p">({</span><span class="w"> </span><span class="s2">&quot;tenant_id&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">1</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;phone_numbers&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">1</span><span class="w"> </span><span class="p">})</span>
+<span class="nx">db</span><span class="p">.</span><span class="nx">call_sessions</span><span class="p">.</span><span class="nx">createIndex</span><span class="p">({</span><span class="w"> </span><span class="s2">&quot;tenant_id&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">1</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;started_at&quot;</span><span class="o">:</span><span class="w"> </span><span class="o">-</span><span class="mf">1</span><span class="w"> </span><span class="p">})</span>
+<span class="nx">db</span><span class="p">.</span><span class="nx">call_sessions</span><span class="p">.</span><span class="nx">createIndex</span><span class="p">({</span><span class="w"> </span><span class="s2">&quot;tenant_id&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">1</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;agent_id&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">1</span><span class="w"> </span><span class="p">})</span>
+<span class="nx">db</span><span class="p">.</span><span class="nx">context_updates</span><span class="p">.</span><span class="nx">createIndex</span><span class="p">({</span><span class="w"> </span><span class="s2">&quot;tenant_id&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">1</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;call_sid&quot;</span><span class="o">:</span><span class="w"> </span><span class="mf">1</span><span class="w"> </span><span class="p">})</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="real-time-features">
+<h2>🔄 Real-Time Features<a class="headerlink" href="#real-time-features" title="Link to this heading">#</a></h2>
+<section id="live-context-updates">
+<h3>Live Context Updates<a class="headerlink" href="#live-context-updates" title="Link to this heading">#</a></h3>
+<p>During active calls, supervisors can update agent context in real-time:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Context update API</span>
+<span class="n">PUT</span> <span class="o">/</span><span class="n">api</span><span class="o">/</span><span class="n">calls</span><span class="o">/</span><span class="p">{</span><span class="n">call_sid</span><span class="p">}</span><span class="o">/</span><span class="n">context</span>
+<span class="p">{</span>
+    <span class="s2">&quot;context&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;customer_priority&quot;</span><span class="p">:</span> <span class="s2">&quot;high&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;previous_interactions&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+        <span class="s2">&quot;notes&quot;</span><span class="p">:</span> <span class="s2">&quot;Customer reported billing discrepancy&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;resolution_deadline&quot;</span><span class="p">:</span> <span class="s2">&quot;2024-01-15T17:00:00Z&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;escalation_approved&quot;</span><span class="p">:</span> <span class="n">true</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="websocket-event-streams">
+<h3>WebSocket Event Streams<a class="headerlink" href="#websocket-event-streams" title="Link to this heading">#</a></h3>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="c1">// Real-time event streaming per tenant</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">ws</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nx">WebSocket</span><span class="p">(</span><span class="sb">`wss://api.domain.com/events/ws?tenant_id=</span><span class="si">${</span><span class="nx">tenantId</span><span class="si">}</span><span class="sb">`</span><span class="p">);</span>
+
+<span class="nx">ws</span><span class="p">.</span><span class="nx">onmessage</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="nx">event</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">JSON</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span><span class="nx">event</span><span class="p">.</span><span class="nx">data</span><span class="p">);</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="k">switch</span><span class="p">(</span><span class="nx">data</span><span class="p">.</span><span class="nx">event_type</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">case</span><span class="w"> </span><span class="s1">&#39;agent.created&#39;</span><span class="o">:</span>
+<span class="w">            </span><span class="nx">updateAgentsList</span><span class="p">(</span><span class="nx">data</span><span class="p">.</span><span class="nx">agent</span><span class="p">);</span>
+<span class="w">            </span><span class="k">break</span><span class="p">;</span>
+<span class="w">        </span><span class="k">case</span><span class="w"> </span><span class="s1">&#39;call.started&#39;</span><span class="o">:</span>
+<span class="w">            </span><span class="nx">addActiveCall</span><span class="p">(</span><span class="nx">data</span><span class="p">.</span><span class="nx">call_session</span><span class="p">);</span>
+<span class="w">            </span><span class="k">break</span><span class="p">;</span>
+<span class="w">        </span><span class="k">case</span><span class="w"> </span><span class="s1">&#39;context.updated&#39;</span><span class="o">:</span>
+<span class="w">            </span><span class="nx">refreshAgentContext</span><span class="p">(</span><span class="nx">data</span><span class="p">.</span><span class="nx">agent_id</span><span class="p">,</span><span class="w"> </span><span class="nx">data</span><span class="p">.</span><span class="nx">context</span><span class="p">);</span>
+<span class="w">            </span><span class="k">break</span><span class="p">;</span>
+<span class="w">        </span><span class="k">case</span><span class="w"> </span><span class="s1">&#39;call.ended&#39;</span><span class="o">:</span>
+<span class="w">            </span><span class="nx">updateCallStatistics</span><span class="p">(</span><span class="nx">data</span><span class="p">.</span><span class="nx">call_session</span><span class="p">);</span>
+<span class="w">            </span><span class="k">break</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">};</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="analytics-reporting">
+<h2>📊 Analytics &amp; Reporting<a class="headerlink" href="#analytics-reporting" title="Link to this heading">#</a></h2>
+<section id="tenant-level-analytics">
+<h3>Tenant-Level Analytics<a class="headerlink" href="#tenant-level-analytics" title="Link to this heading">#</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+    <span class="s2">&quot;tenant_id&quot;</span><span class="p">:</span> <span class="s2">&quot;acme_corp_uuid&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;period&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;start&quot;</span><span class="p">:</span> <span class="s2">&quot;2024-01-01T00:00:00Z&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;end&quot;</span><span class="p">:</span> <span class="s2">&quot;2024-01-31T23:59:59Z&quot;</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;summary&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;total_agents&quot;</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span>
+        <span class="s2">&quot;active_agents&quot;</span><span class="p">:</span> <span class="mi">6</span><span class="p">,</span>
+        <span class="s2">&quot;total_calls&quot;</span><span class="p">:</span> <span class="mi">1250</span><span class="p">,</span>
+        <span class="s2">&quot;total_minutes&quot;</span><span class="p">:</span> <span class="mi">4800</span><span class="p">,</span>
+        <span class="s2">&quot;average_call_duration&quot;</span><span class="p">:</span> <span class="mi">230</span><span class="p">,</span>
+        <span class="s2">&quot;success_rate&quot;</span><span class="p">:</span> <span class="mf">0.92</span><span class="p">,</span>
+        <span class="s2">&quot;cost&quot;</span><span class="p">:</span> <span class="mf">1250.75</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;agent_performance&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;agent_id&quot;</span><span class="p">:</span> <span class="s2">&quot;agent_123&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Customer Support&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;calls&quot;</span><span class="p">:</span> <span class="mi">350</span><span class="p">,</span>
+            <span class="s2">&quot;minutes&quot;</span><span class="p">:</span> <span class="mi">1400</span><span class="p">,</span>
+            <span class="s2">&quot;success_rate&quot;</span><span class="p">:</span> <span class="mf">0.94</span>
+        <span class="p">}</span>
+    <span class="p">],</span>
+    <span class="s2">&quot;hourly_distribution&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;9&quot;</span><span class="p">:</span> <span class="mi">45</span><span class="p">,</span> <span class="s2">&quot;10&quot;</span><span class="p">:</span> <span class="mi">78</span><span class="p">,</span> <span class="s2">&quot;11&quot;</span><span class="p">:</span> <span class="mi">92</span><span class="p">,</span> <span class="s2">&quot;12&quot;</span><span class="p">:</span> <span class="mi">65</span><span class="p">,</span>
+        <span class="s2">&quot;13&quot;</span><span class="p">:</span> <span class="mi">85</span><span class="p">,</span> <span class="s2">&quot;14&quot;</span><span class="p">:</span> <span class="mi">110</span><span class="p">,</span> <span class="s2">&quot;15&quot;</span><span class="p">:</span> <span class="mi">98</span><span class="p">,</span> <span class="s2">&quot;16&quot;</span><span class="p">:</span> <span class="mi">77</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="cross-tenant-comparison-admin-view">
+<h3>Cross-Tenant Comparison (Admin View)<a class="headerlink" href="#cross-tenant-comparison-admin-view" title="Link to this heading">#</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+    <span class="s2">&quot;comparison_period&quot;</span><span class="p">:</span> <span class="s2">&quot;2024-01&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;tenants&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;tenant_id&quot;</span><span class="p">:</span> <span class="s2">&quot;acme_corp&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Acme Corporation&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;agents&quot;</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span>
+            <span class="s2">&quot;calls&quot;</span><span class="p">:</span> <span class="mi">1250</span><span class="p">,</span>
+            <span class="s2">&quot;success_rate&quot;</span><span class="p">:</span> <span class="mf">0.92</span><span class="p">,</span>
+            <span class="s2">&quot;cost&quot;</span><span class="p">:</span> <span class="mf">1250.75</span>
+        <span class="p">},</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;tenant_id&quot;</span><span class="p">:</span> <span class="s2">&quot;beta_company&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Beta Company&quot;</span><span class="p">,</span> 
+            <span class="s2">&quot;agents&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+            <span class="s2">&quot;calls&quot;</span><span class="p">:</span> <span class="mi">450</span><span class="p">,</span>
+            <span class="s2">&quot;success_rate&quot;</span><span class="p">:</span> <span class="mf">0.89</span><span class="p">,</span>
+            <span class="s2">&quot;cost&quot;</span><span class="p">:</span> <span class="mf">425.50</span>
+        <span class="p">}</span>
+    <span class="p">],</span>
+    <span class="s2">&quot;system_totals&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;total_tenants&quot;</span><span class="p">:</span> <span class="mi">12</span><span class="p">,</span>
+        <span class="s2">&quot;total_agents&quot;</span><span class="p">:</span> <span class="mi">45</span><span class="p">,</span>
+        <span class="s2">&quot;total_calls&quot;</span><span class="p">:</span> <span class="mi">5200</span><span class="p">,</span>
+        <span class="s2">&quot;system_uptime&quot;</span><span class="p">:</span> <span class="mf">0.9995</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="development-features">
+<h2>🔧 Development Features<a class="headerlink" href="#development-features" title="Link to this heading">#</a></h2>
+<section id="async-architecture">
+<h3>Async Architecture<a class="headerlink" href="#async-architecture" title="Link to this heading">#</a></h3>
+<p>All database operations use async/await for optimal performance:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">motor.motor_asyncio</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncIOMotorClient</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModel</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">AgentRepository</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">:</span> <span class="n">AsyncIOMotorClient</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">phony</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">agents</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">agents</span>
+    
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">create_agent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tenant_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">agent_data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="n">agent_doc</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="o">**</span><span class="n">agent_data</span><span class="p">,</span>
+            <span class="s2">&quot;tenant_id&quot;</span><span class="p">:</span> <span class="n">tenant_id</span><span class="p">,</span>
+            <span class="s2">&quot;created_at&quot;</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">utcnow</span><span class="p">(),</span>
+            <span class="s2">&quot;updated_at&quot;</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">utcnow</span><span class="p">()</span>
+        <span class="p">}</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">agents</span><span class="o">.</span><span class="n">insert_one</span><span class="p">(</span><span class="n">agent_doc</span><span class="p">)</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_agent</span><span class="p">(</span><span class="n">tenant_id</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">inserted_id</span><span class="p">))</span>
+    
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">list_agents</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tenant_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">active_only</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;tenant_id&quot;</span><span class="p">:</span> <span class="n">tenant_id</span><span class="p">}</span>
+        <span class="k">if</span> <span class="n">active_only</span><span class="p">:</span>
+            <span class="n">query</span><span class="p">[</span><span class="s2">&quot;is_active&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+        
+        <span class="n">cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">agents</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">query</span><span class="p">)</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="s2">&quot;created_at&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="n">cursor</span><span class="o">.</span><span class="n">to_list</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+    
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">update_agent_context</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tenant_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">agent_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">agents</span><span class="o">.</span><span class="n">update_one</span><span class="p">(</span>
+            <span class="p">{</span><span class="s2">&quot;_id&quot;</span><span class="p">:</span> <span class="n">ObjectId</span><span class="p">(</span><span class="n">agent_id</span><span class="p">),</span> <span class="s2">&quot;tenant_id&quot;</span><span class="p">:</span> <span class="n">tenant_id</span><span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;$set&quot;</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">&quot;context_data&quot;</span><span class="p">:</span> <span class="n">context</span><span class="p">,</span>
+                    <span class="s2">&quot;updated_at&quot;</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">utcnow</span><span class="p">()</span>
+                <span class="p">}</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span><span class="o">.</span><span class="n">modified_count</span> <span class="o">&gt;</span> <span class="mi">0</span>
+</pre></div>
+</div>
+</section>
+<section id="type-safety-with-pydantic">
+<h3>Type Safety with Pydantic<a class="headerlink" href="#type-safety-with-pydantic" title="Link to this heading">#</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModel</span><span class="p">,</span> <span class="n">validator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">enum</span><span class="w"> </span><span class="kn">import</span> <span class="n">Enum</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">AgentType</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+    <span class="n">INBOUND</span> <span class="o">=</span> <span class="s2">&quot;inbound&quot;</span>
+    <span class="n">OUTBOUND</span> <span class="o">=</span> <span class="s2">&quot;outbound&quot;</span>
+    <span class="n">HYBRID</span> <span class="o">=</span> <span class="s2">&quot;hybrid&quot;</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">VoiceType</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+    <span class="n">ALLOY</span> <span class="o">=</span> <span class="s2">&quot;alloy&quot;</span>
+    <span class="n">ECHO</span> <span class="o">=</span> <span class="s2">&quot;echo&quot;</span> 
+    <span class="n">FABLE</span> <span class="o">=</span> <span class="s2">&quot;fable&quot;</span>
+    <span class="n">ONYX</span> <span class="o">=</span> <span class="s2">&quot;onyx&quot;</span>
+    <span class="n">NOVA</span> <span class="o">=</span> <span class="s2">&quot;nova&quot;</span>
+    <span class="n">SHIMMER</span> <span class="o">=</span> <span class="s2">&quot;shimmer&quot;</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Agent</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+    <span class="nb">id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">tenant_id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="nb">type</span><span class="p">:</span> <span class="n">AgentType</span>
+    <span class="n">phone_numbers</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">system_prompt</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">voice</span><span class="p">:</span> <span class="n">VoiceType</span> <span class="o">=</span> <span class="n">VoiceType</span><span class="o">.</span><span class="n">ALLOY</span>
+    <span class="n">greeting_message</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">context_data</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">is_active</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">max_call_duration</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1800</span>  <span class="c1"># 30 minutes default</span>
+    
+    <span class="nd">@validator</span><span class="p">(</span><span class="s1">&#39;phone_numbers&#39;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_phone_numbers</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">number</span> <span class="ow">in</span> <span class="n">v</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">number</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;+&#39;</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;Phone numbers must include country code&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">v</span>
+    
+    <span class="nd">@validator</span><span class="p">(</span><span class="s1">&#39;system_prompt&#39;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_system_prompt</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span> <span class="o">&lt;</span> <span class="mi">10</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;System prompt must be at least 10 characters&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">v</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">CallSession</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+    <span class="nb">id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">tenant_id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">agent_id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">call_sid</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">from_number</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">to_number</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">direction</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># &quot;inbound&quot; or &quot;outbound&quot;</span>
+    <span class="n">status</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">started_at</span><span class="p">:</span> <span class="n">datetime</span>
+    <span class="n">ended_at</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">duration_seconds</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">context</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">transcript</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">cost</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="deployment-scaling">
+<h2>🚀 Deployment &amp; Scaling<a class="headerlink" href="#deployment-scaling" title="Link to this heading">#</a></h2>
+<section id="docker-configuration">
+<h3>Docker Configuration<a class="headerlink" href="#docker-configuration" title="Link to this heading">#</a></h3>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># docker-compose.yml with multi-tenancy</span>
+<span class="nt">services</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">backend</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">build</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">.</span>
+<span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">MONGODB_URL=mongodb://mongodb:27017</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">REDIS_URL=redis://redis:6379</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">MULTI_TENANT_MODE=true</span>
+<span class="w">    </span><span class="nt">depends_on</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mongodb</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">redis</span>
+<span class="w">  </span>
+<span class="w">  </span><span class="nt">mongodb</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mongo:7</span>
+<span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">MONGO_INITDB_DATABASE=phony</span>
+<span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mongodb_data:/data/db</span>
+<span class="w">  </span>
+<span class="w">  </span><span class="nt">redis</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">redis:alpine</span>
+<span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">redis_data:/data</span>
+
+<span class="nt">volumes</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">mongodb_data</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">redis_data</span><span class="p">:</span>
+</pre></div>
+</div>
+</section>
+<section id="environment-configuration">
+<h3>Environment Configuration<a class="headerlink" href="#environment-configuration" title="Link to this heading">#</a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Multi-tenant specific settings</span>
+<span class="nv">MULTI_TENANT_MODE</span><span class="o">=</span><span class="nb">true</span>
+<span class="nv">TENANT_ISOLATION_LEVEL</span><span class="o">=</span>database<span class="w">  </span><span class="c1"># database, schema, or cluster</span>
+<span class="nv">DEFAULT_TENANT_LIMITS</span><span class="o">=</span><span class="s1">&#39;{&quot;agents&quot;: 10, &quot;calls_per_hour&quot;: 1000}&#39;</span>
+<span class="nv">TENANT_ONBOARDING_AUTO</span><span class="o">=</span><span class="nb">true</span>
+<span class="nv">CROSS_TENANT_ANALYTICS</span><span class="o">=</span><span class="nb">false</span>
+
+<span class="c1"># MongoDB settings</span>
+<span class="nv">MONGODB_URL</span><span class="o">=</span>mongodb://localhost:27017
+<span class="nv">MONGODB_DATABASE</span><span class="o">=</span>phony
+<span class="nv">MONGODB_POOL_SIZE</span><span class="o">=</span><span class="m">50</span>
+<span class="nv">MONGODB_MAX_IDLE_TIME</span><span class="o">=</span><span class="m">30</span>
+
+<span class="c1"># Redis settings for session management</span>
+<span class="nv">REDIS_URL</span><span class="o">=</span>redis://localhost:6379
+<span class="nv">REDIS_KEY_PREFIX</span><span class="o">=</span>phony:tenant:
+<span class="nv">REDIS_SESSION_TTL</span><span class="o">=</span><span class="m">3600</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="security-considerations">
+<h2>🔒 Security Considerations<a class="headerlink" href="#security-considerations" title="Link to this heading">#</a></h2>
+<section id="authentication-authorization">
+<h3>Authentication &amp; Authorization<a class="headerlink" href="#authentication-authorization" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><strong>JWT tokens</strong>: Tenant context embedded in tokens</p></li>
+<li><p><strong>Role-based access</strong>: Granular permissions per tenant</p></li>
+<li><p><strong>API key management</strong>: Tenant-specific API keys</p></li>
+<li><p><strong>Session isolation</strong>: Redis sessions with tenant prefixes</p></li>
+</ul>
+</section>
+<section id="data-protection">
+<h3>Data Protection<a class="headerlink" href="#data-protection" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><strong>Encryption at rest</strong>: MongoDB encryption enabled</p></li>
+<li><p><strong>Encryption in transit</strong>: TLS 1.3 for all connections</p></li>
+<li><p><strong>PII handling</strong>: Automatic redaction and anonymization</p></li>
+<li><p><strong>Audit logging</strong>: Complete audit trail per tenant</p></li>
+</ul>
+</section>
+<section id="compliance-features">
+<h3>Compliance Features<a class="headerlink" href="#compliance-features" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><strong>GDPR compliance</strong>: Data portability and deletion</p></li>
+<li><p><strong>HIPAA considerations</strong>: Healthcare data handling</p></li>
+<li><p><strong>SOC 2 preparation</strong>: Security control framework</p></li>
+<li><p><strong>Tenant data isolation</strong>: Complete separation guarantees</p></li>
+</ul>
+</section>
+</section>
+<section id="best-practices">
+<h2>💡 Best Practices<a class="headerlink" href="#best-practices" title="Link to this heading">#</a></h2>
+<section id="tenant-onboarding">
+<h3>Tenant Onboarding<a class="headerlink" href="#tenant-onboarding" title="Link to this heading">#</a></h3>
+<ol class="arabic simple">
+<li><p><strong>Initial setup</strong>: Create tenant with default configuration</p></li>
+<li><p><strong>Agent creation</strong>: Start with one inbound agent</p></li>
+<li><p><strong>Phone assignment</strong>: Assign primary business number</p></li>
+<li><p><strong>Testing</strong>: Verify inbound call routing</p></li>
+<li><p><strong>Training</strong>: Provide dashboard training and documentation</p></li>
+</ol>
+</section>
+<section id="performance-optimization">
+<h3>Performance Optimization<a class="headerlink" href="#performance-optimization" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><strong>Database indexing</strong>: Tenant-aware indexes for all queries</p></li>
+<li><p><strong>Connection pooling</strong>: Efficient database connection management</p></li>
+<li><p><strong>Caching strategy</strong>: Redis caching with tenant isolation</p></li>
+<li><p><strong>Resource limits</strong>: Per-tenant quotas and throttling</p></li>
+</ul>
+</section>
+<section id="monitoring-maintenance">
+<h3>Monitoring &amp; Maintenance<a class="headerlink" href="#monitoring-maintenance" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><strong>Health checks</strong>: Per-tenant system health monitoring</p></li>
+<li><p><strong>Performance metrics</strong>: Tenant-specific performance tracking</p></li>
+<li><p><strong>Automated backups</strong>: Tenant data backup and restore procedures</p></li>
+<li><p><strong>Update procedures</strong>: Zero-downtime updates with tenant isolation</p></li>
+</ul>
+<hr class="docutils" />
+<p><em>Next: <span class="xref std std-doc">docker-deployment</span> - Complete deployment guide</em></p>
+</section>
+</section>
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./features"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="voice-ai-core.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">🎙️ Voice AI Core Features</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="../api/index.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">API Documentation</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#architecture-overview">🏗️ Architecture Overview</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#system-design">System Design</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tenant-isolation">🔐 Tenant Isolation</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#database-level-separation">Database-Level Separation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#api-level-security">API-Level Security</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#resource-isolation">Resource Isolation</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-deployment-system">🏢 Agent Deployment System</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#complete-implementation">Complete Implementation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-types-configuration">Agent Types &amp; Configuration</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#inbound-agents">Inbound Agents</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#outbound-agents">Outbound Agents</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#hybrid-configuration">Hybrid Configuration</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#phone-number-management">📱 Phone Number Management</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#automatic-twilio-integration">Automatic Twilio Integration</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#number-assignment-features">Number Assignment Features</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#management-dashboard">🎛️ Management Dashboard</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#web-based-agent-management">Web-Based Agent Management</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#agent-cards-view">Agent Cards View</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#real-time-context-editor">Real-Time Context Editor</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#phone-number-assignment-interface">Phone Number Assignment Interface</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#database-architecture">🗄️ Database Architecture</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#mongodb-document-structure">MongoDB Document Structure</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#indexing-strategy">Indexing Strategy</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#real-time-features">🔄 Real-Time Features</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#live-context-updates">Live Context Updates</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#websocket-event-streams">WebSocket Event Streams</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#analytics-reporting">📊 Analytics &amp; Reporting</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#tenant-level-analytics">Tenant-Level Analytics</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#cross-tenant-comparison-admin-view">Cross-Tenant Comparison (Admin View)</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#development-features">🔧 Development Features</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#async-architecture">Async Architecture</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#type-safety-with-pydantic">Type Safety with Pydantic</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#deployment-scaling">🚀 Deployment &amp; Scaling</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#docker-configuration">Docker Configuration</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#environment-configuration">Environment Configuration</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#security-considerations">🔒 Security Considerations</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#authentication-authorization">Authentication &amp; Authorization</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#data-protection">Data Protection</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#compliance-features">Compliance Features</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#best-practices">💡 Best Practices</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#tenant-onboarding">Tenant Onboarding</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#performance-optimization">Performance Optimization</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#monitoring-maintenance">Monitoring &amp; Maintenance</a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By Phony Development Team
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2024.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
