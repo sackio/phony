@@ -137,5 +137,25 @@ services:
     volumes:
       - mongodb_data:/data/db
 
+  docs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: phony-docs
+    volumes:
+      - ./docs_site:/app/docs_site
+      - ./requirements-docs.txt:/app/requirements-docs.txt
+    working_dir: /app
+    command: >
+      sh -c "
+        pip install -r requirements-docs.txt &&
+        cd docs_site &&
+        jupyter-book build . --path-output _build
+      "
+    ports:
+      - "8080:8080"
+    profiles:
+      - docs
+
 volumes:
   mongodb_data:

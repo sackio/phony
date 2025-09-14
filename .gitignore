@@ -325,3 +325,20 @@ test-screenshots/
 test_human_demo.py
 run_demo.py
 node_modules/
+
+# Build artifacts and cache
+.pytest_cache/
+venv*/
+_build/
+dist/
+build/
+
+# Documentation build outputs
+docs_site/_build/
+docs_site/.jupyter_cache/
+
+# One-off scripts (to prevent accumulation)
+*_runner.py
+final_*.py
+validate_*.py
+comprehensive_*.py
