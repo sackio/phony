@@ -8,7 +8,7 @@ echo "🚀 Phony Documentation Deployment"
 echo "=================================="
 
 # Configuration
-DOCS_BUILD_DIR="docs_site/_build/html"
+DOCS_BUILD_DIR="docs/_build/html"
 PROJECT_NAME="phony-docs"
 VERSION=$(date +%Y%m%d-%H%M%S)
 
@@ -172,7 +172,7 @@ deploy_docker() {
 FROM nginx:alpine
 
 # Copy documentation files
-COPY docs_site/_build/html /usr/share/nginx/html
+COPY docs/_build/html /usr/share/nginx/html
 
 # Custom nginx configuration
 RUN echo 'server {' > /etc/nginx/conf.d/default.conf && \
@@ -346,7 +346,7 @@ deploy_netlify() {
     # Create netlify.toml configuration
     cat > netlify.toml << EOF
 [build]
-  publish = "docs_site/_build/html"
+  publish = "docs/_build/html"
   command = "./build-docs.sh"
 
 [build.environment]
@@ -395,14 +395,14 @@ deploy_vercel() {
   "name": "$PROJECT_NAME",
   "builds": [
     {
-      "src": "docs_site/_build/html/**",
+      "src": "docs/_build/html/**",
       "use": "@vercel/static"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "/docs_site/_build/html/\$1"
+      "dest": "/docs/_build/html/\$1"
     }
   ],
   "headers": [

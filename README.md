@@ -16,6 +16,9 @@ Phony is a production-ready voice AI agent that enables natural phone conversati
 - **🐳 Docker Ready**: Full containerization with Docker Compose
 - **✅ 100% Test Coverage**: Comprehensive test suite with edge cases
 - **🌐 Production Deployed**: Ready for enterprise use
+- **🏢 Multi-tenant Support**: Enterprise-grade tenant isolation and management
+- **🔧 Agent Deployment System**: Sophisticated call handling and routing
+- **📈 Real-time Analytics**: Call monitoring and performance metrics
 
 ## 📸 Screenshots
 
@@ -44,7 +47,7 @@ The dashboard provides real-time call monitoring with:
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/phony.git
+git clone https://github.com/sackio/phony.git
 cd phony
 
 # Copy environment files
@@ -103,6 +106,25 @@ docker-compose --profile human run --rm human-demo
 ### 5. Monitor Calls
 
 Open dashboard: http://localhost:24187/dashboard/index.html?callSid={CALL_SID}
+
+### 6. Enterprise Multi-tenant Setup (Optional)
+
+For production deployments with multiple tenants:
+
+```bash
+# Start with MongoDB for tenant data
+docker-compose up -d backend mongodb redis
+
+# Access tenant management
+curl -X POST http://localhost:24187/tenants \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Acme Corp", "subdomain": "acme"}'
+
+# Configure tenant-specific agents
+curl -X POST http://localhost:24187/agents \
+  -H "Content-Type: application/json" \
+  -d '{"tenant_id": "...", "name": "Customer Support", "personality": "professional"}'
+```
 
 ## 📞 Available Phone Numbers
 
@@ -357,7 +379,7 @@ This project is licensed under the MIT License - see [LICENSE](./LICENSE) file f
 ## 📞 Support
 
 - **Documentation**: [CLAUDE.md](./CLAUDE.md)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/phony/issues)
+- **Issues**: [GitHub Issues](https://github.com/sackio/phony/issues)
 - **Demo Numbers**: +1 (857) 816-7225
 
 ---

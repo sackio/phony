@@ -12,7 +12,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-DOCS_DIR="docs_site"
+DOCS_DIR="docs"
 BUILD_DIR="${DOCS_DIR}/_build"
 HTML_DIR="${BUILD_DIR}/html"
 PYTHON_ENV="venv"

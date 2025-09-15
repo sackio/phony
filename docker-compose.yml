@@ -143,13 +143,13 @@ services:
       dockerfile: Dockerfile
     container_name: phony-docs
     volumes:
-      - ./docs_site:/app/docs_site
+      - ./docs:/app/docs
       - ./requirements-docs.txt:/app/requirements-docs.txt
     working_dir: /app
     command: >
       sh -c "
         pip install -r requirements-docs.txt &&
-        cd docs_site &&
+        cd docs &&
         jupyter-book build . --path-output _build
       "
     ports:

@@ -78,12 +78,22 @@ Phone Call → Twilio → WebSocket → FastAPI Backend → OpenAI Realtime API
 #### Backend (`backend/` directory)
 - `main.py` - FastAPI application entry point
 - `relay_ws.py` - Twilio ConversationRelay WebSocket handler
+- `tenant_relay_ws.py` - Multi-tenant WebSocket handling
 - `openai_ws.py` - OpenAI Realtime API integration
 - `override_api.py` - Supervisor intervention endpoints
+- `agent_api.py` - Agent management endpoints
+- `tenant_api.py` - Multi-tenant management API
+- `agent_call_handler.py` - Agent-specific call routing
+- `database.py` - MongoDB database layer
+- `models.py` - Pydantic data models
 - `events.py` - Real-time event streaming
 - `commands.py` - LLM command parser
 - `twiml.py` - TwiML response generation
 - `logging.py` - Structured JSON logging
+- `auth.py` - Authentication middleware
+- `tenant_middleware.py` - Tenant isolation middleware
+- `session_manager.py` - Call session management
+- `twilio_integration.py` - Twilio service integration
 
 #### Scripts (`scripts/` directory)
 - `setup_twilio.py` - Configure Twilio phone numbers
@@ -244,6 +254,45 @@ docker-compose --profile human run --rm human-demo
 - `WS /events/ws?callSid=CA123` - Event stream
 - `GET /healthz` - Health check
 - `GET /dashboard/` - Web UI
+
+### Multi-tenant API Endpoints
+
+#### Tenant Management
+- `POST /tenants` - Create new tenant
+  ```json
+  {
+    "name": "Acme Corp",
+    "subdomain": "acme",
+    "max_agents": 10,
+    "max_concurrent_calls": 50
+  }
+  ```
+
+- `GET /tenants` - List all tenants
+- `GET /tenants/{tenant_id}` - Get tenant details
+- `PATCH /tenants/{tenant_id}` - Update tenant settings
+
+#### Agent Management
+- `POST /agents` - Create agent for tenant
+  ```json
+  {
+    "tenant_id": "uuid",
+    "name": "Customer Support",
+    "personality": "professional",
+    "phone_number": "+15551234567",
+    "system_prompt": "You are a customer support agent..."
+  }
+  ```
+
+- `GET /agents` - List agents (tenant-scoped)
+- `PATCH /agents/{agent_id}` - Update agent configuration
+- `DELETE /agents/{agent_id}` - Remove agent
+
+#### Call Management
+- `GET /calls` - List calls (tenant-scoped)
+- `GET /calls/{call_id}` - Get call details and transcript
+- `POST /calls/{call_id}/end` - Terminate call
+- `POST /calls/{call_id}/transfer` - Transfer call
 
 ### LLM Commands
 The AI can execute these commands in responses:

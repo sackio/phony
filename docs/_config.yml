@@ -1,0 +1,42 @@
+# Jupyter Book Configuration
+title: "Phony - Voice AI Agent Documentation"
+author: "Phony Development Team"
+logo: "_static/images/logo.png"
+copyright: "2024"
+
+# Force re-execution of notebooks on each build
+execute:
+  execute_notebooks: force
+
+# Information about where the book exists on the web
+repository:
+  url: https://github.com/sackio/phony
+  path_to_book: docs
+  branch: main
+
+# Add GitHub buttons to your book
+html:
+  use_issues_button: true
+  use_repository_button: true
+  use_edit_page_button: true
+  baseurl: https://sackio.github.io/phony/
+
+# Advanced options
+sphinx:
+  extra_extensions:
+    - sphinx.ext.autodoc
+    - sphinx.ext.napoleon
+    - sphinx.ext.viewcode
+    - sphinx_design
+  config:
+    html_theme: sphinx_book_theme
+    html_title: "Phony Documentation"
+    html_static_path: ["_static"]
+    html_css_files:
+      - custom.css
+
+# Exclude patterns
+exclude_patterns:
+  - _build
+  - .DS_Store
+  - "**.ipynb_checkpoints"
