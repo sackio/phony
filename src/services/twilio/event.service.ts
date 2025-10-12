@@ -111,6 +111,12 @@ export class TwilioEventService {
         this.callState.responseStartTimestampTwilio = null;
         this.callState.latestMediaTimestamp = 0;
 
+        // Extract voice from custom parameters if provided
+        const voice = data.start.customParameters.voice || 'sage';
+        this.callState.voice = voice;
+
+        console.log('[Twilio Start] Initializing call with voice:', voice);
+
         this.contextService.initializeCallState(this.callState, data.start.customParameters.fromNumber, data.start.customParameters.toNumber);
         this.contextService.setupConversationContext(this.callState, data.start.customParameters.callContext);
         this.callState.callSid = data.start.callSid;

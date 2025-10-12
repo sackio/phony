@@ -54,6 +54,9 @@ export class VoiceServer {
         const fromNumber = req.body.From;
         const toNumber = req.body.To;
         const callContext = req.query.callContext?.toString();
+        const voice = req.query.voice?.toString() || 'sage';
+
+        console.log('[Voice Server] Creating call with voice:', voice);
 
         const twiml = new VoiceResponse();
         const connect = twiml.connect();
@@ -65,6 +68,7 @@ export class VoiceServer {
         stream.parameter({ name: 'fromNumber', value: fromNumber });
         stream.parameter({ name: 'toNumber', value: toNumber });
         stream.parameter({ name: 'callContext', value: callContext });
+        stream.parameter({ name: 'voice', value: voice });
 
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         res.end(twiml.toString());

@@ -7,7 +7,7 @@ import { SHOW_TIMING_MATH } from '../../config/constants.js';
  */
 export class OpenAIWsService {
     private webSocket: WebSocket | null = null;
-    private readonly config: OpenAIConfig;
+    private config: OpenAIConfig;
 
     /**
      * Create a new OpenAI service
@@ -15,6 +15,15 @@ export class OpenAIWsService {
      */
     constructor(config: OpenAIConfig) {
         this.config = config;
+    }
+
+    /**
+     * Update the voice setting
+     * @param voice The new voice to use
+     */
+    public updateVoice(voice: string): void {
+        this.config.voice = voice;
+        console.log('[OpenAI WS] Voice updated to:', voice);
     }
 
     /**

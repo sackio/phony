@@ -32,10 +32,11 @@ export class OpenAICallHandler {
         this.twilioCallService = new TwilioCallService(twilioClient);
 
         // Initialize OpenAI service
+        // Note: voice will be updated from callState after Twilio start event
         const openAIConfig: OpenAIConfig = {
             apiKey: process.env.OPENAI_API_KEY || '',
             websocketUrl: process.env.OPENAI_WEBSOCKET_URL || 'wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview',
-            voice: VOICE,
+            voice: this.callState.voice || VOICE,
             temperature: 0.6
         };
         this.openAIService = new OpenAIWsService(openAIConfig);
@@ -79,7 +80,11 @@ export class OpenAICallHandler {
         this.openAIService.initialize(
             (data) => this.openAIEventProcessor.processMessage(data),
             () => {
-                setTimeout(() => this.openAIService.initializeSession(this.callState.callContext), 100);
+                // Update voice from callState before initializing session
+                setTimeout(() => {
+                    this.openAIService.updateVoice(this.callState.voice);
+                    this.openAIService.initializeSession(this.callState.callContext);
+                }, 100);
             },
             (error) => console.error('Error in the OpenAI WebSocket:', error)
         );

@@ -25,6 +25,7 @@ export class CallState {
     callContext = '';
     initialMessage = '';
     conversationHistory: ConversationMessage[] = [];
+    voice = 'sage'; // Default voice
 
     // Speech state
     speaking = false;
