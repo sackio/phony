@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import ngrok from '@ngrok/ngrok';
 import { isPortInUse } from './utils/execution-utils.js';
 import { VoiceCallMcpServer } from './servers/mcp.server.js';
 import { TwilioCallService } from './services/twilio/call.service.js';
@@ -15,7 +14,7 @@ const REQUIRED_ENV_VARS = [
     'TWILIO_ACCOUNT_SID',
     'TWILIO_AUTH_TOKEN',
     'OPENAI_API_KEY',
-    'NGROK_AUTHTOKEN',
+    'PUBLIC_URL',
     'TWILIO_NUMBER'
 ] as const;
 
@@ -43,34 +42,25 @@ function setupPort(): number {
 }
 
 /**
- * Establishes ngrok tunnel for external access
- * @param portNumber - The port number to forward
- * @returns The public URL provided by ngrok
+ * Gets the public URL from environment variable
+ * @returns The public URL for Twilio callbacks
  */
-async function setupNgrokTunnel(portNumber: number): Promise<string> {
-    const listener = await ngrok.forward({
-        addr: portNumber,
-        authtoken_from_env: true
-    });
-
-    const twilioCallbackUrl = listener.url();
-    if (!twilioCallbackUrl) {
-        throw new Error('Failed to obtain ngrok URL');
+function getPublicUrl(): string {
+    const publicUrl = process.env.PUBLIC_URL;
+    if (!publicUrl) {
+        throw new Error('PUBLIC_URL environment variable is required');
     }
 
-    return twilioCallbackUrl;
+    // Remove trailing slash if present
+    return publicUrl.replace(/\/$/, '');
 }
 
 /**
  * Sets up graceful shutdown handlers
  */
 function setupShutdownHandlers(): void {
-    process.on('SIGINT', async () => {
-        try {
-            await ngrok.disconnect();
-        } catch (err) {
-            console.error('Error killing ngrok:', err);
-        }
+    process.on('SIGINT', () => {
+        console.log('\nGracefully shutting down...');
         process.exit(0);
     });
 }
@@ -115,12 +105,15 @@ async function main(): Promise<void> {
             return;
         }
 
-        // Establish ngrok connectivity
-        const twilioCallbackUrl = await setupNgrokTunnel(portNumber);
+        // Get the public URL for Twilio callbacks
+        const twilioCallbackUrl = getPublicUrl();
 
         // Start the main HTTP server
         const server = new VoiceServer(twilioCallbackUrl, sessionManager);
         server.start();
+
+        console.log(`Voice server listening on port ${portNumber}`);
+        console.log(`Public URL: ${twilioCallbackUrl}`);
 
         const mcpServer = new VoiceCallMcpServer(twilioCallService, twilioCallbackUrl);
         await mcpServer.start();

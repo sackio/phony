@@ -43,6 +43,10 @@ export class TwilioWsService {
         };
         this.webSocket.send(JSON.stringify(markEvent));
         this.callState.markQueue.push('responsePart');
+
+        if (SHOW_TIMING_MATH) {
+            console.log(`[Twilio Mark] Sent mark, queue length: ${this.callState.markQueue.length}`);
+        }
     }
 
     /**

@@ -10,6 +10,7 @@ export class OpenAIEventService {
     private readonly callState: CallState;
     private readonly onEndCall: () => void;
     private readonly onSendAudioToTwilio: (payload: string) => void;
+    private readonly onSendMark: () => void;
     private readonly onTruncateResponse: () => void;
 
     /**
@@ -17,17 +18,20 @@ export class OpenAIEventService {
      * @param callState The state of the call
      * @param onEndCall Callback for ending the call
      * @param onSendAudioToTwilio Callback for sending audio to Twilio
+     * @param onSendMark Callback for sending mark to Twilio
      * @param onTruncateResponse Callback for truncating the response
      */
     constructor(
         callState: CallState,
         onEndCall: () => void,
         onSendAudioToTwilio: (payload: string) => void,
+        onSendMark: () => void,
         onTruncateResponse: () => void
     ) {
         this.callState = callState;
         this.onEndCall = onEndCall;
         this.onSendAudioToTwilio = onSendAudioToTwilio;
+        this.onSendMark = onSendMark;
         this.onTruncateResponse = onTruncateResponse;
     }
 
@@ -40,7 +44,7 @@ export class OpenAIEventService {
             const response = JSON.parse(data.toString());
 
             if (LOG_EVENT_TYPES.includes(response.type)) {
-                // console.log(`Received event: ${response.type}`, response);
+                console.log(`[OpenAI Event] ${response.type}`, response);
             }
 
             this.processEvent(response);
@@ -67,6 +71,7 @@ export class OpenAIEventService {
             }
             break;
         case 'input_audio_buffer.speech_started':
+            console.log('[OpenAI Event] Speech started detected - triggering truncation');
             this.onTruncateResponse();
             break;
         }
@@ -113,10 +118,13 @@ export class OpenAIEventService {
     private handleAudioDelta(response: any): void {
         this.onSendAudioToTwilio(response.delta);
 
+        // Send a mark after audio to track playback position for interruptions
+        this.onSendMark();
+
         if (!this.callState.responseStartTimestampTwilio) {
             this.callState.responseStartTimestampTwilio = this.callState.latestMediaTimestamp;
             if (SHOW_TIMING_MATH) {
-                // console.log(`Setting start timestamp for new response: ${this.callState.responseStartTimestampTwilio}ms`);
+                console.log(`[Audio Delta] Setting start timestamp for new response: ${this.callState.responseStartTimestampTwilio}ms`);
             }
         }
 

@@ -71,8 +71,9 @@ export class TwilioEventService {
      */
     private async handleMediaEvent(data: any): Promise<void> {
         this.callState.latestMediaTimestamp = data.media.timestamp;
-        if (SHOW_TIMING_MATH) {
-            // console.log(`Received media message with timestamp: ${this.callState.latestMediaTimestamp}ms`);
+        // Reduced logging - only log every 50th packet to avoid spam
+        if (SHOW_TIMING_MATH && data.media.timestamp % 1000 === 0) {
+            console.log(`[Twilio Media] Received audio, timestamp: ${this.callState.latestMediaTimestamp}ms`);
         }
 
         await this.handleFirstMediaEventIfNeeded();

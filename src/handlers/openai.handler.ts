@@ -45,6 +45,7 @@ export class OpenAICallHandler {
             this.callState,
             () => this.endCall(),
             (payload) => this.twilioStream.sendAudio(payload),
+            () => this.twilioStream.sendMark(),
             () => this.handleSpeechStartedEvent()
         );
 
@@ -85,11 +86,34 @@ export class OpenAICallHandler {
     }
 
     private handleSpeechStartedEvent(): void {
-        if (this.callState.markQueue.length === 0 || this.callState.responseStartTimestampTwilio === null || !this.callState.lastAssistantItemId) {
+        console.log('[Speech Interrupt] Speech started event received');
+        console.log('[Speech Interrupt] State check:', {
+            markQueueLength: this.callState.markQueue.length,
+            responseStartTimestamp: this.callState.responseStartTimestampTwilio,
+            lastAssistantItemId: this.callState.lastAssistantItemId,
+            latestMediaTimestamp: this.callState.latestMediaTimestamp
+        });
+
+        if (this.callState.markQueue.length === 0) {
+            console.log('[Speech Interrupt] Skipping - markQueue is empty');
+            return;
+        }
+
+        if (this.callState.responseStartTimestampTwilio === null) {
+            console.log('[Speech Interrupt] Skipping - responseStartTimestamp is null');
+            return;
+        }
+
+        if (!this.callState.lastAssistantItemId) {
+            console.log('[Speech Interrupt] Skipping - lastAssistantItemId is missing');
             return;
         }
 
         const elapsedTime = this.callState.latestMediaTimestamp - this.callState.responseStartTimestampTwilio;
+        console.log('[Speech Interrupt] Truncating assistant response:', {
+            itemId: this.callState.lastAssistantItemId,
+            elapsedTime
+        });
 
         this.openAIService.truncateAssistantResponse(this.callState.lastAssistantItemId, elapsedTime);
         this.twilioStream.clearStream();

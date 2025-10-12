@@ -35,7 +35,7 @@ sequenceDiagram
 - Process call audio in real-time with GPT-4o Realtime model 🎙️
 - Real-time language switching during calls 🌐
 - Pre-built prompts for common calling scenarios (like restaurant reservations) 🍽️
-- Automatic public URL tunneling with ngrok 🔄
+- Public URL support via nginx reverse proxy 🔄
 - Secure handling of credentials 🔒
 
 ## Why MCP?
@@ -58,7 +58,7 @@ This open-source implementation provides transparency and customizability, allow
     ```
 - Twilio account with API credentials
 - OpenAI API key
-- Ngrok Authtoken
+- Public URL with nginx reverse proxy (or similar) for Twilio webhooks
 
 ## Installation
 
@@ -80,12 +80,36 @@ This open-source implementation provides transparency and customizability, allow
 
 The server requires several environment variables:
 
+- `PUBLIC_URL`: Your public URL for Twilio callbacks (e.g., `https://your-domain.com`)
 - `TWILIO_ACCOUNT_SID`: Your Twilio account SID
 - `TWILIO_AUTH_TOKEN`: Your Twilio auth token
-- `TWILIO_NUMBER`: Your Twilio number
+- `TWILIO_NUMBER`: Your Twilio number (in E.164 format)
 - `OPENAI_API_KEY`: Your OpenAI API key
-- `NGROK_AUTHTOKEN`: Your ngrok authtoken
 - `RECORD_CALLS`: Set to "true" to record calls (optional)
+- `PORT`: Server port (optional, defaults to 3004)
+
+### Nginx Configuration
+
+You need to configure nginx (or similar reverse proxy) to forward requests to the server. Example nginx location block:
+
+```nginx
+# Voice Call MCP Server - Twilio webhooks and WebSocket
+location /call/ {
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-NginX-Proxy true;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 600s;
+    proxy_connect_timeout 600s;
+    proxy_send_timeout 600s;
+    proxy_pass http://localhost:3004;
+}
+```
+
+**Note**: The `/call/` location should not require authentication as Twilio needs to access these endpoints.
 
 ### Claude Desktop Configuration
 
@@ -100,13 +124,13 @@ To use this server with Claude Desktop, add the following to your configuration 
   "mcpServers": {
     "voice-call": {
       "command": "node",
-      "args": ["/path/to/your/mcp-new/dist/start-all.cjs"],
+      "args": ["/path/to/your/voice-call-mcp-server/dist/start-all.cjs"],
       "env": {
+        "PUBLIC_URL": "https://your-domain.com",
         "TWILIO_ACCOUNT_SID": "your_account_sid",
         "TWILIO_AUTH_TOKEN": "your_auth_token",
         "TWILIO_NUMBER": "your_e.164_format_number",
-        "OPENAI_API_KEY": "your_openai_api_key",
-        "NGROK_AUTHTOKEN": "your_ngrok_authtoken"
+        "OPENAI_API_KEY": "your_openai_api_key"
       }
     }
   }
@@ -141,7 +165,7 @@ Please call Expert Dental NYC (+1-123-456-7899) and reschedule my Monday appoint
 2. **Rate Limits**: Be aware of your Twilio and OpenAI account's rate limits and pricing
 3. **Voice Conversations**: The AI will handle natural conversations in real-time
 4. **Call Duration**: Be mindful of call durations as they affect OpenAI API and Twilio costs
-5. **Public Exposure**: Be aware that the ngrok tunnel exposes your server publicly for Twilio to reach it (though with a random URL and protected by a random secret)
+5. **Public Exposure**: Ensure your nginx configuration properly secures endpoints while allowing Twilio webhook access to `/call/` routes
 
 ## Troubleshooting
 
@@ -156,8 +180,9 @@ Common error messages and solutions:
 3. "OpenAI API error"
    - Verify your OPENAI_API_KEY is correct and has sufficient credits
 
-4. "Ngrok tunnel failed to start"
-   - Ensure your NGROK_AUTHTOKEN is valid and not expired
+4. "PUBLIC_URL environment variable is required"
+   - Make sure you've set the PUBLIC_URL environment variable to your public domain (e.g., `https://your-domain.com`)
+   - Ensure your nginx reverse proxy is properly configured to forward `/call/` requests to the server
 
 5. "OpenAI Realtime does not detect the end of voice input, or is lagging."
    - Sometimes, there might be voice encoding issues between Twilio and the receiver's network operator. Try using a different receiver.

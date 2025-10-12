@@ -34,9 +34,19 @@ export class VoiceServer {
     }
 
     private async handleOutgoingCall(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] Incoming POST /call/outgoing');
+        console.log('[Voice Server] Query params:', req.query);
+        console.log('[Voice Server] Body:', req.body);
+
         const apiSecret = req.query.apiSecret?.toString();
+        console.log('[Voice Server] API Secret comparison:', {
+            received: apiSecret,
+            expected: DYNAMIC_API_SECRET,
+            match: apiSecret === DYNAMIC_API_SECRET
+        });
 
         if (req.query.apiSecret?.toString() !== DYNAMIC_API_SECRET) {
+            console.log('[Voice Server] 401: Unauthorized - Invalid or missing API secret');
             res.status(401).json({ error: 'Unauthorized: Invalid or missing API secret' });
             return;
         }
@@ -61,11 +71,20 @@ export class VoiceServer {
     }
 
     private handleOutgoingConnection(ws: WebSocket, req: express.Request): void {
+        console.log('[Voice Server] Incoming WebSocket connection /call/connection-outgoing/:secret');
+        console.log('[Voice Server] Secret check:', {
+            received: req.params.secret,
+            expected: DYNAMIC_API_SECRET,
+            match: req.params.secret === DYNAMIC_API_SECRET
+        });
+
         if (req.params.secret !== DYNAMIC_API_SECRET) {
+            console.log('[Voice Server] Closing WebSocket: Unauthorized');
             ws.close(1008, 'Unauthorized: Invalid or missing API secret');
             return;
         }
 
+        console.log('[Voice Server] Creating session for outbound call');
         this.sessionManager.createSession(ws, CallType.OUTBOUND);
     }
 

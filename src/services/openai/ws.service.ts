@@ -35,9 +35,18 @@ export class OpenAIWsService {
             }
         });
 
-        this.webSocket.on('open', onOpen);
+        this.webSocket.on('open', () => {
+            console.log('[OpenAI WS] Connected successfully');
+            onOpen();
+        });
         this.webSocket.on('message', onMessage);
-        this.webSocket.on('error', onError);
+        this.webSocket.on('error', (error) => {
+            console.error('[OpenAI WS] ERROR:', error);
+            onError(error);
+        });
+        this.webSocket.on('close', (code, reason) => {
+            console.log('[OpenAI WS] Connection closed:', code, reason.toString());
+        });
     }
 
     /**
@@ -46,6 +55,7 @@ export class OpenAIWsService {
      */
     public initializeSession(callContext: string): void {
         if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
+            console.error('[OpenAI WS] Cannot initialize session - WebSocket not ready. State:', this.webSocket?.readyState);
             return;
         }
 
@@ -65,6 +75,7 @@ export class OpenAIWsService {
             }
         };
 
+        console.log('[OpenAI WS] Initializing session with context:', callContext.substring(0, 100) + '...');
         this.webSocket.send(JSON.stringify(sessionUpdate));
     }
 
@@ -83,6 +94,7 @@ export class OpenAIWsService {
      */
     public sendAudio(audioPayload: string): void {
         if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
+            console.error('[OpenAI Audio] Cannot send audio - WebSocket not ready. State:', this.webSocket?.readyState);
             return;
         }
 
@@ -90,6 +102,9 @@ export class OpenAIWsService {
             type: 'input_audio_buffer.append',
             audio: audioPayload
         };
+
+        // Reduced logging - audio sending is very frequent
+        // Only log errors, not every audio packet
 
         this.webSocket.send(JSON.stringify(audioAppend));
     }
