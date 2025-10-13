@@ -2,6 +2,7 @@ import { WebSocket } from 'ws';
 import { CallState } from '../../types.js';
 import { LOG_EVENT_TYPES, SHOW_TIMING_MATH } from '../../config/constants.js';
 import { checkForGoodbye } from '../../utils/call-utils.js';
+import { SocketService } from '../socket.service.js';
 
 /**
  * Service for processing OpenAI events
@@ -12,6 +13,7 @@ export class OpenAIEventService {
     private readonly onSendAudioToTwilio: (payload: string) => void;
     private readonly onSendMark: () => void;
     private readonly onTruncateResponse: () => void;
+    private readonly socketService: SocketService;
 
     /**
      * Create a new OpenAI event processor
@@ -33,6 +35,7 @@ export class OpenAIEventService {
         this.onSendAudioToTwilio = onSendAudioToTwilio;
         this.onSendMark = onSendMark;
         this.onTruncateResponse = onTruncateResponse;
+        this.socketService = SocketService.getInstance();
     }
 
     /**
@@ -86,14 +89,48 @@ export class OpenAIEventService {
             return;
         }
 
-        this.callState.conversationHistory.push({
-            role: 'user',
+        const message = {
+            role: 'user' as const,
             content: transcription
-        });
+        };
 
-        if (checkForGoodbye(transcription)) {
+        this.callState.conversationHistory.push(message);
+
+        // Emit transcript update via Socket.IO
+        if (this.callState.callSid) {
+            this.socketService.emitTranscriptUpdate(this.callState.callSid, {
+                speaker: 'user',
+                text: transcription,
+                timestamp: new Date(),
+                isPartial: false
+            });
+
+            // Also update the CallStateService
+            const CallStateService = require('../call-state.service.js').CallStateService;
+            const callStateService = CallStateService.getInstance();
+            callStateService.addTranscript(this.callState.callSid, {
+                role: message.role,
+                content: message.content
+            });
+        }
+
+        // Only auto-hangup on very explicit user requests to end the call
+        // This prevents false positives from casual use of "bye" or "goodbye" in conversation
+        const explicitHangupPhrases = [
+            'hang up now',
+            'end the call now',
+            'disconnect now',
+            'terminate the call'
+        ];
+        const shouldHangup = explicitHangupPhrases.some(phrase =>
+            transcription.toLowerCase().includes(phrase)
+        );
+
+        if (shouldHangup) {
+            console.log('[Call Handler] User explicitly requested call termination:', transcription);
             this.onEndCall();
         }
+        // Otherwise, rely on AI's judgment to naturally conclude based on its instructions
     }
 
     /**
@@ -105,10 +142,30 @@ export class OpenAIEventService {
             return;
         }
 
-        this.callState.conversationHistory.push({
-            role: 'assistant',
+        const message = {
+            role: 'assistant' as const,
             content: transcript
-        });
+        };
+
+        this.callState.conversationHistory.push(message);
+
+        // Emit transcript update via Socket.IO
+        if (this.callState.callSid) {
+            this.socketService.emitTranscriptUpdate(this.callState.callSid, {
+                speaker: 'assistant',
+                text: transcript,
+                timestamp: new Date(),
+                isPartial: false
+            });
+
+            // Also update the CallStateService
+            const CallStateService = require('../call-state.service.js').CallStateService;
+            const callStateService = CallStateService.getInstance();
+            callStateService.addTranscript(this.callState.callSid, {
+                role: message.role,
+                content: message.content
+            });
+        }
     }
 
     /**

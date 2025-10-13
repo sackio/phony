@@ -16,6 +16,14 @@ export class TwilioCallService {
     }
 
     /**
+     * Get the Twilio client instance
+     * @returns The Twilio client
+     */
+    public getTwilioClient(): twilio.Twilio {
+        return this.twilioClient;
+    }
+
+    /**
      * Start recording a call
      * @param callSid The SID of the call to record
      */
@@ -51,7 +59,7 @@ export class TwilioCallService {
     }
 
 
-    public async makeCall(twilioCallbackUrl: string, toNumber: string, callContext = ''): Promise<string> {
+    public async makeCall(twilioCallbackUrl: string, toNumber: string, callContext = '', voice = 'sage'): Promise<string> {
         try {
             const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
@@ -60,7 +68,7 @@ export class TwilioCallService {
             const call = await twilioClient.calls.create({
                 to: toNumber,
                 from: process.env.TWILIO_NUMBER || '',
-                url: `${twilioCallbackUrl}/call/outgoing?apiSecret=${DYNAMIC_API_SECRET}&callType=outgoing&callContext=${callContextEncoded}`,
+                url: `${twilioCallbackUrl}/call/outgoing?apiSecret=${DYNAMIC_API_SECRET}&callType=outgoing&callContext=${callContextEncoded}&voice=${voice}`,
             });
 
             return call.sid;

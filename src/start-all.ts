@@ -5,6 +5,8 @@ import { TwilioCallService } from './services/twilio/call.service.js';
 import { VoiceServer } from './servers/voice.server.js';
 import twilio from 'twilio';
 import { CallSessionManager } from './handlers/openai.handler.js';
+import { MongoDBService } from './services/database/mongodb.service.js';
+import { CallTranscriptService } from './services/database/call-transcript.service.js';
 
 // Load environment variables
 dotenv.config();
@@ -93,9 +95,16 @@ async function main(): Promise<void> {
         validateEnvironmentVariables();
         const portNumber = setupPort();
 
+        // Initialize MongoDB
+        const mongoService = MongoDBService.getInstance();
+        await mongoService.connect();
+
         const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-        const sessionManager = new CallSessionManager(twilioClient);
+        // Create transcript service
+        const transcriptService = new CallTranscriptService();
+
+        const sessionManager = new CallSessionManager(twilioClient, transcriptService);
         const twilioCallService = new TwilioCallService(twilioClient);
 
         // Check if port is already in use

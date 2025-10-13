@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log
+dist
+.env
+.env.local
+.git
+.gitignore
+README.md
+.DS_Store
+coverage
+*.log
+.vscode
+.idea
+frontend/node_modules
+frontend/dist
+.playwright-mcp

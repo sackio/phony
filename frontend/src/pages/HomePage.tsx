@@ -1,27 +1,39 @@
 import React, { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { callsApi } from '../services/api';
 import './HomePage.css';
 
 // Available OpenAI Realtime API voices
+// Supported voices: alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar
 const AVAILABLE_VOICES = [
   { value: 'alloy', label: 'Alloy (Neutral)' },
+  { value: 'ash', label: 'Ash (Warm)' },
+  { value: 'ballad', label: 'Ballad (Storytelling)' },
+  { value: 'coral', label: 'Coral (Bright)' },
   { value: 'echo', label: 'Echo (Male)' },
-  { value: 'fable', label: 'Fable (British Male)' },
-  { value: 'onyx', label: 'Onyx (Deep Male)' },
-  { value: 'nova', label: 'Nova (Female)' },
-  { value: 'shimmer', label: 'Shimmer (Soft Female)' },
   { value: 'sage', label: 'Sage (Mature)' },
+  { value: 'shimmer', label: 'Shimmer (Soft Female)' },
+  { value: 'verse', label: 'Verse (Expressive)' },
+  { value: 'marin', label: 'Marin (Clear)' },
+  { value: 'cedar', label: 'Cedar (Deep)' },
 ];
 
 export function HomePage() {
+  const navigate = useNavigate();
   const [toNumber, setToNumber] = useState('');
   const [voice, setVoice] = useState('sage');
   const [callContext, setCallContext] = useState(
-    `You are a friendly AI assistant calling to have a conversation.
-Start by greeting the person warmly and introducing yourself as Claude, an AI voice assistant.
-Have a natural, conversational interaction.
-When the conversation naturally winds down or they say goodbye, wish them a great day and end the call.`
+    `GOAL: Have a friendly check-in conversation with the person.
+
+APPROACH:
+- Greet them warmly and introduce yourself as an AI assistant
+- Ask how they're doing and what they've been up to
+- Have a natural back-and-forth conversation
+- Listen actively and respond to what they share
+- When the conversation naturally concludes, thank them and say goodbye
+
+REMEMBER: This is a casual, friendly conversation - be warm, authentic, and genuinely interested in what they have to say.`
   );
   const [lastCallSid, setLastCallSid] = useState<string | null>(null);
   const [lastCallStatus, setLastCallStatus] = useState<string | null>(null);
@@ -32,6 +44,10 @@ When the conversation naturally winds down or they say goodbye, wish them a grea
       setLastCallSid(response.data.callSid);
       setLastCallStatus(response.data.status);
       setToNumber('');
+      // Navigate to call page after 1 second
+      setTimeout(() => {
+        navigate(`/call/${response.data.callSid}`);
+      }, 1000);
     },
     onError: (error: any) => {
       alert(`Error: ${error.response?.data?.error || error.message}`);

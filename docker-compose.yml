@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: voice-call-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: voice-calls
+    # Port 27017 not exposed to host - only accessible from voice-server container
+    # To access from host, use: docker compose exec mongodb mongosh voice-calls
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - voice-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  voice-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: voice-call-server
+    restart: unless-stopped
+    ports:
+      - "3004:3004"
+    environment:
+      # Server configuration
+      PORT: 3004
+      PUBLIC_URL: ${PUBLIC_URL:-https://phony.pushbuild.com}
+
+      # Twilio credentials
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_NUMBER: ${TWILIO_NUMBER}
+
+      # OpenAI credentials
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_WEBSOCKET_URL: ${OPENAI_WEBSOCKET_URL:-wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview}
+
+      # API Secret
+      API_SECRET: ${API_SECRET:-test-secret-12345}
+
+      # MongoDB connection (use service name)
+      MONGODB_URI: mongodb://mongodb:27017/voice-calls
+
+      # Optional settings
+      RECORD_CALLS: ${RECORD_CALLS:-false}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - voice-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3004/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  voice-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local

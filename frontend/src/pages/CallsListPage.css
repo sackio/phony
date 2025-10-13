@@ -1,0 +1,178 @@
+.calls-list-page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.calls-header {
+  margin-bottom: 2rem;
+}
+
+.calls-header h1 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  color: #333;
+}
+
+.calls-subtitle {
+  color: #666;
+  font-size: 1rem;
+}
+
+.calls-table-container {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.no-calls {
+  padding: 3rem;
+  text-align: center;
+  color: #666;
+}
+
+.calls-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.calls-table thead {
+  background: #f8f9fa;
+  border-bottom: 2px solid #dee2e6;
+}
+
+.calls-table th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #495057;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.calls-table tbody tr {
+  border-bottom: 1px solid #dee2e6;
+  transition: background-color 0.2s;
+}
+
+.call-row {
+  cursor: pointer;
+}
+
+.call-row:hover {
+  background-color: #f8f9fa;
+}
+
+.calls-table td {
+  padding: 1rem;
+  color: #333;
+}
+
+.call-date {
+  font-size: 0.9rem;
+  color: #666;
+  min-width: 180px;
+}
+
+.call-number {
+  font-weight: 600;
+  font-size: 1rem;
+  min-width: 150px;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-badge.active {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status-badge.completed {
+  background: #cce5ff;
+  color: #004085;
+}
+
+.status-badge.failed {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.status-badge.on_hold {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.call-duration {
+  font-size: 0.9rem;
+  color: #666;
+  min-width: 120px;
+}
+
+.call-preview {
+  max-width: 400px;
+  color: #666;
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.call-actions {
+  text-align: right;
+  min-width: 150px;
+}
+
+.btn-view {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.btn-view:hover {
+  background: #0056b3;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  .call-preview {
+    max-width: 300px;
+  }
+}
+
+@media (max-width: 768px) {
+  .calls-list-page {
+    padding: 1rem;
+  }
+
+  .calls-table-container {
+    overflow-x: auto;
+  }
+
+  .calls-table {
+    font-size: 0.875rem;
+  }
+
+  .calls-table th,
+  .calls-table td {
+    padding: 0.75rem 0.5rem;
+  }
+
+  .call-preview {
+    max-width: 200px;
+  }
+}

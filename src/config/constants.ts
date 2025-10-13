@@ -19,4 +19,15 @@ export const DYNAMIC_API_SECRET = process.env.API_SECRET || Math.random().toStri
 export const SHOW_TIMING_MATH = true;
 export const VOICE = 'sage';
 export const RECORD_CALLS = process.env.RECORD === 'true';
-export const GOODBYE_PHRASES = ['bye', 'goodbye', 'have a nice day', 'see you', 'take care'];
+// More specific goodbye phrases to avoid false positives
+// Only match clear, unambiguous farewell statements
+export const GOODBYE_PHRASES = [
+    'goodbye now',
+    'bye bye',
+    'talk to you later',
+    'gotta go',
+    'have to go now',
+    'need to go',
+    'end the call',
+    'hang up now'
+];
