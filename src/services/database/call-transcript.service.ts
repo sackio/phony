@@ -22,6 +22,8 @@ export class CallTranscriptService {
         callType: CallType;
         voice: string;
         callContext: string;
+        systemInstructions?: string;
+        callInstructions?: string;
     }): Promise<void> {
         if (!this.mongoService.getIsConnected()) {
             console.log('[CallTranscript] MongoDB not connected, skipping call creation');
@@ -36,8 +38,12 @@ export class CallTranscriptService {
                 callType: data.callType === CallType.INBOUND ? 'inbound' : 'outbound',
                 voice: data.voice,
                 callContext: data.callContext,
+                systemInstructions: data.systemInstructions,
+                callInstructions: data.callInstructions,
                 status: 'initiated',
                 conversationHistory: [],
+                twilioEvents: [],
+                openaiEvents: [],
                 startedAt: new Date()
             });
             console.log(`[CallTranscript] Created call record for ${data.callSid}`);
@@ -73,10 +79,13 @@ export class CallTranscriptService {
      */
     public async saveTranscript(data: {
         callSid: string;
-        conversationHistory: Array<{ role: string; content: string }>;
+        conversationHistory: Array<{ role: string; content: string; truncated?: boolean; truncatedAt?: number; timestamp?: Date }>;
+        twilioEvents?: Array<{ type: string; timestamp: Date; data: any }>;
+        openaiEvents?: Array<{ type: string; timestamp: Date; data: any }>;
         endedAt: Date;
         duration?: number;
         status: 'completed' | 'failed';
+        errorMessage?: string;
     }): Promise<void> {
         if (!this.mongoService.getIsConnected()) {
             console.log('[CallTranscript] MongoDB not connected, skipping transcript save');
@@ -84,25 +93,41 @@ export class CallTranscriptService {
         }
 
         try {
-            // Convert conversation history to include timestamps
+            // Convert conversation history to include timestamps and preserve truncation data
             const conversationWithTimestamps: ConversationMessage[] = data.conversationHistory.map((msg, index) => ({
-                role: msg.role as 'user' | 'assistant',
+                role: msg.role as 'user' | 'assistant' | 'system',
                 content: msg.content,
-                timestamp: new Date(data.endedAt.getTime() - (data.conversationHistory.length - index) * 1000)
+                timestamp: msg.timestamp || new Date(data.endedAt.getTime() - (data.conversationHistory.length - index) * 1000),
+                truncated: msg.truncated,
+                truncatedAt: msg.truncatedAt
             }));
+
+            const updateData: any = {
+                conversationHistory: conversationWithTimestamps,
+                endedAt: data.endedAt,
+                duration: data.duration,
+                status: data.status
+            };
+
+            if (data.twilioEvents) {
+                updateData.twilioEvents = data.twilioEvents;
+            }
+
+            if (data.openaiEvents) {
+                updateData.openaiEvents = data.openaiEvents;
+            }
+
+            if (data.errorMessage) {
+                updateData.errorMessage = data.errorMessage;
+            }
 
             await CallModel.updateOne(
                 { callSid: data.callSid },
-                {
-                    conversationHistory: conversationWithTimestamps,
-                    endedAt: data.endedAt,
-                    duration: data.duration,
-                    status: data.status
-                },
+                updateData,
                 { upsert: true }
             );
 
-            console.log(`[CallTranscript] Saved transcript for call ${data.callSid} with ${data.conversationHistory.length} messages`);
+            console.log(`[CallTranscript] Saved transcript for call ${data.callSid} with ${data.conversationHistory.length} messages, ${data.twilioEvents?.length || 0} Twilio events, ${data.openaiEvents?.length || 0} OpenAI events`);
         } catch (error) {
             console.error(`[CallTranscript] Error saving transcript for call ${data.callSid}:`, error);
         }
@@ -121,6 +146,34 @@ export class CallTranscriptService {
         } catch (error) {
             console.error(`[CallTranscript] Error retrieving call:`, error);
             return null;
+        }
+    }
+
+    /**
+     * Update conversation history for an active call
+     * Used when placing call on hold to ensure history is available on resume
+     */
+    public async updateConversationHistory(callSid: string, conversationHistory: Array<{ role: string; content: string; timestamp?: Date }>): Promise<void> {
+        if (!this.mongoService.getIsConnected()) {
+            console.log('[CallTranscript] MongoDB not connected, skipping conversation history update');
+            return;
+        }
+
+        try {
+            const conversationWithTimestamps: ConversationMessage[] = conversationHistory.map((msg) => ({
+                role: msg.role as 'user' | 'assistant' | 'system',
+                content: msg.content,
+                timestamp: msg.timestamp || new Date()
+            }));
+
+            await CallModel.updateOne(
+                { callSid },
+                { conversationHistory: conversationWithTimestamps }
+            );
+
+            console.log(`[CallTranscript] Updated conversation history for call ${callSid} (${conversationHistory.length} messages)`);
+        } catch (error) {
+            console.error(`[CallTranscript] Error updating conversation history:`, error);
         }
     }
 

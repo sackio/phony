@@ -5,6 +5,7 @@ export interface ActiveCall {
     fromNumber: string;
     status: 'initiated' | 'in-progress' | 'active' | 'on_hold' | 'completed' | 'failed';
     twilioCallSid?: string;
+    voice?: string;
     startedAt: Date;
     conversationHistory: Array<{ role: string; content: string; timestamp: Date }>;
 }

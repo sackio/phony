@@ -29,6 +29,8 @@ export class OpenAICallHandler {
     private callStartTime: Date;
     private openAIReady: boolean = false;
     private audioBuffer: string[] = [];
+    private callContextReady: boolean = false;
+    private needsInitialization: boolean = false;
 
     constructor(ws: WebSocket, callType: CallType, twilioClient: twilio.Twilio, contextService: OpenAIContextService, transcriptService: CallTranscriptService, sessionManagerService?: any) {
         this.callState = new CallState(callType);
@@ -63,7 +65,8 @@ export class OpenAICallHandler {
             this.callState,
             this.twilioCallService,
             contextService,
-            (payload) => this.sendAudioToOpenAI(payload),// Buffer audio until OpenAI is ready
+            (payload) => this.sendAudioToOpenAI(payload), // Buffer audio until OpenAI is ready
+            () => this.startOpenAISession() // Called when call context is ready
         );
 
         this.setupEventHandlers();
@@ -96,6 +99,8 @@ export class OpenAICallHandler {
         await this.transcriptService.saveTranscript({
             callSid: callSid,
             conversationHistory: fullConversationHistory,
+            twilioEvents: this.callState.twilioEvents,
+            openaiEvents: this.callState.openaiEvents,
             endedAt: endTime,
             duration: duration,
             status: 'completed'
@@ -132,20 +137,74 @@ export class OpenAICallHandler {
     private initializeOpenAI(): void {
         this.openAIService.initialize(
             (data) => this.openAIEventProcessor.processMessage(data),
-            () => {
-                // Update voice from callState before initializing session
-                setTimeout(() => {
-                    this.openAIService.updateVoice(this.callState.voice);
-                    this.openAIService.initializeSession(this.callState.callContext);
+            async () => {
+                // OpenAI WebSocket connected
+                console.log('[OpenAI Handler] OpenAI WebSocket connected');
 
-                    // Mark OpenAI as ready and flush any buffered audio
-                    console.log('[OpenAI Handler] OpenAI ready, flushing', this.audioBuffer.length, 'buffered audio packets');
-                    this.openAIReady = true;
-                    this.flushAudioBuffer();
-                }, 100);
+                // If already initialized, don't do it again
+                if (this.openAIReady) {
+                    console.log('[OpenAI Handler] Already initialized, skipping');
+                    return;
+                }
+
+                // If initialization was attempted but OpenAI wasn't ready, retry now
+                if (this.needsInitialization && this.callState.callSid) {
+                    console.log('[OpenAI Handler] OpenAI connected - retrying initialization that was deferred');
+                    this.doStartSession();
+
+                    // If this was a resume scenario, restore conversation
+                    if (this.callState.conversationHistory && this.callState.conversationHistory.length > 0) {
+                        console.log('[OpenAI Handler] Restoring conversation after deferred initialization');
+                        await this.restoreConversationHistory();
+                    }
+                } else {
+                    console.log('[OpenAI Handler] Waiting for Twilio start event to trigger initialization');
+                }
             },
             (error) => console.error('Error in the OpenAI WebSocket:', error)
         );
+    }
+
+    /**
+     * Initialize OpenAI session with call context
+     * Called by Twilio event processor after receiving start event with instructions
+     */
+    public startOpenAISession(): void {
+        console.log('[OpenAI Handler] Call context ready');
+        this.callContextReady = true;
+
+        // Don't initialize session yet - wait for setupEventHandlers to check
+        // if this is a resume scenario and restore conversation history first
+        if (this.openAIService.isConnected()) {
+            console.log('[OpenAI Handler] OpenAI connected, will initialize after checking for existing call');
+        } else {
+            console.log('[OpenAI Handler] Waiting for OpenAI WebSocket to connect');
+        }
+    }
+
+    /**
+     * Actually perform the session initialization
+     * Called when both OpenAI is connected AND call context is ready
+     */
+    private doStartSession(): void {
+        // Verify OpenAI is actually connected before trying to initialize
+        if (!this.openAIService.isConnected()) {
+            console.log('[OpenAI Handler] Cannot start session yet - OpenAI WebSocket not connected. Will retry when connected.');
+            this.needsInitialization = true;
+            return;
+        }
+
+        console.log('[OpenAI Handler] Starting OpenAI session with context:', this.callState.callContext.substring(0, 100) + '...');
+
+        // Update voice and initialize session with the actual call context
+        this.openAIService.updateVoice(this.callState.voice);
+        this.openAIService.initializeSession(this.callState.callContext);
+
+        // Mark OpenAI as ready and flush any buffered audio
+        console.log('[OpenAI Handler] OpenAI session initialized, flushing', this.audioBuffer.length, 'buffered audio packets');
+        this.openAIReady = true;
+        this.needsInitialization = false;
+        this.flushAudioBuffer();
     }
 
     private sendAudioToOpenAI(payload: string): void {
@@ -272,7 +331,11 @@ export class OpenAICallHandler {
             this.openAIService.addConversationItem(message.role, message.content);
         }
 
-        console.log('[OpenAI Handler] Conversation history restored');
+        console.log('[OpenAI Handler] Conversation history restored, triggering assistant response');
+
+        // Trigger a response so the assistant speaks first when resuming
+        // This ensures it acknowledges any context or continues naturally
+        this.openAIService.triggerResponse();
     }
 
     private setupEventHandlers(): void {
@@ -294,18 +357,43 @@ export class OpenAICallHandler {
                             toNumber: this.callState.toNumber,
                             callType: this.callState.callType,
                             voice: this.callState.voice,
-                            callContext: this.callState.callContext
+                            callContext: this.callState.callContext,
+                            systemInstructions: this.callState.systemInstructions,
+                            callInstructions: this.callState.callInstructions
                         });
 
                         // Mark call as in-progress
                         await this.transcriptService.markCallInProgress(this.callState.callSid);
+
+                        // New call - initialize session with base context (if not already done)
+                        if (!this.openAIReady) {
+                            console.log('[OpenAI Handler] New call - initializing OpenAI session');
+                            this.doStartSession();
+                        } else {
+                            console.log('[OpenAI Handler] Session already initialized');
+                        }
                     } else {
-                        // Resume from hold - restore conversation history
-                        console.log('[OpenAI Handler] Resuming existing call, restoring conversation history');
+                        // Resume from hold - restore conversation history and settings
+                        console.log('[OpenAI Handler] Resuming existing call, restoring conversation history and voice');
                         this.callState.conversationHistory = existingCall.conversationHistory || [];
 
-                        // Restore conversation to OpenAI session
-                        await this.restoreConversationHistory();
+                        // Restore voice from the existing call (critical for consistency)
+                        this.callState.voice = existingCall.voice;
+                        console.log(`[OpenAI Handler] Restored voice: ${this.callState.voice}`);
+
+                        // Update OpenAI service voice before restoring conversation
+                        this.openAIService.updateVoice(this.callState.voice);
+
+                        // Initialize session first with base context (if not already done)
+                        if (!this.openAIReady) {
+                            console.log('[OpenAI Handler] Initializing OpenAI session before restoring conversation');
+                            this.doStartSession();
+
+                            // Then restore conversation to OpenAI session
+                            await this.restoreConversationHistory();
+                        } else {
+                            console.log('[OpenAI Handler] Session already initialized and conversation restored');
+                        }
                     }
 
                     // Register this session with the session manager for context injection

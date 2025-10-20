@@ -1,17 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { callsApi } from '../services/api';
+import { callsApi, Call } from '../services/api';
 import './CallsListPage.css';
-
-interface Call {
-  callSid: string;
-  toNumber: string;
-  fromNumber: string;
-  status: string;
-  startedAt: string;
-  endedAt?: string;
-  conversationHistory?: Array<{ role: string; content: string }>;
-}
 
 export function CallsListPage() {
   const navigate = useNavigate();
@@ -68,8 +58,9 @@ export function CallsListPage() {
           <table className="calls-table">
             <thead>
               <tr>
+                <th>Type</th>
                 <th>Date & Time</th>
-                <th>Phone Number</th>
+                <th>Phone Numbers</th>
                 <th>Status</th>
                 <th>Duration</th>
                 <th>Preview</th>
@@ -83,8 +74,19 @@ export function CallsListPage() {
                   onClick={() => navigate(`/call/${call.callSid}`)}
                   className="call-row"
                 >
+                  <td className="call-type">
+                    <span className={`type-badge ${call.callType}`}>
+                      {call.callType === 'inbound' ? '📞 In' : '📱 Out'}
+                    </span>
+                  </td>
                   <td className="call-date">{formatDate(call.startedAt)}</td>
-                  <td className="call-number">{call.toNumber}</td>
+                  <td className="call-numbers">
+                    <div className="number-flow">
+                      <span className="number-small">{call.fromNumber}</span>
+                      <span className="arrow">→</span>
+                      <span className="number-small">{call.toNumber}</span>
+                    </div>
+                  </td>
                   <td>
                     <span className={`status-badge ${call.status}`}>
                       {call.status}

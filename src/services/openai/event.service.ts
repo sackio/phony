@@ -14,6 +14,7 @@ export class OpenAIEventService {
     private readonly onSendMark: () => void;
     private readonly onTruncateResponse: () => void;
     private readonly socketService: SocketService;
+    private itemIdToMessageIndex: Map<string, number> = new Map();
 
     /**
      * Create a new OpenAI event processor
@@ -61,12 +62,17 @@ export class OpenAIEventService {
      * @param response The event data
      */
     private processEvent(response: any): void {
+        // Log all OpenAI events for debugging (skip audio deltas to avoid spam)
+        if (response.type !== 'response.audio.delta') {
+            this.callState.logOpenAIEvent(response.type, response);
+        }
+
         switch (response.type) {
         case 'conversation.item.input_audio_transcription.completed':
             this.handleTranscriptionCompleted(response.transcript);
             break;
         case 'response.audio_transcript.done':
-            this.handleAudioTranscriptDone(response.transcript);
+            this.handleAudioTranscriptDone(response);
             break;
         case 'response.audio.delta':
             if (response.delta) {
@@ -76,6 +82,22 @@ export class OpenAIEventService {
         case 'input_audio_buffer.speech_started':
             console.log('[OpenAI Event] Speech started detected - triggering truncation');
             this.onTruncateResponse();
+            break;
+        case 'conversation.item.truncated':
+            this.handleItemTruncated(response);
+            break;
+        case 'session.created':
+        case 'session.updated':
+        case 'conversation.created':
+        case 'conversation.item.created':
+        case 'response.created':
+        case 'response.done':
+        case 'response.output_item.done':
+        case 'rate_limits.updated':
+            // Log but don't handle explicitly
+            break;
+        case 'error':
+            console.error('[OpenAI Error]', response);
             break;
         }
     }
@@ -135,19 +157,29 @@ export class OpenAIEventService {
 
     /**
      * Handle an audio transcript done event
-     * @param transcript The transcript text
+     * @param response The full event response with transcript and item_id
      */
-    private handleAudioTranscriptDone(transcript: string): void {
+    private handleAudioTranscriptDone(response: any): void {
+        const transcript = response.transcript;
         if (!transcript) {
             return;
         }
 
         const message = {
             role: 'assistant' as const,
-            content: transcript
+            content: transcript,
+            truncated: false,
+            truncatedAt: undefined
         };
 
         this.callState.conversationHistory.push(message);
+
+        // Store mapping from item_id to message index
+        const messageIndex = this.callState.conversationHistory.length - 1;
+        if (response.item_id) {
+            this.itemIdToMessageIndex.set(response.item_id, messageIndex);
+            console.log(`[OpenAI Event] Mapped item ${response.item_id} to message index ${messageIndex}`);
+        }
 
         // Emit transcript update via Socket.IO
         if (this.callState.callSid) {
@@ -165,6 +197,53 @@ export class OpenAIEventService {
                 role: message.role,
                 content: message.content
             });
+        }
+    }
+
+    /**
+     * Handle an item truncated event (when assistant is interrupted)
+     * @param response The truncation event data
+     */
+    private handleItemTruncated(response: any): void {
+        const itemId = response.item_id;
+        const audioEndMs = response.audio_end_ms;
+
+        console.log(`[OpenAI Event] Item ${itemId} truncated at ${audioEndMs}ms`);
+
+        // Find the message in conversation history
+        const messageIndex = this.itemIdToMessageIndex.get(itemId);
+        if (messageIndex !== undefined && messageIndex < this.callState.conversationHistory.length) {
+            const message = this.callState.conversationHistory[messageIndex];
+
+            // Mark the message as truncated
+            message.truncated = true;
+            message.truncatedAt = audioEndMs;
+
+            console.log(`[OpenAI Event] Marked message at index ${messageIndex} as truncated: "${message.content}"`);
+
+            // Emit update via Socket.IO to refresh the UI
+            // Use the original message timestamp so frontend can identify and update the correct transcript
+            if (this.callState.callSid) {
+                this.socketService.emitTranscriptUpdate(this.callState.callSid, {
+                    speaker: 'assistant',
+                    text: message.content,
+                    timestamp: message.timestamp,
+                    isPartial: false,
+                    truncated: true,
+                    truncatedAt: audioEndMs
+                });
+
+                // Also update CallStateService
+                const CallStateService = require('../call-state.service.js').CallStateService;
+                const callStateService = CallStateService.getInstance();
+                const activeCall = callStateService.getCall(this.callState.callSid);
+                if (activeCall && activeCall.conversationHistory[messageIndex]) {
+                    activeCall.conversationHistory[messageIndex].truncated = true;
+                    activeCall.conversationHistory[messageIndex].truncatedAt = audioEndMs;
+                }
+            }
+        } else {
+            console.warn(`[OpenAI Event] Could not find message for truncated item ${itemId}`);
         }
     }
 

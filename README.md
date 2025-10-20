@@ -78,15 +78,42 @@ This open-source implementation provides transparency and customizability, allow
 
 ## Configuration
 
-The server requires several environment variables:
+The server requires several environment variables. Copy `.env.example` to `.env` and configure:
+
+```bash
+cp .env.example .env
+```
+
+### Required Environment Variables
 
 - `PUBLIC_URL`: Your public URL for Twilio callbacks (e.g., `https://your-domain.com`)
 - `TWILIO_ACCOUNT_SID`: Your Twilio account SID
 - `TWILIO_AUTH_TOKEN`: Your Twilio auth token
 - `TWILIO_NUMBER`: Your Twilio number (in E.164 format)
 - `OPENAI_API_KEY`: Your OpenAI API key
+
+### MongoDB Security
+
+MongoDB is configured with authentication enabled. Generate a secure password:
+
+```bash
+openssl rand -base64 32
+```
+
+Then configure in `.env`:
+
+- `MONGODB_USERNAME`: Database username (default: `voicecalls_admin`)
+- `MONGODB_PASSWORD`: Randomly generated password (use command above)
+- `MONGODB_DATABASE`: Database name (default: `voice-calls`)
+- `MONGODB_URI`: Full connection string with authentication
+
+**⚠️ Important**: Never commit `.env` to version control. The `.env.example` file contains placeholder values only.
+
+### Optional Variables
+
 - `RECORD_CALLS`: Set to "true" to record calls (optional)
 - `PORT`: Server port (optional, defaults to 3004)
+- `API_SECRET`: Webhook security secret (randomly generated if not set)
 
 ### Nginx Configuration
 

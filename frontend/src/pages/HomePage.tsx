@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { callsApi } from '../services/api';
+import { callsApi, contextsApi } from '../services/api';
 import './HomePage.css';
 
 // Available OpenAI Realtime API voices
@@ -23,20 +23,51 @@ export function HomePage() {
   const navigate = useNavigate();
   const [toNumber, setToNumber] = useState('');
   const [voice, setVoice] = useState('sage');
-  const [callContext, setCallContext] = useState(
-    `GOAL: Have a friendly check-in conversation with the person.
+  const [systemInstructions, setSystemInstructions] = useState(
+    `You are an AI assistant making an outbound phone call.
 
-APPROACH:
-- Greet them warmly and introduce yourself as an AI assistant
-- Ask how they're doing and what they've been up to
-- Have a natural back-and-forth conversation
-- Listen actively and respond to what they share
-- When the conversation naturally concludes, thank them and say goodbye
+IDENTITY & ROLE:
+- You represent [Your Company/Organization]
+- Your purpose is to [state specific purpose]
+- You have access to [relevant information/capabilities]
 
-REMEMBER: This is a casual, friendly conversation - be warm, authentic, and genuinely interested in what they have to say.`
+COMMUNICATION STYLE:
+- Speak naturally in short, conversational sentences
+- Be warm, friendly, and professional
+- Use active listening - acknowledge what they say before responding
+- Ask ONE question at a time and wait for their response
+- Never interrupt or talk over the person
+
+CONVERSATION FLOW:
+1. Greet them warmly and introduce yourself/purpose
+2. Confirm you're speaking with the right person
+3. [State your specific conversation goals]
+4. Listen actively and respond to their needs
+5. Handle objections respectfully
+6. Close naturally with next steps (if applicable)
+
+IMPORTANT RULES:
+- If they ask to be removed from calls, apologize and confirm removal
+- If they're busy, offer to call back at a better time
+- Never be pushy or aggressive
+- Always be truthful and transparent
+- End the call politely when the conversation concludes
+
+Remember: This system prompt FULLY defines your behavior. Follow these instructions exactly.`
   );
+  const [callInstructions, setCallInstructions] = useState('');
   const [lastCallSid, setLastCallSid] = useState<string | null>(null);
   const [lastCallStatus, setLastCallStatus] = useState<string | null>(null);
+
+  // Fetch contexts for outgoing calls (type: outgoing or both)
+  const { data: contextsResponse } = useQuery({
+    queryKey: ['contexts', 'outgoing'],
+    queryFn: () => contextsApi.list(),
+  });
+
+  const contexts = (contextsResponse?.data || []).filter(
+    (ctx) => ctx.contextType === 'outgoing' || ctx.contextType === 'both'
+  );
 
   const createCallMutation = useMutation({
     mutationFn: callsApi.create,
@@ -54,6 +85,17 @@ REMEMBER: This is a casual, friendly conversation - be warm, authentic, and genu
     },
   });
 
+  const handleLoadContext = (contextId: string) => {
+    if (!contextId) return;
+
+    const context = contexts.find((ctx) => ctx._id === contextId);
+    if (context) {
+      setSystemInstructions(context.systemInstructions);
+      // Context template doesn't have call-specific instructions, user will provide them
+      setCallInstructions('');
+    }
+  };
+
   const handleCreateCall = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -62,14 +104,15 @@ REMEMBER: This is a casual, friendly conversation - be warm, authentic, and genu
       return;
     }
 
-    if (!callContext) {
-      alert('Please enter call context/instructions');
+    if (!systemInstructions) {
+      alert('Please enter system instructions');
       return;
     }
 
     createCallMutation.mutate({
       toNumber,
-      callContext,
+      systemInstructions,
+      callInstructions,
       voice,
     });
   };
@@ -105,16 +148,46 @@ REMEMBER: This is a casual, friendly conversation - be warm, authentic, and genu
             </select>
           </div>
 
+          {contexts.length > 0 && (
+            <div className="form-group">
+              <label>Load from Template</label>
+              <select
+                onChange={(e) => handleLoadContext(e.target.value)}
+                defaultValue=""
+              >
+                <option value="">-- Select a context template --</option>
+                {contexts.map((ctx) => (
+                  <option key={ctx._id} value={ctx._id}>
+                    {ctx.name} ({ctx.contextType})
+                  </option>
+                ))}
+              </select>
+              <small>Optional: Load a saved context template (you can edit after loading)</small>
+            </div>
+          )}
+
           <div className="form-group">
-            <label>Call Context / Instructions</label>
+            <label>System Instructions</label>
             <textarea
-              value={callContext}
-              onChange={(e) => setCallContext(e.target.value)}
-              placeholder="Enter instructions for the AI assistant..."
-              rows={8}
+              value={systemInstructions}
+              onChange={(e) => setSystemInstructions(e.target.value)}
+              placeholder="Enter system instructions for the AI assistant..."
+              rows={6}
               required
             />
-            <small>This will be the AI's system prompt for the call</small>
+            <small>The AI's system prompt/role for the call</small>
+          </div>
+
+          <div className="form-group">
+            <label>Call Instructions</label>
+            <input
+              type="text"
+              value={callInstructions}
+              onChange={(e) => setCallInstructions(e.target.value)}
+              placeholder="This is a follow-up call about order #12345"
+              required
+            />
+            <small>Specific instructions for the AI about this particular call (context, purpose, etc.)</small>
           </div>
 
           <button
@@ -134,17 +207,6 @@ REMEMBER: This is a casual, friendly conversation - be warm, authentic, and genu
             <p>The AI will call the number shortly.</p>
           </div>
         )}
-      </div>
-
-      <div className="info-section">
-        <h3>How It Works</h3>
-        <ul>
-          <li>Enter the recipient's phone number in E.164 format (e.g., +15551234567)</li>
-          <li>Customize the AI's instructions and personality</li>
-          <li>Click "Start Call" to initiate the outbound call</li>
-          <li>The AI will use OpenAI's Realtime API for natural conversation</li>
-          <li>Voice Activity Detection (VAD) allows natural interruptions</li>
-        </ul>
       </div>
     </div>
   );

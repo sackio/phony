@@ -2,6 +2,8 @@ import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { HomePage } from './pages/HomePage';
 import { CallPage } from './pages/CallPage';
 import { CallsListPage } from './pages/CallsListPage';
+import { IncomingConfigsPage } from './pages/IncomingConfigsPage';
+import { ContextsPage } from './pages/ContextsPage';
 import './App.css';
 
 function AppContent() {
@@ -16,6 +18,8 @@ function AppContent() {
         <div className="navbar-links">
           <Link to="/" className="nav-link">New Call</Link>
           <Link to="/calls" className="nav-link">Call History</Link>
+          <Link to="/incoming" className="nav-link">Incoming Calls</Link>
+          <Link to="/contexts" className="nav-link">Contexts</Link>
         </div>
       </nav>
 
@@ -24,6 +28,8 @@ function AppContent() {
           <Route path="/" element={<HomePage />} />
           <Route path="/calls" element={<CallsListPage />} />
           <Route path="/call/:callSid" element={<CallPage />} />
+          <Route path="/incoming" element={<IncomingConfigsPage />} />
+          <Route path="/contexts" element={<ContextsPage />} />
         </Routes>
       </main>
     </div>

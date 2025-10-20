@@ -118,7 +118,7 @@ async function main(): Promise<void> {
         const twilioCallbackUrl = getPublicUrl();
 
         // Start the main HTTP server
-        const server = new VoiceServer(twilioCallbackUrl, sessionManager);
+        const server = new VoiceServer(twilioCallbackUrl, sessionManager, transcriptService);
         server.start();
 
         console.log(`Voice server listening on port ${portNumber}`);

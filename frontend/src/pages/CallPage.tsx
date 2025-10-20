@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { callsApi } from '../services/api';
+import { callsApi, Call } from '../services/api';
 import { socketService } from '../services/socket';
 import './CallPage.css';
 
@@ -11,6 +11,8 @@ interface Transcript {
   timestamp: string;
   isPartial: boolean;
   isInterruption?: boolean;
+  truncated?: boolean;
+  truncatedAt?: number;
 }
 
 export function CallPage() {
@@ -21,14 +23,47 @@ export function CallPage() {
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [contextInput, setContextInput] = useState('');
 
-  const { data: call, isLoading } = useQuery({
+  // Expandable sections state
+  const [showSystemInstructions, setShowSystemInstructions] = useState(false);
+  const [showCallInstructions, setShowCallInstructions] = useState(false);
+  const [showTwilioEvents, setShowTwilioEvents] = useState(false);
+  const [showOpenAIEvents, setShowOpenAIEvents] = useState(false);
+  const [twilioEventFilter, setTwilioEventFilter] = useState<string>('all');
+  const [openAIEventFilter, setOpenAIEventFilter] = useState<string>('all');
+
+  const { data: call, isLoading } = useQuery<Call>({
     queryKey: ['call', callSid],
     queryFn: async () => {
       const response = await callsApi.get(callSid!);
-      return response.data;
+      return response.data as Call;
     },
     refetchInterval: 2000,
   });
+
+  // Helper functions for filtering events
+  const getFilteredTwilioEvents = () => {
+    if (!call?.twilioEvents) return [];
+    if (twilioEventFilter === 'all') return call.twilioEvents;
+    return call.twilioEvents.filter((event) => event.type === twilioEventFilter);
+  };
+
+  const getFilteredOpenAIEvents = () => {
+    if (!call?.openaiEvents) return [];
+    if (openAIEventFilter === 'all') return call.openaiEvents;
+    return call.openaiEvents.filter((event) => event.type === openAIEventFilter);
+  };
+
+  const getTwilioEventTypes = () => {
+    if (!call?.twilioEvents) return [];
+    const types = new Set(call.twilioEvents.map((e) => e.type));
+    return Array.from(types).sort();
+  };
+
+  const getOpenAIEventTypes = () => {
+    if (!call?.openaiEvents) return [];
+    const types = new Set(call.openaiEvents.map((e) => e.type));
+    return Array.from(types).sort();
+  };
 
   const holdMutation = useMutation({
     mutationFn: () => callsApi.hold(callSid!),
@@ -67,6 +102,23 @@ export function CallPage() {
             const filtered = prev.filter((t) => !t.isPartial || t.speaker !== data.speaker);
             return [...filtered, data];
           }
+
+          // Check if this is an update to an existing transcript (e.g., truncation update)
+          // Match by speaker, text, and timestamp
+          const existingIndex = prev.findIndex(
+            (t) => t.speaker === data.speaker &&
+                   t.text === data.text &&
+                   new Date(t.timestamp).getTime() === new Date(data.timestamp).getTime()
+          );
+
+          if (existingIndex >= 0) {
+            // Update existing transcript
+            const updated = [...prev];
+            updated[existingIndex] = { ...updated[existingIndex], ...data };
+            return updated;
+          }
+
+          // New transcript - add it
           return [...prev.filter((t) => !t.isPartial || t.speaker !== data.speaker), data];
         });
       }
@@ -94,7 +146,18 @@ export function CallPage() {
       <div className="call-header-section">
         <button onClick={() => navigate('/')} className="btn-back">← Back</button>
         <div className="call-info">
-          <h1>{call.toNumber}</h1>
+          <div className="call-info-main">
+            <h1>
+              {call.callType === 'inbound' ? '📞 Incoming Call' : '📱 Outgoing Call'}
+            </h1>
+            <div className="call-numbers">
+              <span className="call-number-label">From:</span>
+              <span className="call-number-value">{call.fromNumber}</span>
+              <span className="call-number-separator">→</span>
+              <span className="call-number-label">To:</span>
+              <span className="call-number-value">{call.toNumber}</span>
+            </div>
+          </div>
           <span className={`status-badge ${call.status}`}>{call.status}</span>
         </div>
       </div>
@@ -108,16 +171,19 @@ export function CallPage() {
             ) : (
               <>
                 {call.conversationHistory?.map((t: any, idx: number) => (
-                  <div key={idx} className={`transcript-item ${t.role}`}>
+                  <div key={idx} className={`transcript-item ${t.role} ${t.truncated ? 'truncated' : ''}`}>
                     <span className="speaker-label">{t.role}</span>
-                    <span className="transcript-text">{t.content}</span>
+                    <span className={`transcript-text ${t.truncated ? 'strikethrough' : ''}`}>
+                      {t.content}
+                      {t.truncated && <span className="interruption-marker"> (interrupted)</span>}
+                    </span>
                     <span className="transcript-time">
                       {new Date(t.timestamp).toLocaleTimeString()}
                     </span>
                   </div>
                 ))}
                 {transcripts.map((t, idx) => (
-                  <div key={`live-${idx}`} className={`transcript-item ${t.speaker} ${t.isPartial ? 'partial' : ''} ${t.isInterruption ? 'interruption' : ''}`}>
+                  <div key={`live-${idx}`} className={`transcript-item ${t.speaker} ${t.isPartial ? 'partial' : ''} ${t.isInterruption ? 'interruption' : ''} ${t.truncated ? 'truncated' : ''}`}>
                     {t.isInterruption ? (
                       <span className="interruption-marker">
                         <span className="interruption-icon">✂️</span>
@@ -126,7 +192,10 @@ export function CallPage() {
                     ) : (
                       <>
                         <span className="speaker-label">{t.speaker}</span>
-                        <span className="transcript-text">{t.text}</span>
+                        <span className={`transcript-text ${t.truncated ? 'strikethrough' : ''}`}>
+                          {t.text}
+                          {t.truncated && <span className="interruption-marker"> (interrupted)</span>}
+                        </span>
                       </>
                     )}
                     <span className="transcript-time">
@@ -178,7 +247,7 @@ export function CallPage() {
             )}
           </div>
 
-          {['active', 'in-progress', 'on_hold'].includes(call.status) && (
+          {['active', 'in-progress', 'on_hold', 'initiated'].includes(call.status) && (
             <div className="context-injection-section">
               <h3>Inject Context</h3>
               <textarea
@@ -198,6 +267,184 @@ export function CallPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Debug Information Section */}
+      <div className="debug-section">
+        <h2 className="debug-section-title">🔍 Debug Information</h2>
+
+        {/* Call Metadata */}
+        <div className="debug-card">
+          <h3>Call Metadata</h3>
+          <div className="metadata-grid">
+            <div className="metadata-item">
+              <span className="metadata-label">Call SID:</span>
+              <span className="metadata-value">{call.callSid}</span>
+            </div>
+            <div className="metadata-item">
+              <span className="metadata-label">Voice:</span>
+              <span className="metadata-value">{call.voice}</span>
+            </div>
+            <div className="metadata-item">
+              <span className="metadata-label">Started:</span>
+              <span className="metadata-value">
+                {new Date(call.startedAt).toLocaleString()}
+              </span>
+            </div>
+            {call.endedAt && (
+              <>
+                <div className="metadata-item">
+                  <span className="metadata-label">Ended:</span>
+                  <span className="metadata-value">
+                    {new Date(call.endedAt).toLocaleString()}
+                  </span>
+                </div>
+                <div className="metadata-item">
+                  <span className="metadata-label">Duration:</span>
+                  <span className="metadata-value">
+                    {call.duration ? `${Math.floor(call.duration / 60)}m ${call.duration % 60}s` : 'N/A'}
+                  </span>
+                </div>
+              </>
+            )}
+            {call.errorMessage && (
+              <div className="metadata-item error">
+                <span className="metadata-label">Error:</span>
+                <span className="metadata-value">{call.errorMessage}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* System Instructions */}
+        {call.systemInstructions && (
+          <div className="debug-card">
+            <button
+              className="debug-card-header"
+              onClick={() => setShowSystemInstructions(!showSystemInstructions)}
+            >
+              <span>📋 System Instructions</span>
+              <span className="expand-icon">{showSystemInstructions ? '▼' : '▶'}</span>
+            </button>
+            {showSystemInstructions && (
+              <div className="debug-card-content">
+                <pre className="instructions-text">{call.systemInstructions}</pre>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Call Instructions */}
+        {call.callInstructions && (
+          <div className="debug-card">
+            <button
+              className="debug-card-header"
+              onClick={() => setShowCallInstructions(!showCallInstructions)}
+            >
+              <span>📝 Call-Specific Instructions</span>
+              <span className="expand-icon">{showCallInstructions ? '▼' : '▶'}</span>
+            </button>
+            {showCallInstructions && (
+              <div className="debug-card-content">
+                <pre className="instructions-text">{call.callInstructions}</pre>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Twilio Events */}
+        {call.twilioEvents && call.twilioEvents.length > 0 && (
+          <div className="debug-card">
+            <button
+              className="debug-card-header"
+              onClick={() => setShowTwilioEvents(!showTwilioEvents)}
+            >
+              <span>📡 Twilio Events ({call.twilioEvents.length})</span>
+              <span className="expand-icon">{showTwilioEvents ? '▼' : '▶'}</span>
+            </button>
+            {showTwilioEvents && (
+              <div className="debug-card-content">
+                <div className="event-filter">
+                  <label>Filter by type:</label>
+                  <select
+                    value={twilioEventFilter}
+                    onChange={(e) => setTwilioEventFilter(e.target.value)}
+                    className="event-filter-select"
+                  >
+                    <option value="all">All ({call.twilioEvents.length})</option>
+                    {getTwilioEventTypes().map((type) => (
+                      <option key={type} value={type}>
+                        {type} ({call.twilioEvents!.filter((e) => e.type === type).length})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="events-list">
+                  {getFilteredTwilioEvents().map((event, idx) => (
+                    <div key={idx} className="event-item">
+                      <div className="event-header">
+                        <span className="event-type">{event.type}</span>
+                        <span className="event-time">
+                          {new Date(event.timestamp).toLocaleString()}
+                        </span>
+                      </div>
+                      <pre className="event-data">
+                        {JSON.stringify(event.data, null, 2)}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* OpenAI Events */}
+        {call.openaiEvents && call.openaiEvents.length > 0 && (
+          <div className="debug-card">
+            <button
+              className="debug-card-header"
+              onClick={() => setShowOpenAIEvents(!showOpenAIEvents)}
+            >
+              <span>🤖 OpenAI Events ({call.openaiEvents.length})</span>
+              <span className="expand-icon">{showOpenAIEvents ? '▼' : '▶'}</span>
+            </button>
+            {showOpenAIEvents && (
+              <div className="debug-card-content">
+                <div className="event-filter">
+                  <label>Filter by type:</label>
+                  <select
+                    value={openAIEventFilter}
+                    onChange={(e) => setOpenAIEventFilter(e.target.value)}
+                    className="event-filter-select"
+                  >
+                    <option value="all">All ({call.openaiEvents.length})</option>
+                    {getOpenAIEventTypes().map((type) => (
+                      <option key={type} value={type}>
+                        {type} ({call.openaiEvents!.filter((e) => e.type === type).length})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="events-list">
+                  {getFilteredOpenAIEvents().map((event, idx) => (
+                    <div key={idx} className="event-item">
+                      <div className="event-header">
+                        <span className="event-type">{event.type}</span>
+                        <span className="event-time">
+                          {new Date(event.timestamp).toLocaleString()}
+                        </span>
+                      </div>
+                      <pre className="event-data">
+                        {JSON.stringify(event.data, null, 2)}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

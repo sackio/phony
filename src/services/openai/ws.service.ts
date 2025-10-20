@@ -218,4 +218,21 @@ export class OpenAIWsService {
         console.log('[OpenAI WS] Sending response.create to trigger AI response');
         this.webSocket.send(JSON.stringify(responseCreate));
     }
+
+    /**
+     * Trigger a response from the assistant
+     * Useful when resuming a call or after restoring conversation history
+     */
+    public triggerResponse(): void {
+        if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
+            console.error('[OpenAI WS] Cannot trigger response - WebSocket not ready. State:', this.webSocket?.readyState);
+            return;
+        }
+
+        const responseCreate = {
+            type: 'response.create'
+        };
+        console.log('[OpenAI WS] Triggering assistant response');
+        this.webSocket.send(JSON.stringify(responseCreate));
+    }
 }

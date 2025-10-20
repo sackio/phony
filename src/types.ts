@@ -9,6 +9,18 @@ export interface ConversationMessage {
     name?: string;
 }
 
+export interface TwilioEventLog {
+    type: string;
+    timestamp: Date;
+    data: any;
+}
+
+export interface OpenAIEventLog {
+    type: string;
+    timestamp: Date;
+    data: any;
+}
+
 export class CallState {
     // Call identification
     streamSid = '';
@@ -26,6 +38,12 @@ export class CallState {
     initialMessage = '';
     conversationHistory: ConversationMessage[] = [];
     voice = 'sage'; // Default voice
+    systemInstructions = '';
+    callInstructions = '';
+
+    // Event logging for debugging
+    twilioEvents: TwilioEventLog[] = [];
+    openaiEvents: OpenAIEventLog[] = [];
 
     // Speech state
     speaking = false;
@@ -44,6 +62,23 @@ export class CallState {
 
     constructor(callType: CallType = CallType.OUTBOUND) {
         this.callType = callType;
+    }
+
+    // Helper methods for logging
+    logTwilioEvent(type: string, data: any): void {
+        this.twilioEvents.push({
+            type,
+            timestamp: new Date(),
+            data: JSON.parse(JSON.stringify(data)) // Deep clone to avoid reference issues
+        });
+    }
+
+    logOpenAIEvent(type: string, data: any): void {
+        this.openaiEvents.push({
+            type,
+            timestamp: new Date(),
+            data: JSON.parse(JSON.stringify(data)) // Deep clone to avoid reference issues
+        });
     }
 }
 

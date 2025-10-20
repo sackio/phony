@@ -1,0 +1,362 @@
+import { MCPToolDefinition, MCPToolHandler } from '../types.js';
+import { createToolResponse, createToolError, validateArgs, sanitizePhoneNumber } from '../utils.js';
+import { CallTranscriptService } from '../../services/database/call-transcript.service.js';
+import { TwilioCallService } from '../../services/twilio/call.service.js';
+import { CallStateService } from '../../services/call-state.service.js';
+import { SessionManagerService } from '../../services/session-manager.service.js';
+
+/**
+ * Call Management Tools
+ */
+
+export const callToolsDefinitions: MCPToolDefinition[] = [
+    {
+        name: 'phony_create_call',
+        description: 'Create an outbound phone call with AI voice assistant',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                toNumber: {
+                    type: 'string',
+                    description: 'Phone number to call in E.164 format (e.g., +12125551234)'
+                },
+                systemInstructions: {
+                    type: 'string',
+                    description: 'Base system instructions defining the AI assistant role and behavior'
+                },
+                callInstructions: {
+                    type: 'string',
+                    description: 'Specific instructions for this particular call'
+                },
+                voice: {
+                    type: 'string',
+                    description: 'OpenAI voice to use: alloy, echo, fable, onyx, nova, or shimmer',
+                    enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
+                }
+            },
+            required: ['toNumber', 'systemInstructions', 'callInstructions']
+        }
+    },
+    {
+        name: 'phony_list_calls',
+        description: 'List call history with optional filtering',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                limit: {
+                    type: 'number',
+                    description: 'Maximum number of calls to return (default: 50)'
+                },
+                status: {
+                    type: 'string',
+                    description: 'Filter by status',
+                    enum: ['initiated', 'in-progress', 'completed', 'failed', 'on_hold', 'active']
+                },
+                callType: {
+                    type: 'string',
+                    description: 'Filter by call type',
+                    enum: ['inbound', 'outbound']
+                }
+            }
+        }
+    },
+    {
+        name: 'phony_get_call',
+        description: 'Get detailed information about a specific call including transcript and events',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                callSid: {
+                    type: 'string',
+                    description: 'Twilio call SID (e.g., CA1234567890abcdef)'
+                }
+            },
+            required: ['callSid']
+        }
+    },
+    {
+        name: 'phony_hold_call',
+        description: 'Put an active call on hold',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                callSid: {
+                    type: 'string',
+                    description: 'Twilio call SID'
+                }
+            },
+            required: ['callSid']
+        }
+    },
+    {
+        name: 'phony_resume_call',
+        description: 'Resume a call that is on hold',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                callSid: {
+                    type: 'string',
+                    description: 'Twilio call SID'
+                }
+            },
+            required: ['callSid']
+        }
+    },
+    {
+        name: 'phony_hangup_call',
+        description: 'End an active call',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                callSid: {
+                    type: 'string',
+                    description: 'Twilio call SID'
+                }
+            },
+            required: ['callSid']
+        }
+    },
+    {
+        name: 'phony_inject_context',
+        description: 'Inject additional instructions/context into an active call',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                callSid: {
+                    type: 'string',
+                    description: 'Twilio call SID'
+                },
+                context: {
+                    type: 'string',
+                    description: 'Instructions or context to inject into the conversation'
+                }
+            },
+            required: ['callSid', 'context']
+        }
+    },
+    {
+        name: 'phony_get_call_transcript',
+        description: 'Get the conversation transcript for a call',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                callSid: {
+                    type: 'string',
+                    description: 'Twilio call SID'
+                }
+            },
+            required: ['callSid']
+        }
+    }
+];
+
+/**
+ * Create tool handlers
+ */
+export function createCallToolHandlers(
+    transcriptService: CallTranscriptService,
+    twilioService: TwilioCallService,
+    sessionManager: SessionManagerService
+): Record<string, MCPToolHandler> {
+    return {
+        phony_create_call: async (args) => {
+            try {
+                validateArgs(args, ['toNumber', 'systemInstructions', 'callInstructions']);
+
+                const toNumber = sanitizePhoneNumber(args.toNumber);
+                const voice = args.voice || 'alloy';
+
+                // Create call via Twilio
+                const result = await twilioService.makeOutboundCall(
+                    toNumber,
+                    args.systemInstructions,
+                    args.callInstructions,
+                    voice
+                );
+
+                return createToolResponse({
+                    callSid: result.sid,
+                    status: result.status,
+                    message: `Call initiated to ${toNumber}`
+                });
+            } catch (error: any) {
+                return createToolError('Failed to create call', { message: error.message });
+            }
+        },
+
+        phony_list_calls: async (args) => {
+            try {
+                const limit = args.limit || 50;
+                let calls = await transcriptService.getRecentCalls(limit);
+
+                // Apply filters
+                if (args.status) {
+                    calls = calls.filter(call => call.status === args.status);
+                }
+                if (args.callType) {
+                    calls = calls.filter(call => call.callType === args.callType);
+                }
+
+                return createToolResponse({
+                    calls: calls.map(call => ({
+                        callSid: call.callSid,
+                        fromNumber: call.fromNumber,
+                        toNumber: call.toNumber,
+                        callType: call.callType,
+                        status: call.status,
+                        voice: call.voice,
+                        startedAt: call.startedAt,
+                        endedAt: call.endedAt,
+                        duration: call.duration
+                    })),
+                    total: calls.length
+                });
+            } catch (error: any) {
+                return createToolError('Failed to list calls', { message: error.message });
+            }
+        },
+
+        phony_get_call: async (args) => {
+            try {
+                validateArgs(args, ['callSid']);
+
+                const call = await transcriptService.getCall(args.callSid);
+                if (!call) {
+                    return createToolError(`Call not found: ${args.callSid}`);
+                }
+
+                return createToolResponse({
+                    call: {
+                        _id: call._id,
+                        callSid: call.callSid,
+                        fromNumber: call.fromNumber,
+                        toNumber: call.toNumber,
+                        callType: call.callType,
+                        voice: call.voice,
+                        status: call.status,
+                        conversationHistory: call.conversationHistory,
+                        twilioEvents: call.twilioEvents,
+                        openaiEvents: call.openaiEvents,
+                        systemInstructions: call.systemInstructions,
+                        callInstructions: call.callInstructions,
+                        startedAt: call.startedAt,
+                        endedAt: call.endedAt,
+                        duration: call.duration,
+                        errorMessage: call.errorMessage
+                    }
+                });
+            } catch (error: any) {
+                return createToolError('Failed to get call', { message: error.message });
+            }
+        },
+
+        phony_hold_call: async (args) => {
+            try {
+                validateArgs(args, ['callSid']);
+
+                await twilioService.holdCall(args.callSid);
+
+                // Update call state
+                const callStateService = CallStateService.getInstance();
+                callStateService.updateCallStatus(args.callSid, 'on_hold');
+
+                return createToolResponse({
+                    success: true,
+                    status: 'on_hold',
+                    message: `Call ${args.callSid} is now on hold`
+                });
+            } catch (error: any) {
+                return createToolError('Failed to hold call', { message: error.message });
+            }
+        },
+
+        phony_resume_call: async (args) => {
+            try {
+                validateArgs(args, ['callSid']);
+
+                await twilioService.resumeCall(args.callSid);
+
+                // Update call state
+                const callStateService = CallStateService.getInstance();
+                callStateService.updateCallStatus(args.callSid, 'in-progress');
+
+                return createToolResponse({
+                    success: true,
+                    status: 'in-progress',
+                    message: `Call ${args.callSid} has been resumed`
+                });
+            } catch (error: any) {
+                return createToolError('Failed to resume call', { message: error.message });
+            }
+        },
+
+        phony_hangup_call: async (args) => {
+            try {
+                validateArgs(args, ['callSid']);
+
+                await twilioService.endCall(args.callSid);
+
+                return createToolResponse({
+                    success: true,
+                    message: `Call ${args.callSid} has been ended`
+                });
+            } catch (error: any) {
+                return createToolError('Failed to hangup call', { message: error.message });
+            }
+        },
+
+        phony_inject_context: async (args) => {
+            try {
+                validateArgs(args, ['callSid', 'context']);
+
+                // Get conversation history from CallStateService
+                const callStateService = CallStateService.getInstance();
+                const call = callStateService.getCall(args.callSid);
+
+                if (!call) {
+                    return createToolError(`Call not found or not active: ${args.callSid}`);
+                }
+
+                const conversationHistory = call.conversationHistory || [];
+
+                // Inject context via session manager
+                const success = sessionManager.injectContext(
+                    args.callSid,
+                    args.context,
+                    conversationHistory
+                );
+
+                if (!success) {
+                    return createToolError(`Failed to inject context - call session not found: ${args.callSid}`);
+                }
+
+                return createToolResponse({
+                    success: true,
+                    message: `Context injected into call ${args.callSid}`
+                });
+            } catch (error: any) {
+                return createToolError('Failed to inject context', { message: error.message });
+            }
+        },
+
+        phony_get_call_transcript: async (args) => {
+            try {
+                validateArgs(args, ['callSid']);
+
+                const call = await transcriptService.getCall(args.callSid);
+                if (!call) {
+                    return createToolError(`Call not found: ${args.callSid}`);
+                }
+
+                return createToolResponse({
+                    callSid: call.callSid,
+                    status: call.status,
+                    messages: call.conversationHistory || [],
+                    messageCount: call.conversationHistory?.length || 0
+                });
+            } catch (error: any) {
+                return createToolError('Failed to get transcript', { message: error.message });
+            }
+        }
+    };
+}

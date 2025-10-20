@@ -58,17 +58,48 @@ export class TwilioCallService {
         }
     }
 
+    /**
+     * List all incoming phone numbers in the Twilio account
+     * @returns Array of phone numbers with their details
+     */
+    public async listPhoneNumbers(): Promise<Array<{
+        phoneNumber: string;
+        friendlyName: string;
+        sid: string;
+        voiceUrl: string | null;
+        hasVoiceWebhook: boolean;
+    }>> {
+        try {
+            const numbers = await this.twilioClient.incomingPhoneNumbers.list();
 
-    public async makeCall(twilioCallbackUrl: string, toNumber: string, callContext = '', voice = 'sage'): Promise<string> {
+            return numbers.map(number => ({
+                phoneNumber: number.phoneNumber,
+                friendlyName: number.friendlyName,
+                sid: number.sid,
+                voiceUrl: number.voiceUrl || null,
+                hasVoiceWebhook: !!(number.voiceUrl && number.voiceUrl.trim())
+            }));
+        } catch (error) {
+            console.error('Error listing Twilio phone numbers:', error);
+            throw error;
+        }
+    }
+
+
+    public async makeCall(twilioCallbackUrl: string, toNumber: string, systemInstructions: string, callInstructions: string, voice = 'sage', fromNumber?: string): Promise<string> {
         try {
             const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-            const callContextEncoded =  encodeURIComponent(callContext);
+            const systemInstructionsEncoded = encodeURIComponent(systemInstructions);
+            const callInstructionsEncoded = encodeURIComponent(callInstructions);
+
+            // Use provided fromNumber or fall back to default TWILIO_NUMBER
+            const callerNumber = fromNumber || process.env.TWILIO_NUMBER || '';
 
             const call = await twilioClient.calls.create({
                 to: toNumber,
-                from: process.env.TWILIO_NUMBER || '',
-                url: `${twilioCallbackUrl}/call/outgoing?apiSecret=${DYNAMIC_API_SECRET}&callType=outgoing&callContext=${callContextEncoded}&voice=${voice}`,
+                from: callerNumber,
+                url: `${twilioCallbackUrl}/call/outgoing?apiSecret=${DYNAMIC_API_SECRET}&callType=outgoing&systemInstructions=${systemInstructionsEncoded}&callInstructions=${callInstructionsEncoded}&voice=${voice}`,
             });
 
             return call.sid;
