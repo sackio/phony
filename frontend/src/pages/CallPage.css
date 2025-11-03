@@ -288,6 +288,56 @@
   box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
 }
 
+.context-request-alert {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+  color: white;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.context-request-alert .alert-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+
+.context-request-alert .alert-icon {
+  font-size: 20px;
+}
+
+.context-request-alert .alert-body {
+  margin-left: 28px;
+}
+
+.context-request-alert .request-question {
+  font-size: 15px;
+  margin: 0 0 8px 0;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.context-request-alert .request-meta {
+  font-size: 13px;
+  margin: 0;
+  opacity: 0.9;
+}
+
 .btn-inject-context {
   background: #2196f3;
   color: white;
@@ -295,6 +345,79 @@
 
 .btn-inject-context:hover:not(:disabled) {
   background: #1976d2;
+}
+
+/* DTMF Keypad */
+.dtmf-keypad-section {
+  margin-top: 20px;
+  padding: 20px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+}
+
+.dtmf-keypad-section h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  color: #333;
+}
+
+.dtmf-description {
+  margin: 0 0 15px 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.dtmf-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  max-width: 300px;
+  margin: 0 auto;
+}
+
+.dtmf-button {
+  padding: 20px;
+  font-size: 24px;
+  font-weight: 600;
+  border: 2px solid #2196f3;
+  background: white;
+  color: #2196f3;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.dtmf-button:hover {
+  background: #2196f3;
+  color: white;
+  transform: scale(1.05);
+}
+
+.dtmf-button:active {
+  transform: scale(0.95);
+}
+
+.dtmf-button.dtmf-special {
+  border-color: #ff9800;
+  color: #ff9800;
+}
+
+.dtmf-button.dtmf-special:hover {
+  background: #ff9800;
+  color: white;
+}
+
+.dtmf-status {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 14px;
+  color: #666;
+}
+
+.dtmf-status.error {
+  color: #f44336;
 }
 
 /* Enhanced call header */

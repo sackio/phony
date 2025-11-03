@@ -93,6 +93,21 @@ export class SocketService {
         });
     }
 
+    public emitContextRequest(callSid: string, question: string, requestedBy: 'agent' | 'system'): void {
+        if (!this.io) {
+            console.warn('[Socket.IO] Not initialized, cannot emit context request');
+            return;
+        }
+
+        console.log(`[Socket.IO] Emitting context request for call: ${callSid}, question: ${question}`);
+        this.io.to(`call:${callSid}`).emit('context_request', {
+            callSid,
+            question,
+            requestedBy,
+            timestamp: new Date()
+        });
+    }
+
     public getIO(): SocketIOServer | null {
         return this.io;
     }

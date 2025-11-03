@@ -7,9 +7,11 @@ import path from 'path';
 import twilio from 'twilio';
 import { Server as HTTPServer } from 'http';
 import { CallType } from '../types.js';
-import { DYNAMIC_API_SECRET } from '../config/constants.js';
+import { DYNAMIC_API_SECRET, ENABLE_TEST_MODE, TEST_AUTO_HANGUP_TIMEOUT } from '../config/constants.js';
 import { CallSessionManager } from '../handlers/openai.handler.js';
 import { TwilioCallService } from '../services/twilio/call.service.js';
+import { TwilioSmsService } from '../services/twilio/sms.service.js';
+import { ConversationService } from '../services/sms/conversation.service.js';
 import { SocketService } from '../services/socket.service.js';
 import { CallStateService } from '../services/call-state.service.js';
 import { IncomingConfigService } from '../services/database/incoming-config.service.js';
@@ -25,6 +27,8 @@ export class VoiceServer {
     private sessionManager: CallSessionManager;
     private callbackUrl: string;
     private twilioCallService: TwilioCallService;
+    private twilioSmsService: TwilioSmsService;
+    private conversationService: ConversationService;
     private httpServer: HTTPServer | null = null;
     private socketService: SocketService;
     private callStateService: CallStateService;
@@ -39,9 +43,13 @@ export class VoiceServer {
         this.sessionManager = sessionManager;
         this.transcriptService = transcriptService;
 
-        // Initialize Twilio service
+        // Initialize Twilio services
         const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
         this.twilioCallService = new TwilioCallService(twilioClient);
+        this.twilioSmsService = new TwilioSmsService(twilioClient);
+
+        // Initialize SMS and conversation services
+        this.conversationService = new ConversationService();
 
         // Initialize Socket.IO and CallState services
         this.socketService = SocketService.getInstance();
@@ -56,6 +64,11 @@ export class VoiceServer {
     private configureMiddleware(): void {
         this.app.use(express.json());
         this.app.use(express.urlencoded({ extended: false }));
+
+        // Serve public directory for audio files (hold messages, etc.)
+        const publicPath = path.join(process.cwd(), 'public');
+        console.log('[Voice Server] Serving public files from:', publicPath);
+        this.app.use('/audio', express.static(path.join(publicPath, 'audio')));
 
         // Serve frontend static files
         const frontendPath = path.join(process.cwd(), 'frontend/dist');
@@ -88,6 +101,10 @@ export class VoiceServer {
         this.app.post('/api/calls/:callSid/resume', this.handleResumeCall.bind(this));
         this.app.post('/api/calls/:callSid/hangup', this.handleHangupCall.bind(this));
         this.app.post('/api/calls/:callSid/inject-context', this.handleInjectContext.bind(this));
+        this.app.post('/api/calls/:callSid/dtmf', this.handleSendDTMF.bind(this));
+
+        // Emergency shutdown endpoint - protected by API secret
+        this.app.post('/api/emergency-shutdown', this.handleEmergencyShutdown.bind(this));
 
         // Incoming call configuration routes
         this.app.get('/api/incoming-configs/available-numbers', this.handleListAvailableNumbers.bind(this));
@@ -102,6 +119,22 @@ export class VoiceServer {
         this.app.post('/api/contexts', this.handleCreateContext.bind(this));
         this.app.put('/api/contexts/:id', this.handleUpdateContext.bind(this));
         this.app.delete('/api/contexts/:id', this.handleDeleteContext.bind(this));
+
+        // SMS API routes
+        this.app.post('/api/sms/send', this.handleSendSmsApi.bind(this));
+        this.app.get('/api/sms/messages', this.handleListMessages.bind(this));
+        this.app.get('/api/sms/messages/:messageSid', this.handleGetMessage.bind(this));
+        this.app.get('/api/sms/conversation', this.handleGetConversation.bind(this));
+
+        // Conversation API routes
+        this.app.post('/api/conversations', this.handleCreateConversation.bind(this));
+        this.app.get('/api/conversations', this.handleListConversations.bind(this));
+        this.app.get('/api/conversations/:conversationId', this.handleGetConversationDetails.bind(this));
+        this.app.get('/api/conversations/:conversationId/messages', this.handleGetConversationMessages.bind(this));
+        this.app.post('/api/conversations/:conversationId/participants', this.handleAddParticipant.bind(this));
+        this.app.delete('/api/conversations/:conversationId/participants/:phoneNumber', this.handleRemoveParticipant.bind(this));
+        this.app.put('/api/conversations/:conversationId/name', this.handleUpdateGroupName.bind(this));
+        this.app.post('/api/conversations/:conversationId/send', this.handleSendGroupSms.bind(this));
 
         // MCP routes - Get SessionManagerService from sessionManager
         const sessionManagerService = (this.sessionManager as any).sessionManager as SessionManagerService;
@@ -118,8 +151,19 @@ export class VoiceServer {
         // Twilio webhook routes
         this.app.post('/call/outgoing', this.handleOutgoingCall.bind(this));
         this.app.post('/call/incoming', this.handleIncomingCall.bind(this));
+        this.app.post('/call/hold', this.handleHoldLoop.bind(this));
         this.app.ws('/call/connection-outgoing/:secret', this.handleOutgoingConnection.bind(this));
         this.app.ws('/call/connection-incoming/:secret', this.handleIncomingConnection.bind(this));
+
+        // Test mode route - for internal testing without consuming OpenAI credits
+        if (ENABLE_TEST_MODE) {
+            this.app.post('/call/test-receiver', this.handleTestReceiver.bind(this));
+            console.log('[Voice Server] Test receiver endpoint enabled at /call/test-receiver');
+        }
+
+        // SMS webhook routes
+        this.app.post('/sms/incoming', this.handleIncomingSms.bind(this));
+        this.app.post('/sms/status', this.handleSmsStatus.bind(this));
 
         // Serve frontend for all other routes (SPA fallback)
         this.app.get('*', (req, res) => {
@@ -227,6 +271,74 @@ export class VoiceServer {
         stream.parameter({ name: 'systemInstructions', value: systemInstructions });
         stream.parameter({ name: 'callInstructions', value: callInstructions });
         stream.parameter({ name: 'voice', value: voice });
+
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        res.end(twiml.toString());
+    }
+
+    private async handleHoldLoop(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] Incoming POST /call/hold');
+        console.log('[Voice Server] Query params:', req.query);
+
+        const apiSecret = req.query.apiSecret?.toString();
+        if (apiSecret !== DYNAMIC_API_SECRET) {
+            console.log('[Voice Server] 401: Unauthorized - Invalid or missing API secret');
+            res.status(401).json({ error: 'Unauthorized: Invalid or missing API secret' });
+            return;
+        }
+
+        // Get voice parameter from query (passed by holdCall method)
+        const voice = req.query.voice?.toString() || 'sage';
+
+        console.log('[Voice Server] Creating hold loop with voice:', voice);
+
+        // Create TwiML for hold with music
+        const twiml = new VoiceResponse();
+
+        // Play hold music continuously
+        twiml.play({ loop: 0 }, 'http://com.twilio.sounds.music.s3.amazonaws.com/MARKOVICHAMP-Borghestral.mp3');
+
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        res.end(twiml.toString());
+    }
+
+    /**
+     * Test receiver endpoint - answers call and stays on line for limited duration
+     * This is for internal testing without consuming OpenAI credits
+     */
+    private async handleTestReceiver(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] Test receiver endpoint called');
+        console.log('[Voice Server] From:', req.body.From, 'To:', req.body.To);
+
+        // Create TwiML response
+        const twiml = new VoiceResponse();
+
+        // Play greeting message
+        twiml.say(
+            { voice: 'Polly.Matthew' },
+            'This is the Phony test receiver. Your call has been answered successfully. This line will remain open for testing purposes and will automatically disconnect after the timeout period.'
+        );
+
+        // Brief pause
+        twiml.pause({ length: 2 });
+
+        // Play hold music for limited duration (using timeout to control max duration)
+        // Note: Twilio will enforce the timeout via the call duration limit
+        twiml.play(
+            { loop: 5 },
+            'http://com.twilio.sounds.music.s3.amazonaws.com/MARKOVICHAMP-Borghestral.mp3'
+        );
+
+        // Say goodbye message before hanging up
+        twiml.say(
+            { voice: 'Polly.Matthew' },
+            'Test call timeout reached. Disconnecting now. Thank you for testing.'
+        );
+
+        // Hangup
+        twiml.hangup();
+
+        console.log('[Voice Server] Test receiver TwiML generated (max duration: ~5 minutes)');
 
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         res.end(twiml.toString());
@@ -458,6 +570,68 @@ export class VoiceServer {
         }
     }
 
+    /**
+     * Emergency shutdown endpoint - terminates ALL active calls
+     * Protected by API secret for security
+     */
+    private async handleEmergencyShutdown(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] Emergency shutdown requested');
+
+        // Verify API secret
+        const apiSecret = req.query.apiSecret?.toString() || req.body.apiSecret;
+        if (apiSecret !== DYNAMIC_API_SECRET) {
+            console.log('[Voice Server] 401: Unauthorized - Invalid or missing API secret');
+            res.status(401).json({ error: 'Unauthorized: Invalid or missing API secret' });
+            return;
+        }
+
+        try {
+            const activeCalls = this.callStateService.getActiveCalls();
+            const terminatedCalls: string[] = [];
+            const failedCalls: Array<{ callSid: string; error: string }> = [];
+
+            console.log(`[Voice Server] Emergency shutdown: terminating ${activeCalls.length} active calls`);
+
+            // Terminate each active call
+            for (const call of activeCalls) {
+                try {
+                    if (call.twilioCallSid) {
+                        await this.twilioCallService.getTwilioClient()
+                            .calls(call.twilioCallSid)
+                            .update({ status: 'completed' });
+
+                        this.callStateService.updateCallStatus(call.callSid, 'completed');
+                        this.socketService.emitCallStatusChanged(call.callSid, 'completed');
+                        this.callStateService.removeCall(call.callSid);
+
+                        terminatedCalls.push(call.callSid);
+                        console.log(`[Voice Server] Emergency shutdown: terminated call ${call.callSid}`);
+                    }
+                } catch (error: any) {
+                    console.error(`[Voice Server] Emergency shutdown: failed to terminate call ${call.callSid}:`, error);
+                    failedCalls.push({
+                        callSid: call.callSid,
+                        error: error.message || 'Unknown error'
+                    });
+                }
+            }
+
+            res.json({
+                success: true,
+                message: 'Emergency shutdown completed',
+                terminatedCount: terminatedCalls.length,
+                failedCount: failedCalls.length,
+                terminatedCalls,
+                failedCalls: failedCalls.length > 0 ? failedCalls : undefined
+            });
+
+            console.log(`[Voice Server] Emergency shutdown complete: ${terminatedCalls.length} terminated, ${failedCalls.length} failed`);
+        } catch (error) {
+            console.error('[Voice Server] Emergency shutdown error:', error);
+            res.status(500).json({ error: 'Emergency shutdown failed' });
+        }
+    }
+
     private async handleInjectContext(req: express.Request, res: Response): Promise<void> {
         try {
             const { callSid } = req.params;
@@ -494,6 +668,64 @@ export class VoiceServer {
                 timestamp: contextMarker.timestamp
             });
 
+            // Check if there's a pending context request from the agent
+            const hadPendingRequest = this.callStateService.hasPendingContextRequest(callSid);
+            if (hadPendingRequest) {
+                const pendingRequest = call.pendingContextRequest;
+                console.log(`[Voice Server] Answering pending context request: ${pendingRequest?.question}`);
+
+                // Clear the pending context request
+                this.callStateService.clearPendingContextRequest(callSid);
+
+                // If call is on hold (from agent request), auto-resume it
+                if (call.status === 'on_hold' && call.twilioCallSid) {
+                    console.log('[Voice Server] Auto-resuming call after context provided');
+
+                    // Update status BEFORE resuming
+                    this.callStateService.updateCallStatus(callSid, 'active');
+                    this.socketService.emitCallStatusChanged(callSid, 'active');
+
+                    // Add resume marker to transcript
+                    const resumeMarker = {
+                        speaker: 'system' as const,
+                        text: '▶️ Call resumed with operator context',
+                        timestamp: new Date(),
+                        isPartial: false,
+                        isInterruption: false
+                    };
+                    this.socketService.emitTranscriptUpdate(callSid, resumeMarker);
+                    this.callStateService.addTranscript(callSid, {
+                        role: 'system',
+                        content: resumeMarker.text,
+                        timestamp: resumeMarker.timestamp
+                    });
+
+                    // Resume the call - redirect back to media stream
+                    await this.twilioCallService.getTwilioClient()
+                        .calls(call.twilioCallSid)
+                        .update({
+                            url: `${this.callbackUrl}/call/outgoing?apiSecret=${DYNAMIC_API_SECRET}`,
+                            method: 'POST'
+                        });
+
+                    // Inject context into the OpenAI session
+                    const success = this.sessionManager.injectContext(callSid, context, call.conversationHistory);
+
+                    if (!success) {
+                        console.error('[Voice Server] Failed to inject context after resume - session not found');
+                        res.status(500).json({ error: 'Failed to inject context after resume' });
+                        return;
+                    }
+
+                    res.json({
+                        status: 'success',
+                        message: 'Context injected and call auto-resumed',
+                        resumed: true
+                    });
+                    return;
+                }
+            }
+
             // Only inject into active OpenAI session if call is NOT on hold
             if (call.status === 'on_hold') {
                 console.log('[Voice Server] Call is on hold - context saved to history but not sent to AI yet');
@@ -520,6 +752,68 @@ export class VoiceServer {
         } catch (error) {
             console.error('[Voice Server] Error injecting context:', error);
             res.status(500).json({ error: 'Failed to inject context' });
+        }
+    }
+
+    private async handleSendDTMF(req: express.Request, res: Response): Promise<void> {
+        try {
+            const { callSid } = req.params;
+            const { digits } = req.body;
+
+            if (!digits) {
+                res.status(400).json({ error: 'Missing required field: digits' });
+                return;
+            }
+
+            // Validate DTMF digits (0-9, *, #, A-D, w, W)
+            const validDTMF = /^[0-9*#A-DwW ]+$/;
+            if (!validDTMF.test(digits)) {
+                res.status(400).json({ error: 'Invalid DTMF digits. Allowed: 0-9, *, #, A-D, w (0.5s pause), W (1s pause)' });
+                return;
+            }
+
+            const call = this.callStateService.getCall(callSid);
+
+            if (!call || !call.twilioCallSid) {
+                res.status(404).json({ error: 'Call not found' });
+                return;
+            }
+
+            console.log(`[Voice Server] Sending DTMF tones "${digits}" to call:`, callSid);
+
+            // Emit transcript marker showing DTMF injection
+            const dtmfMarker = {
+                speaker: 'system' as const,
+                text: `🔢 DTMF sent: ${digits}`,
+                timestamp: new Date(),
+                isPartial: false,
+                isInterruption: false
+            };
+            this.socketService.emitTranscriptUpdate(callSid, dtmfMarker);
+
+            // Add to conversation history
+            this.callStateService.addTranscript(callSid, {
+                role: 'system',
+                content: dtmfMarker.text,
+                timestamp: dtmfMarker.timestamp
+            });
+
+            // Send DTMF tones using Twilio's Play verb with digits parameter
+            // This requires updating the call to play the DTMF tones
+            const twiml = new VoiceResponse();
+            twiml.play({ digits });
+            twiml.redirect(`${this.callbackUrl}/call/outgoing?apiSecret=${DYNAMIC_API_SECRET}`);
+
+            await this.twilioCallService.getTwilioClient()
+                .calls(call.twilioCallSid)
+                .update({
+                    twiml: twiml.toString()
+                });
+
+            res.json({ status: 'success', message: `DTMF tones "${digits}" sent to call` });
+        } catch (error) {
+            console.error('[Voice Server] Error sending DTMF:', error);
+            res.status(500).json({ error: 'Failed to send DTMF tones' });
         }
     }
 
@@ -821,6 +1115,387 @@ export class VoiceServer {
 
         console.log('[Voice Server] Creating session for inbound call');
         this.sessionManager.createSession(ws, CallType.INBOUND);
+    }
+
+    private async handleSendSmsApi(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] POST /api/sms/send');
+
+        try {
+            const { toNumber, body, fromNumber } = req.body;
+
+            if (!toNumber || !body) {
+                res.status(400).json({ error: 'toNumber and body are required' });
+                return;
+            }
+
+            const result = await this.twilioSmsService.sendSms(toNumber, body, fromNumber);
+
+            res.json({
+                status: 'success',
+                messageSid: result.messageSid,
+                twilioStatus: result.status
+            });
+        } catch (error: any) {
+            console.error('[Voice Server] Error sending SMS:', error);
+            res.status(500).json({ error: error.message || 'Failed to send SMS' });
+        }
+    }
+
+    private async handleListMessages(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] GET /api/sms/messages');
+
+        try {
+            const smsStorageService = new (await import('../services/sms/storage.service.js')).SmsStorageService();
+
+            const filters: any = {};
+
+            if (req.query.direction) {
+                filters.direction = req.query.direction;
+            }
+            if (req.query.fromNumber) {
+                filters.fromNumber = req.query.fromNumber as string;
+            }
+            if (req.query.toNumber) {
+                filters.toNumber = req.query.toNumber as string;
+            }
+            if (req.query.status) {
+                filters.status = req.query.status;
+            }
+            if (req.query.startDate) {
+                filters.startDate = new Date(req.query.startDate as string);
+            }
+            if (req.query.endDate) {
+                filters.endDate = new Date(req.query.endDate as string);
+            }
+            if (req.query.limit) {
+                filters.limit = parseInt(req.query.limit as string);
+            }
+
+            const messages = await smsStorageService.listSms(filters);
+
+            res.json(messages);
+        } catch (error: any) {
+            console.error('[Voice Server] Error listing messages:', error);
+            res.status(500).json({ error: error.message || 'Failed to list messages' });
+        }
+    }
+
+    private async handleGetMessage(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] GET /api/sms/messages/:messageSid');
+
+        try {
+            const smsStorageService = new (await import('../services/sms/storage.service.js')).SmsStorageService();
+            const message = await smsStorageService.getSms(req.params.messageSid);
+
+            if (!message) {
+                res.status(404).json({ error: 'Message not found' });
+                return;
+            }
+
+            res.json(message);
+        } catch (error: any) {
+            console.error('[Voice Server] Error getting message:', error);
+            res.status(500).json({ error: error.message || 'Failed to get message' });
+        }
+    }
+
+    private async handleGetConversation(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] GET /api/sms/conversation');
+
+        try {
+            const { phoneNumber1, phoneNumber2, limit } = req.query;
+
+            if (!phoneNumber1 || !phoneNumber2) {
+                res.status(400).json({ error: 'phoneNumber1 and phoneNumber2 are required' });
+                return;
+            }
+
+            const smsStorageService = new (await import('../services/sms/storage.service.js')).SmsStorageService();
+            const messages = await smsStorageService.getConversation(
+                phoneNumber1 as string,
+                phoneNumber2 as string,
+                limit ? parseInt(limit as string) : 100
+            );
+
+            res.json(messages);
+        } catch (error: any) {
+            console.error('[Voice Server] Error getting conversation:', error);
+            res.status(500).json({ error: error.message || 'Failed to get conversation' });
+        }
+    }
+
+    // Conversation Management Handlers
+
+    private async handleCreateConversation(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] POST /api/conversations');
+
+        try {
+            const { participants, createdBy, name } = req.body;
+
+            if (!participants || !Array.isArray(participants) || participants.length < 2) {
+                res.status(400).json({ error: 'At least 2 participants are required' });
+                return;
+            }
+
+            if (!createdBy) {
+                res.status(400).json({ error: 'createdBy is required' });
+                return;
+            }
+
+            const conversation = await this.conversationService.createConversation({
+                participants,
+                createdBy,
+                name
+            });
+
+            if (!conversation) {
+                res.status(500).json({ error: 'Failed to create conversation' });
+                return;
+            }
+
+            res.json(conversation);
+        } catch (error: any) {
+            console.error('[Voice Server] Error creating conversation:', error);
+            res.status(500).json({ error: error.message || 'Failed to create conversation' });
+        }
+    }
+
+    private async handleListConversations(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] GET /api/conversations');
+
+        try {
+            const phoneNumber = req.query.phoneNumber as string;
+            const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+
+            if (!phoneNumber) {
+                res.status(400).json({ error: 'phoneNumber query parameter is required' });
+                return;
+            }
+
+            const conversations = await this.conversationService.listConversations(phoneNumber, limit);
+            res.json(conversations);
+        } catch (error: any) {
+            console.error('[Voice Server] Error listing conversations:', error);
+            res.status(500).json({ error: error.message || 'Failed to list conversations' });
+        }
+    }
+
+    private async handleGetConversationDetails(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] GET /api/conversations/:conversationId');
+
+        try {
+            const conversationId = req.params.conversationId;
+            const conversation = await this.conversationService.getConversation(conversationId);
+
+            if (!conversation) {
+                res.status(404).json({ error: 'Conversation not found' });
+                return;
+            }
+
+            res.json(conversation);
+        } catch (error: any) {
+            console.error('[Voice Server] Error getting conversation details:', error);
+            res.status(500).json({ error: error.message || 'Failed to get conversation details' });
+        }
+    }
+
+    private async handleGetConversationMessages(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] GET /api/conversations/:conversationId/messages');
+
+        try {
+            const conversationId = req.params.conversationId;
+            const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+
+            const messages = await this.conversationService.getConversationMessages(conversationId, limit);
+            res.json(messages);
+        } catch (error: any) {
+            console.error('[Voice Server] Error getting conversation messages:', error);
+            res.status(500).json({ error: error.message || 'Failed to get conversation messages' });
+        }
+    }
+
+    private async handleAddParticipant(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] POST /api/conversations/:conversationId/participants');
+
+        try {
+            const conversationId = req.params.conversationId;
+            const { phoneNumber } = req.body;
+
+            if (!phoneNumber) {
+                res.status(400).json({ error: 'phoneNumber is required' });
+                return;
+            }
+
+            const conversation = await this.conversationService.addParticipant(conversationId, phoneNumber);
+
+            if (!conversation) {
+                res.status(500).json({ error: 'Failed to add participant' });
+                return;
+            }
+
+            res.json(conversation);
+        } catch (error: any) {
+            console.error('[Voice Server] Error adding participant:', error);
+            res.status(500).json({ error: error.message || 'Failed to add participant' });
+        }
+    }
+
+    private async handleRemoveParticipant(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] DELETE /api/conversations/:conversationId/participants/:phoneNumber');
+
+        try {
+            const conversationId = req.params.conversationId;
+            const phoneNumber = req.params.phoneNumber;
+
+            const conversation = await this.conversationService.removeParticipant(conversationId, phoneNumber);
+
+            if (!conversation) {
+                res.status(500).json({ error: 'Failed to remove participant' });
+                return;
+            }
+
+            res.json(conversation);
+        } catch (error: any) {
+            console.error('[Voice Server] Error removing participant:', error);
+            res.status(500).json({ error: error.message || 'Failed to remove participant' });
+        }
+    }
+
+    private async handleUpdateGroupName(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] PUT /api/conversations/:conversationId/name');
+
+        try {
+            const conversationId = req.params.conversationId;
+            const { name } = req.body;
+
+            if (!name) {
+                res.status(400).json({ error: 'name is required' });
+                return;
+            }
+
+            const conversation = await this.conversationService.updateConversationName(conversationId, name);
+
+            if (!conversation) {
+                res.status(500).json({ error: 'Failed to update group name' });
+                return;
+            }
+
+            res.json(conversation);
+        } catch (error: any) {
+            console.error('[Voice Server] Error updating group name:', error);
+            res.status(500).json({ error: error.message || 'Failed to update group name' });
+        }
+    }
+
+    private async handleSendGroupSms(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] POST /api/conversations/:conversationId/send');
+
+        try {
+            const conversationId = req.params.conversationId;
+            const { body, fromNumber } = req.body;
+
+            if (!body) {
+                res.status(400).json({ error: 'body is required' });
+                return;
+            }
+
+            if (!fromNumber) {
+                res.status(400).json({ error: 'fromNumber is required' });
+                return;
+            }
+
+            // Get conversation
+            const conversation = await this.conversationService.getConversation(conversationId);
+
+            if (!conversation) {
+                res.status(404).json({ error: 'Conversation not found' });
+                return;
+            }
+
+            // Send to all participants except sender
+            const recipients = conversation.participants.filter(p => p !== fromNumber);
+            const results = [];
+
+            for (const recipient of recipients) {
+                try {
+                    const result = await this.twilioSmsService.sendSms(recipient, body, fromNumber);
+                    results.push({
+                        toNumber: recipient,
+                        messageSid: result.messageSid,
+                        status: 'sent'
+                    });
+                } catch (error: any) {
+                    console.error(`[Voice Server] Error sending to ${recipient}:`, error);
+                    results.push({
+                        toNumber: recipient,
+                        error: error.message,
+                        status: 'failed'
+                    });
+                }
+            }
+
+            const successCount = results.filter(r => r.status === 'sent').length;
+            res.json({
+                status: 'success',
+                recipientCount: recipients.length,
+                successCount,
+                failCount: recipients.length - successCount,
+                results
+            });
+        } catch (error: any) {
+            console.error('[Voice Server] Error sending group SMS:', error);
+            res.status(500).json({ error: error.message || 'Failed to send group SMS' });
+        }
+    }
+
+    private async handleIncomingSms(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] Incoming SMS webhook');
+        console.log('[Voice Server] From:', req.body.From);
+        console.log('[Voice Server] To:', req.body.To);
+        console.log('[Voice Server] Body:', req.body.Body);
+
+        try {
+            await this.twilioSmsService.handleIncomingSms({
+                MessageSid: req.body.MessageSid,
+                From: req.body.From,
+                To: req.body.To,
+                Body: req.body.Body,
+                NumMedia: req.body.NumMedia,
+                MediaUrl0: req.body.MediaUrl0,
+                MediaUrl1: req.body.MediaUrl1,
+                MediaUrl2: req.body.MediaUrl2,
+                MediaUrl3: req.body.MediaUrl3,
+                MediaUrl4: req.body.MediaUrl4
+            });
+
+            // Return empty TwiML response
+            res.writeHead(200, { 'Content-Type': 'text/xml' });
+            res.end('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+        } catch (error) {
+            console.error('[Voice Server] Error handling incoming SMS:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    private async handleSmsStatus(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] SMS status callback');
+        console.log('[Voice Server] MessageSid:', req.body.MessageSid);
+        console.log('[Voice Server] MessageStatus:', req.body.MessageStatus);
+
+        try {
+            await this.twilioSmsService.handleStatusCallback({
+                MessageSid: req.body.MessageSid,
+                MessageStatus: req.body.MessageStatus,
+                ErrorCode: req.body.ErrorCode,
+                ErrorMessage: req.body.ErrorMessage
+            });
+
+            // Return success
+            res.status(200).send('OK');
+        } catch (error) {
+            console.error('[Voice Server] Error handling SMS status callback:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
     }
 
     public start(): void {

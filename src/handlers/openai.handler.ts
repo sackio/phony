@@ -194,11 +194,13 @@ export class OpenAICallHandler {
             return;
         }
 
+        const isIncoming = this.callState.callType === CallType.INBOUND;
         console.log('[OpenAI Handler] Starting OpenAI session with context:', this.callState.callContext.substring(0, 100) + '...');
+        console.log('[OpenAI Handler] Call type:', this.callState.callType, '(incoming:', isIncoming, ')');
 
         // Update voice and initialize session with the actual call context
         this.openAIService.updateVoice(this.callState.voice);
-        this.openAIService.initializeSession(this.callState.callContext);
+        this.openAIService.initializeSession(this.callState.callContext, isIncoming);
 
         // Mark OpenAI as ready and flush any buffered audio
         console.log('[OpenAI Handler] OpenAI session initialized, flushing', this.audioBuffer.length, 'buffered audio packets');

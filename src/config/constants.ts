@@ -31,3 +31,9 @@ export const GOODBYE_PHRASES = [
     'end the call',
     'hang up now'
 ];
+
+// Test Mode Configuration - Cost Control Safeguards
+export const ENABLE_TEST_MODE = process.env.ENABLE_TEST_MODE === 'true';
+export const MAX_TEST_CALL_DURATION = parseInt(process.env.MAX_TEST_CALL_DURATION || '120'); // 2 minutes default
+export const MAX_CONCURRENT_TEST_CALLS = parseInt(process.env.MAX_CONCURRENT_TEST_CALLS || '2');
+export const TEST_AUTO_HANGUP_TIMEOUT = parseInt(process.env.TEST_AUTO_HANGUP_TIMEOUT || '180'); // 3 minutes absolute max

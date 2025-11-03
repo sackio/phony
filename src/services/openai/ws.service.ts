@@ -61,8 +61,9 @@ export class OpenAIWsService {
     /**
      * Initialize the session with OpenAI
      * @param callContext The context for the call
+     * @param isIncoming Whether this is an incoming call (for logging purposes)
      */
-    public initializeSession(callContext: string): void {
+    public initializeSession(callContext: string, isIncoming: boolean = false): void {
         if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
             console.error('[OpenAI WS] Cannot initialize session - WebSocket not ready. State:', this.webSocket?.readyState);
             return;
@@ -71,6 +72,8 @@ export class OpenAIWsService {
         const sessionUpdate = {
             type: 'session.update',
             session: {
+                // Always use server VAD for automatic turn detection
+                // For incoming calls, instructions will tell agent to wait for caller
                 turn_detection: { type: 'server_vad' },
                 input_audio_format: 'g711_ulaw',
                 output_audio_format: 'g711_ulaw',
@@ -81,10 +84,29 @@ export class OpenAIWsService {
                 'input_audio_transcription': {
                     'model': 'whisper-1'
                 },
+                tools: [
+                    {
+                        type: 'function',
+                        name: 'send_dtmf',
+                        description: 'Send DTMF (phone keypad) tones during the call. Use this to press phone buttons like navigating IVR menus, entering codes, or selecting options.',
+                        parameters: {
+                            type: 'object',
+                            properties: {
+                                digits: {
+                                    type: 'string',
+                                    description: 'The DTMF digits to send. Can include: 0-9, *, #, A-D. Use \'w\' for 0.5s pause, \'W\' for 1s pause. Example: "1", "123", "1w2w3", "*9#"'
+                                }
+                            },
+                            required: ['digits']
+                        }
+                    }
+                ],
+                tool_choice: 'auto'
             }
         };
 
         console.log('[OpenAI WS] Initializing session with context:', callContext.substring(0, 100) + '...');
+        console.log('[OpenAI WS] Call type:', isIncoming ? 'INCOMING (instructions say: wait for caller)' : 'OUTGOING');
         this.webSocket.send(JSON.stringify(sessionUpdate));
     }
 

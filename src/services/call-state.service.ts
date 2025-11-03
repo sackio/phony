@@ -8,6 +8,11 @@ export interface ActiveCall {
     voice?: string;
     startedAt: Date;
     conversationHistory: Array<{ role: string; content: string; timestamp: Date }>;
+    pendingContextRequest?: {
+        question: string;
+        requestedAt: Date;
+        requestedBy: 'agent' | 'system';
+    };
 }
 
 export class CallStateService {
@@ -65,5 +70,30 @@ export class CallStateService {
                 timestamp: new Date()
             });
         }
+    }
+
+    public setPendingContextRequest(callSid: string, question: string, requestedBy: 'agent' | 'system'): void {
+        const call = this.activeCalls.get(callSid);
+        if (call) {
+            call.pendingContextRequest = {
+                question,
+                requestedAt: new Date(),
+                requestedBy
+            };
+            console.log(`[CallState] Set pending context request for call ${callSid}: ${question}`);
+        }
+    }
+
+    public clearPendingContextRequest(callSid: string): void {
+        const call = this.activeCalls.get(callSid);
+        if (call) {
+            call.pendingContextRequest = undefined;
+            console.log(`[CallState] Cleared pending context request for call ${callSid}`);
+        }
+    }
+
+    public hasPendingContextRequest(callSid: string): boolean {
+        const call = this.activeCalls.get(callSid);
+        return !!(call && call.pendingContextRequest);
     }
 }

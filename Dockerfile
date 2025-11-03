@@ -4,7 +4,7 @@ WORKDIR /app/frontend
 
 # Copy frontend package files
 COPY frontend/package*.json ./
-RUN npm ci
+RUN npm install
 
 # Copy frontend source
 COPY frontend/ ./
@@ -21,7 +21,7 @@ RUN apk add --no-cache python3 make g++
 
 # Copy backend package files
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # Copy backend source
 COPY src/ ./src/
@@ -39,13 +39,16 @@ RUN apk add --no-cache python3 make g++
 
 # Copy backend package files and install production dependencies
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install --only=production
 
 # Copy built backend
 COPY --from=backend-builder /app/dist ./dist
 
 # Copy built frontend
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+
+# Copy public directory (audio files for hold messages, etc.)
+COPY public/ ./public/
 
 # Expose port
 EXPOSE 3004

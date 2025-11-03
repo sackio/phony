@@ -135,6 +135,42 @@ export const callToolsDefinitions: MCPToolDefinition[] = [
         }
     },
     {
+        name: 'phony_request_operator_context',
+        description: 'Put the call on hold and request additional context from the human operator. The call will remain on hold until the operator provides the requested information.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                callSid: {
+                    type: 'string',
+                    description: 'Twilio call SID'
+                },
+                question: {
+                    type: 'string',
+                    description: 'The question or request for the operator. Be specific about what information you need. Example: "What is the customer\'s account balance?" or "Does the customer have any pending orders?"'
+                }
+            },
+            required: ['callSid', 'question']
+        }
+    },
+    {
+        name: 'phony_send_dtmf',
+        description: 'Send DTMF (phone keypad) tones to an active call. Useful for navigating IVR menus, entering codes, or pressing phone buttons.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                callSid: {
+                    type: 'string',
+                    description: 'Twilio call SID'
+                },
+                digits: {
+                    type: 'string',
+                    description: 'DTMF digits to send. Can include: 0-9, *, #, A-D. Use \'w\' for 0.5s pause, \'W\' for 1s pause. Example: "1", "123#", "1w2w3", "*9#"'
+                }
+            },
+            required: ['callSid', 'digits']
+        }
+    },
+    {
         name: 'phony_get_call_transcript',
         description: 'Get the conversation transcript for a call',
         inputSchema: {
@@ -146,6 +182,15 @@ export const callToolsDefinitions: MCPToolDefinition[] = [
                 }
             },
             required: ['callSid']
+        }
+    },
+    {
+        name: 'phony_emergency_shutdown',
+        description: 'EMERGENCY: Terminate ALL active calls immediately. Use this as a safety measure if calls are running uncontrolled or consuming excessive credits.',
+        inputSchema: {
+            type: 'object',
+            properties: {},
+            required: []
         }
     }
 ];
@@ -254,16 +299,26 @@ export function createCallToolHandlers(
             try {
                 validateArgs(args, ['callSid']);
 
-                await twilioService.holdCall(args.callSid);
+                // Get call state to retrieve the voice parameter
+                const callStateService = CallStateService.getInstance();
+                const callState = callStateService.getCall(args.callSid);
+
+                if (!callState) {
+                    return createToolError(`Call not found: ${args.callSid}`);
+                }
+
+                // Use the call's voice for the hold message
+                const voice = callState.voice || 'sage';
+                await twilioService.holdCall(args.callSid, voice);
 
                 // Update call state
-                const callStateService = CallStateService.getInstance();
                 callStateService.updateCallStatus(args.callSid, 'on_hold');
 
                 return createToolResponse({
                     success: true,
                     status: 'on_hold',
-                    message: `Call ${args.callSid} is now on hold`
+                    voice: voice,
+                    message: `Call ${args.callSid} is now on hold with voice: ${voice}`
                 });
             } catch (error: any) {
                 return createToolError('Failed to hold call', { message: error.message });
@@ -339,6 +394,73 @@ export function createCallToolHandlers(
             }
         },
 
+        phony_request_operator_context: async (args) => {
+            try {
+                validateArgs(args, ['callSid', 'question']);
+
+                const callStateService = CallStateService.getInstance();
+                const call = callStateService.getCall(args.callSid);
+
+                if (!call) {
+                    return createToolError(`Call not found: ${args.callSid}`);
+                }
+
+                // Put the call on hold first
+                const voice = call.voice || 'sage';
+                await twilioService.holdCall(args.callSid, voice);
+
+                // Update call status to on_hold
+                callStateService.updateCallStatus(args.callSid, 'on_hold');
+
+                // Store the pending context request
+                callStateService.setPendingContextRequest(args.callSid, args.question, 'agent');
+
+                // Emit context request via Socket.IO to notify the frontend
+                const SocketService = await import('../../services/socket.service.js').then(m => m.SocketService);
+                const socketService = SocketService.getInstance();
+                socketService.emitContextRequest(args.callSid, args.question, 'agent');
+
+                return createToolResponse({
+                    success: true,
+                    status: 'on_hold',
+                    message: `Call ${args.callSid} is on hold. Waiting for operator to provide: ${args.question}`,
+                    question: args.question
+                });
+            } catch (error: any) {
+                return createToolError('Failed to request operator context', { message: error.message });
+            }
+        },
+
+        phony_send_dtmf: async (args) => {
+            try {
+                validateArgs(args, ['callSid', 'digits']);
+
+                // Validate DTMF digits
+                const validDTMF = /^[0-9*#A-DwW ]+$/;
+                if (!validDTMF.test(args.digits)) {
+                    return createToolError('Invalid DTMF digits. Allowed: 0-9, *, #, A-D, w (0.5s pause), W (1s pause)');
+                }
+
+                // Get call from CallStateService
+                const callStateService = CallStateService.getInstance();
+                const call = callStateService.getCall(args.callSid);
+
+                if (!call || !call.twilioCallSid) {
+                    return createToolError(`Call not found or not active: ${args.callSid}`);
+                }
+
+                // Send DTMF tones via Twilio
+                await twilioService.sendDTMF(call.twilioCallSid, args.digits);
+
+                return createToolResponse({
+                    success: true,
+                    message: `DTMF tones "${args.digits}" sent to call ${args.callSid}`
+                });
+            } catch (error: any) {
+                return createToolError('Failed to send DTMF tones', { message: error.message });
+            }
+        },
+
         phony_get_call_transcript: async (args) => {
             try {
                 validateArgs(args, ['callSid']);
@@ -356,6 +478,41 @@ export function createCallToolHandlers(
                 });
             } catch (error: any) {
                 return createToolError('Failed to get transcript', { message: error.message });
+            }
+        },
+
+        phony_emergency_shutdown: async () => {
+            try {
+                const PUBLIC_URL = process.env.PUBLIC_URL || '';
+                const DYNAMIC_API_SECRET = await import('../../config/constants.js').then(m => m.DYNAMIC_API_SECRET);
+
+                // Call the emergency shutdown endpoint
+                const response = await fetch(`${PUBLIC_URL}/api/emergency-shutdown?apiSecret=${DYNAMIC_API_SECRET}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    return createToolError('Emergency shutdown failed', {
+                        status: response.status,
+                        statusText: response.statusText
+                    });
+                }
+
+                const result = await response.json();
+
+                return createToolResponse({
+                    success: true,
+                    message: `Emergency shutdown completed successfully`,
+                    terminatedCount: result.terminatedCount,
+                    failedCount: result.failedCount,
+                    terminatedCalls: result.terminatedCalls,
+                    failedCalls: result.failedCalls
+                });
+            } catch (error: any) {
+                return createToolError('Failed to execute emergency shutdown', { message: error.message });
             }
         }
     };

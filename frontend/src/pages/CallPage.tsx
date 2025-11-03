@@ -22,6 +22,7 @@ export function CallPage() {
 
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [contextInput, setContextInput] = useState('');
+  const [contextRequest, setContextRequest] = useState<{ question: string; requestedBy: string; timestamp: string } | null>(null);
 
   // Expandable sections state
   const [showSystemInstructions, setShowSystemInstructions] = useState(false);
@@ -87,9 +88,21 @@ export function CallPage() {
     mutationFn: (context: string) => callsApi.injectContext(callSid!, context),
     onSuccess: () => {
       setContextInput('');
+      setContextRequest(null); // Clear the pending context request
       queryClient.invalidateQueries({ queryKey: ['call', callSid] });
     },
   });
+
+  const sendDTMFMutation = useMutation({
+    mutationFn: (digits: string) => callsApi.sendDTMF(callSid!, digits),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['call', callSid] });
+    },
+  });
+
+  const handleDTMFClick = (digit: string) => {
+    sendDTMFMutation.mutate(digit);
+  };
 
   useEffect(() => {
     socketService.connect();
@@ -130,10 +143,23 @@ export function CallPage() {
       }
     });
 
+    socketService.on('context_request', (data: any) => {
+      if (data.callSid === callSid) {
+        setContextRequest({
+          question: data.question,
+          requestedBy: data.requestedBy,
+          timestamp: data.timestamp
+        });
+        // Scroll to context input
+        document.getElementById('context-input')?.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+
     return () => {
       socketService.unsubscribeFromCall(callSid!);
       socketService.off('transcript_update');
       socketService.off('call_status_changed');
+      socketService.off('context_request');
     };
   }, [callSid, queryClient]);
 
@@ -249,8 +275,23 @@ export function CallPage() {
 
           {['active', 'in-progress', 'on_hold', 'initiated'].includes(call.status) && (
             <div className="context-injection-section">
+              {contextRequest && (
+                <div className="context-request-alert">
+                  <div className="alert-header">
+                    <span className="alert-icon">🤖</span>
+                    <strong>Agent Requesting Context</strong>
+                  </div>
+                  <div className="alert-body">
+                    <p className="request-question">{contextRequest.question}</p>
+                    <p className="request-meta">
+                      Requested by: {contextRequest.requestedBy} • Call is on hold until you respond
+                    </p>
+                  </div>
+                </div>
+              )}
               <h3>Inject Context</h3>
               <textarea
+                id="context-input"
                 className="context-input"
                 placeholder="Enter instructions or context to inject into the conversation..."
                 value={contextInput}
@@ -264,6 +305,33 @@ export function CallPage() {
               >
                 💬 Send Context
               </button>
+            </div>
+          )}
+
+          {['active', 'in-progress', 'initiated'].includes(call.status) && (
+            <div className="dtmf-keypad-section">
+              <h3>📞 DTMF Keypad</h3>
+              <p className="dtmf-description">Send phone keypad tones (for IVR navigation, entering codes, etc.)</p>
+              <div className="dtmf-keypad">
+                <button onClick={() => handleDTMFClick('1')} className="dtmf-button">1</button>
+                <button onClick={() => handleDTMFClick('2')} className="dtmf-button">2</button>
+                <button onClick={() => handleDTMFClick('3')} className="dtmf-button">3</button>
+                <button onClick={() => handleDTMFClick('4')} className="dtmf-button">4</button>
+                <button onClick={() => handleDTMFClick('5')} className="dtmf-button">5</button>
+                <button onClick={() => handleDTMFClick('6')} className="dtmf-button">6</button>
+                <button onClick={() => handleDTMFClick('7')} className="dtmf-button">7</button>
+                <button onClick={() => handleDTMFClick('8')} className="dtmf-button">8</button>
+                <button onClick={() => handleDTMFClick('9')} className="dtmf-button">9</button>
+                <button onClick={() => handleDTMFClick('*')} className="dtmf-button dtmf-special">*</button>
+                <button onClick={() => handleDTMFClick('0')} className="dtmf-button">0</button>
+                <button onClick={() => handleDTMFClick('#')} className="dtmf-button dtmf-special">#</button>
+              </div>
+              {sendDTMFMutation.isPending && (
+                <div className="dtmf-status">Sending...</div>
+              )}
+              {sendDTMFMutation.isError && (
+                <div className="dtmf-status error">Failed to send DTMF</div>
+              )}
             </div>
           )}
         </div>
