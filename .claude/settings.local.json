@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "mcp__nginx__read_domain_config"
+      "mcp__nginx__read_domain_config",
+      "Bash(find:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

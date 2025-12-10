@@ -60,3 +60,4 @@ pids
 
 # ngrok
 .ngrok/
+.claude/.nfs*
