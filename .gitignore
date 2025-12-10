@@ -61,3 +61,6 @@ pids
 # ngrok
 .ngrok/
 .claude/.nfs*
+
+# Playwright screenshots
+.playwright-mcp/
