@@ -1,12 +1,13 @@
-# Voice Call MCP Server - Claude Context
+# Phony - Claude Context
 
 ## Project Overview
 
-**Location**: `/mnt/nas/data/code/forks/voice-call-mcp-server`
+**Location**: `/mnt/nas/data/code/forks/phony`
 
-This is a Model Context Protocol (MCP) server that enables Claude and other AI assistants to initiate and manage real-time voice calls using:
-- **Twilio** for telephony infrastructure
+This is a Model Context Protocol (MCP) server that enables Claude and other AI assistants to initiate and manage real-time voice calls and SMS messaging using:
+- **Twilio** for telephony and SMS infrastructure
 - **OpenAI GPT-4o Realtime API** for AI-powered voice conversations
+- **MongoDB** for persistent storage of call transcripts and SMS messages
 - **Ngrok** for public webhook access
 
 ## Architecture
@@ -19,12 +20,19 @@ This is a Model Context Protocol (MCP) server that enables Claude and other AI a
    - Uses `@modelcontextprotocol/sdk` v1.8.0
 
 2. **Voice Server** (Express + WebSocket)
-   - Handles Twilio webhook callbacks
+   - Handles Twilio webhook callbacks for calls and SMS
    - Port: 3004 (configurable via PORT env var)
    - Defined in: `src/servers/voice.server.ts`
-   - Endpoints:
+   - Call Endpoints:
      - `POST /call/outgoing` - Twilio webhook handler
      - `WebSocket /call/connection-outgoing/:secret` - Media stream connection
+   - SMS Endpoints:
+     - `POST /sms/incoming` - Incoming SMS webhook
+     - `POST /sms/status` - SMS status callback webhook
+     - `POST /api/sms/send` - Send SMS API
+     - `GET /api/sms/messages` - List messages API
+     - `GET /api/sms/messages/:messageSid` - Get message details API
+     - `GET /api/sms/conversation` - Get conversation history API
 
 3. **Nginx Reverse Proxy** (external)
    - Provides public URL for Twilio webhooks via PUBLIC_URL env var
@@ -39,12 +47,50 @@ This is a Model Context Protocol (MCP) server that enables Claude and other AI a
 
 ### Tools
 
+**Call Management Tools:**
+
 **trigger-call**
 - Initiates an outbound phone call via Twilio
 - Parameters:
   - `toNumber` (string): Phone number in E.164 format (e.g., +11234567890)
   - `callContext` (string): Instructions for the AI during the call
 - Returns: `{ status, message, callSid }`
+
+**SMS Messaging Tools:**
+
+**phony_send_sms**
+- Send an SMS text message to a phone number
+- Parameters:
+  - `toNumber` (string, required): Recipient phone number in E.164 format
+  - `body` (string, required): The text message to send (max 1600 characters)
+  - `fromNumber` (string, optional): Sender phone number (defaults to TWILIO_NUMBER)
+- Returns: `{ status, message, data: { messageSid, status, toNumber, fromNumber, body, sentAt } }`
+
+**phony_list_messages**
+- List SMS message history with optional filtering
+- Parameters:
+  - `direction` (enum, optional): "inbound" or "outbound"
+  - `fromNumber` (string, optional): Filter by sender phone number
+  - `toNumber` (string, optional): Filter by recipient phone number
+  - `status` (enum, optional): Filter by message status
+  - `startDate` (string, optional): Filter messages after this date (ISO format)
+  - `endDate` (string, optional): Filter messages before this date (ISO format)
+  - `limit` (number, optional): Maximum number of messages to return (default: 100, max: 200)
+- Returns: `{ status, message, data: { count, messages: [...] } }`
+
+**phony_get_message**
+- Get detailed information about a specific SMS message
+- Parameters:
+  - `messageSid` (string, required): Twilio message SID
+- Returns: `{ status, message, data: { messageSid, fromNumber, toNumber, direction, body, status, ... } }`
+
+**phony_get_conversation**
+- Get all SMS messages between two phone numbers (conversation history)
+- Parameters:
+  - `phoneNumber1` (string, required): First phone number in E.164 format
+  - `phoneNumber2` (string, required): Second phone number in E.164 format
+  - `limit` (number, optional): Maximum number of messages to return (default: 100)
+- Returns: `{ status, message, data: { phoneNumber1, phoneNumber2, messageCount, conversation: [...] } }`
 
 ### Prompts
 
@@ -91,6 +137,10 @@ Phone Caller → Twilio → WebSocket → TwilioWsService
 - `call.service.ts` - Twilio API operations (makeCall, startRecording, endCall)
 - `ws.service.ts` - Handles Twilio media stream WebSocket
 - `event.service.ts` - Processes Twilio media stream events
+- `sms.service.ts` - SMS sending and webhook handling (sendSms, handleIncomingSms, handleStatusCallback)
+
+**SMS Services** (`src/services/sms/`)
+- `storage.service.ts` - MongoDB operations for SMS messages (saveSms, getSms, listSms, getConversation, updateSmsStatus)
 
 **Session Management**
 - `src/handlers/openai.handler.ts` - OpenAICallHandler and CallSessionManager
@@ -133,6 +183,7 @@ TWILIO_ACCOUNT_SID=your_account_sid
 TWILIO_AUTH_TOKEN=your_auth_token
 TWILIO_NUMBER=your_e164_number  # e.g., +11234567890
 OPENAI_API_KEY=your_openai_api_key
+MONGODB_URL=mongodb://localhost:27017/phony  # MongoDB connection string
 ```
 
 Optional:
@@ -175,7 +226,7 @@ Add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "voice-call": {
+    "phony": {
       "command": "node",
       "args": ["/absolute/path/to/dist/start-all.cjs"],
       "env": {
@@ -190,14 +241,14 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-After config, restart Claude Desktop. If connected, "Voice Call" appears in 🔨 menu.
+After config, restart Claude Desktop. If connected, "Phony" appears in 🔨 menu.
 
 ## Nginx Configuration
 
 The server requires nginx (or similar reverse proxy) to be configured to forward Twilio webhook requests. Add this location block to your nginx config:
 
 ```nginx
-# Voice Call MCP Server - Twilio webhooks and WebSocket - no auth required
+# Phony - Twilio webhooks and WebSocket - no auth required
 location /call/ {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -217,6 +268,8 @@ location /call/ {
 
 ## Usage Examples
 
+### Voice Calls
+
 1. **Simple notification call**:
    > "Can you call +1-123-456-7890 and let them know I'll be 15 minutes late?"
 
@@ -225,6 +278,23 @@ location /call/ {
 
 3. **Appointment rescheduling**:
    > "Call Expert Dental NYC (+1-123-456-7899) and reschedule my Monday appointment to next Friday between 4–6pm."
+
+### SMS Messaging
+
+1. **Send appointment reminder**:
+   > "Send a text message to +1-123-456-7890 reminding them about their appointment tomorrow at 2 PM."
+
+2. **Follow-up after call**:
+   > "Send an SMS to +1-123-456-7890 with the reference number REF-12345 and a summary of our conversation."
+
+3. **Check message history**:
+   > "Show me all SMS messages I sent to +1-123-456-7890 in the last week."
+
+4. **View conversation**:
+   > "Get the full SMS conversation history between my number and +1-123-456-7890."
+
+5. **Check message status**:
+   > "What's the delivery status of message SM1234567890abcdef?"
 
 ## Event Processing
 
@@ -246,18 +316,36 @@ location /call/ {
 
 ## Features
 
+### Voice Calls
 - ✅ Outbound phone calls via Twilio
 - ✅ Real-time audio with GPT-4o Realtime model
 - ✅ Natural two-way conversations
 - ✅ Multilingual support (language switching mid-call)
 - ✅ Pre-built prompts (restaurant reservations)
-- ✅ Nginx reverse proxy support for public URL
-- ✅ Secure credential handling
 - ✅ Optional call recording
 - ✅ Conversation history tracking
 - ✅ Interrupt handling (user can interrupt AI)
 - ✅ Goodbye detection (automatic call termination)
 - ✅ Multiple concurrent call sessions
+- ✅ DTMF tone sending (navigate IVR menus)
+
+### SMS Messaging
+- ✅ Send SMS messages via Twilio
+- ✅ Receive incoming SMS messages
+- ✅ Automatic status tracking (queued, sent, delivered, failed)
+- ✅ Persistent MongoDB storage for all messages
+- ✅ Conversation history between phone numbers
+- ✅ Message filtering (by direction, status, date range, phone numbers)
+- ✅ MMS support (multimedia messages with media URLs)
+- ✅ Webhook handling for incoming messages and status updates
+- ✅ Character count tracking (SMS segments)
+- ✅ Frontend UI for sending/viewing messages
+
+### Infrastructure
+- ✅ Nginx reverse proxy support for public URL
+- ✅ Secure credential handling
+- ✅ MongoDB persistence for calls and SMS
+- ✅ Frontend React UI for call and SMS management
 
 ## Security
 
@@ -316,27 +404,36 @@ location /call/ {
 ## Limitations & TODO
 
 **Current Limitations**:
-- ❌ Only outbound calls (no inbound)
+- ⚠️ Inbound calls require configuration via incoming call handlers
 - ❌ Transcription retrieval incomplete (TODO in `mcp.server.ts`)
 - ❌ Basic call recording (via Twilio API only)
-- ❌ No persistent conversation storage
+
+**Recently Implemented**:
+- ✅ SMS messaging (send, receive, history, conversation tracking)
+- ✅ MongoDB persistence for SMS messages
+- ✅ Frontend UI for SMS management
+- ✅ Comprehensive test coverage for SMS functionality
 
 **Planned Improvements** (from README):
 - Support for multiple AI models
-- Database integration for conversation history
 - Improved latency and response times
 - Enhanced error handling
 - More conversation templates
 - Call monitoring and analytics
+- Advanced SMS features (scheduled messages, templates, bulk sending)
 
 ## Cost Considerations
 
-- **Twilio**: Per-minute charges for phone calls (varies by destination)
+- **Twilio**:
+  - Per-minute charges for phone calls (varies by destination)
+  - Per-message charges for SMS (varies by destination country)
+  - Per-message charges for MMS (multimedia messages)
 - **OpenAI**: GPT-4o Realtime API charges per second of audio
+- **MongoDB**: Database storage costs (if using cloud hosting)
 - **Nginx**: No cost (self-hosted)
 - **Call recording**: Additional Twilio storage costs
 
-**Recommendation**: Set up billing alerts in Twilio and OpenAI accounts.
+**Recommendation**: Set up billing alerts in Twilio and OpenAI accounts. Monitor MongoDB storage usage for SMS history.
 
 ## Development Tips
 
@@ -373,4 +470,4 @@ Licensed under MIT License.
 **Git Info**:
 - Branch: `main`
 - Status: Clean (no uncommitted changes)
-- Remote: `https://github.com/lukaskai/voice-call-mcp-server.git`
+- Remote: `https://github.com/lukaskai/phony.git`

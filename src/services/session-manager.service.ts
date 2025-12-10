@@ -3,23 +3,29 @@ import twilio from 'twilio';
 import { CallType } from '../types.js';
 import { OpenAIContextService } from './openai/context.service.js';
 import { OpenAICallHandler } from '../handlers/openai.handler.js';
+import { CallTranscriptService } from './database/call-transcript.service.js';
 
 /**
  * Manages multiple concurrent call sessions
  */
 export class SessionManagerService {
     private readonly activeSessions: Map<string, OpenAICallHandler>;
+    private readonly sessionsByCallSid: Map<string, OpenAICallHandler>;
     private readonly twilioClient: twilio.Twilio;
     private readonly contextService: OpenAIContextService;
+    private readonly transcriptService: CallTranscriptService;
 
     /**
      * Create a new session manager
-     * @param twilioConfig Configuration for the Twilio client
+     * @param twilioClient The Twilio client
+     * @param transcriptService The transcript service for saving call transcripts
      */
-    constructor(twilioClient: twilio.Twilio) {
+    constructor(twilioClient: twilio.Twilio, transcriptService: CallTranscriptService) {
         this.activeSessions = new Map();
+        this.sessionsByCallSid = new Map();
         this.twilioClient = twilioClient;
         this.contextService = new OpenAIContextService();
+        this.transcriptService = transcriptService;
     }
 
     /**
@@ -28,7 +34,7 @@ export class SessionManagerService {
      * @param callType The type of call
      */
     public createSession(ws: WebSocket, callType: CallType): void {
-        const handler = new OpenAICallHandler(ws, callType, this.twilioClient, this.contextService);
+        const handler = new OpenAICallHandler(ws, callType, this.twilioClient, this.contextService, this.transcriptService, this);
         this.registerSessionCleanup(ws);
         this.addSession(ws, handler);
     }
@@ -86,5 +92,53 @@ export class SessionManagerService {
      */
     public getContextService(): OpenAIContextService {
         return this.contextService;
+    }
+
+    /**
+     * Register a session by callSid for later retrieval
+     * @param callSid The call SID
+     * @param handler The OpenAI call handler
+     */
+    public registerSessionByCallSid(callSid: string, handler: OpenAICallHandler): void {
+        this.sessionsByCallSid.set(callSid, handler);
+        console.log(`[Session Manager] Registered session for callSid: ${callSid}`);
+    }
+
+    /**
+     * Get a session by callSid
+     * @param callSid The call SID
+     * @returns The OpenAI call handler or undefined
+     */
+    public getSessionByCallSid(callSid: string): OpenAICallHandler | undefined {
+        return this.sessionsByCallSid.get(callSid);
+    }
+
+    /**
+     * Inject context into an active call session
+     * @param callSid The call SID
+     * @param context The context to inject
+     * @param conversationHistory The full conversation history
+     * @returns true if successful, false if session not found
+     */
+    public injectContext(callSid: string, context: string, conversationHistory: any[]): boolean {
+        const handler = this.sessionsByCallSid.get(callSid);
+        if (!handler) {
+            console.warn(`[Session Manager] No session found for callSid: ${callSid}`);
+            return false;
+        }
+
+        handler.injectContext(context, conversationHistory);
+        return true;
+    }
+
+    /**
+     * Unregister a session by callSid
+     * @param callSid The call SID
+     */
+    public unregisterSessionByCallSid(callSid: string): void {
+        if (this.sessionsByCallSid.has(callSid)) {
+            this.sessionsByCallSid.delete(callSid);
+            console.log(`[Session Manager] Unregistered session for callSid: ${callSid}`);
+        }
     }
 }

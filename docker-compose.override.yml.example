@@ -1,0 +1,19 @@
+# Example override file for local development
+# Copy this to docker-compose.override.yml and customize
+
+version: '3.8'
+
+services:
+  voice-server:
+    # Mount source code for development
+    volumes:
+      - ./src:/app/src
+      - ./frontend:/app/frontend
+
+    # Override command for development with hot reload
+    # command: npm run start-all
+
+    # Add environment variables for debugging
+    environment:
+      NODE_ENV: development
+      DEBUG: '*'

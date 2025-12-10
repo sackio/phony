@@ -7,7 +7,7 @@ import { SHOW_TIMING_MATH } from '../../config/constants.js';
  */
 export class OpenAIWsService {
     private webSocket: WebSocket | null = null;
-    private readonly config: OpenAIConfig;
+    private config: OpenAIConfig;
 
     /**
      * Create a new OpenAI service
@@ -15,6 +15,15 @@ export class OpenAIWsService {
      */
     constructor(config: OpenAIConfig) {
         this.config = config;
+    }
+
+    /**
+     * Update the voice setting
+     * @param voice The new voice to use
+     */
+    public updateVoice(voice: string): void {
+        this.config.voice = voice;
+        console.log('[OpenAI WS] Voice updated to:', voice);
     }
 
     /**
@@ -52,8 +61,9 @@ export class OpenAIWsService {
     /**
      * Initialize the session with OpenAI
      * @param callContext The context for the call
+     * @param isIncoming Whether this is an incoming call (for logging purposes)
      */
-    public initializeSession(callContext: string): void {
+    public initializeSession(callContext: string, isIncoming: boolean = false): void {
         if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
             console.error('[OpenAI WS] Cannot initialize session - WebSocket not ready. State:', this.webSocket?.readyState);
             return;
@@ -62,6 +72,8 @@ export class OpenAIWsService {
         const sessionUpdate = {
             type: 'session.update',
             session: {
+                // Always use server VAD for automatic turn detection
+                // For incoming calls, instructions will tell agent to wait for caller
                 turn_detection: { type: 'server_vad' },
                 input_audio_format: 'g711_ulaw',
                 output_audio_format: 'g711_ulaw',
@@ -72,10 +84,29 @@ export class OpenAIWsService {
                 'input_audio_transcription': {
                     'model': 'whisper-1'
                 },
+                tools: [
+                    {
+                        type: 'function',
+                        name: 'send_dtmf',
+                        description: 'Send DTMF (phone keypad) tones during the call. Use this to press phone buttons like navigating IVR menus, entering codes, or selecting options.',
+                        parameters: {
+                            type: 'object',
+                            properties: {
+                                digits: {
+                                    type: 'string',
+                                    description: 'The DTMF digits to send. Can include: 0-9, *, #, A-D. Use \'w\' for 0.5s pause, \'W\' for 1s pause. Example: "1", "123", "1w2w3", "*9#"'
+                                }
+                            },
+                            required: ['digits']
+                        }
+                    }
+                ],
+                tool_choice: 'auto'
             }
         };
 
         console.log('[OpenAI WS] Initializing session with context:', callContext.substring(0, 100) + '...');
+        console.log('[OpenAI WS] Call type:', isIncoming ? 'INCOMING (instructions say: wait for caller)' : 'OUTGOING');
         this.webSocket.send(JSON.stringify(sessionUpdate));
     }
 
@@ -138,5 +169,92 @@ export class OpenAIWsService {
      */
     public isConnected(): boolean {
         return this.webSocket !== null && this.webSocket.readyState === WebSocket.OPEN;
+    }
+
+    /**
+     * Add a conversation item to the OpenAI session
+     * @param role The role (user, assistant, or system)
+     * @param content The content of the message
+     */
+    public addConversationItem(role: string, content: string): void {
+        if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
+            console.error('[OpenAI WS] Cannot add conversation item - WebSocket not ready. State:', this.webSocket?.readyState);
+            return;
+        }
+
+        const conversationItem = {
+            type: 'conversation.item.create',
+            item: {
+                type: 'message',
+                role: role,
+                content: [
+                    {
+                        type: 'input_text',
+                        text: content
+                    }
+                ]
+            }
+        };
+
+        this.webSocket.send(JSON.stringify(conversationItem));
+    }
+
+    /**
+     * Inject context into the conversation as a system message
+     * @param context The context to inject
+     * @param conversationSummary Optional summary of the conversation so far
+     */
+    public injectContextMessage(context: string, conversationSummary?: string): void {
+        if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
+            console.error('[OpenAI WS] Cannot inject context - WebSocket not ready. State:', this.webSocket?.readyState);
+            return;
+        }
+
+        const fullContext = conversationSummary
+            ? `OPERATOR INSTRUCTION:\n${context}\n\nCONVERSATION SUMMARY:\n${conversationSummary}`
+            : `OPERATOR INSTRUCTION:\n${context}`;
+
+        console.log('[OpenAI WS] Full context being sent to OpenAI:\n', fullContext);
+
+        const conversationItem = {
+            type: 'conversation.item.create',
+            item: {
+                type: 'message',
+                role: 'system',
+                content: [
+                    {
+                        type: 'input_text',
+                        text: fullContext
+                    }
+                ]
+            }
+        };
+
+        console.log('[OpenAI WS] Sending conversation.item.create with system message');
+        this.webSocket.send(JSON.stringify(conversationItem));
+
+        // Trigger a response from the assistant
+        const responseCreate = {
+            type: 'response.create'
+        };
+        console.log('[OpenAI WS] Sending response.create to trigger AI response');
+        this.webSocket.send(JSON.stringify(responseCreate));
+    }
+
+    /**
+     * Trigger a response from the assistant
+     * Useful when resuming a call or after restoring conversation history
+     */
+    public triggerResponse(): void {
+        if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
+            console.error('[OpenAI WS] Cannot trigger response - WebSocket not ready. State:', this.webSocket?.readyState);
+            return;
+        }
+
+        const responseCreate = {
+            type: 'response.create'
+        };
+        console.log('[OpenAI WS] Triggering assistant response');
+        this.webSocket.send(JSON.stringify(responseCreate));
     }
 }

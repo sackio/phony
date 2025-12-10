@@ -1,8 +1,10 @@
-# Voice Call MCP Server
+# Phony
 
-A Model Context Protocol (MCP) server that enables Claude and other AI assistants to initiate and manage voice calls using Twilio and OpenAI (GPT-4o Realtime model).
+**AI-Powered Voice Call & SMS MCP Server**
 
-Use this as a base to kick-start your AI-powered voice calling explorations, save time and develop additional functionality on top of it.
+A Model Context Protocol (MCP) server that enables Claude and other AI assistants to initiate and manage voice calls and SMS messages using Twilio and OpenAI (GPT-4o Realtime model).
+
+Use this as a base to kick-start your AI-powered voice calling and messaging explorations, save time and develop additional functionality on top of it.
 
 ![Demo](./assets/demo.gif)
 
@@ -66,8 +68,8 @@ This open-source implementation provides transparency and customizability, allow
 
 1. Clone the repository
    ```bash
-   git clone https://github.com/lukaskai/voice-call-mcp-server.git
-   cd voice-call-mcp-server
+   git clone https://github.com/sackio/phony.git
+   cd phony
    ```
 
 2. Install dependencies and build
@@ -78,22 +80,49 @@ This open-source implementation provides transparency and customizability, allow
 
 ## Configuration
 
-The server requires several environment variables:
+The server requires several environment variables. Copy `.env.example` to `.env` and configure:
+
+```bash
+cp .env.example .env
+```
+
+### Required Environment Variables
 
 - `PUBLIC_URL`: Your public URL for Twilio callbacks (e.g., `https://your-domain.com`)
 - `TWILIO_ACCOUNT_SID`: Your Twilio account SID
 - `TWILIO_AUTH_TOKEN`: Your Twilio auth token
 - `TWILIO_NUMBER`: Your Twilio number (in E.164 format)
 - `OPENAI_API_KEY`: Your OpenAI API key
+
+### MongoDB Security
+
+MongoDB is configured with authentication enabled. Generate a secure password:
+
+```bash
+openssl rand -base64 32
+```
+
+Then configure in `.env`:
+
+- `MONGODB_USERNAME`: Database username (default: `voicecalls_admin`)
+- `MONGODB_PASSWORD`: Randomly generated password (use command above)
+- `MONGODB_DATABASE`: Database name (default: `phony`)
+- `MONGODB_URI`: Full connection string with authentication
+
+**⚠️ Important**: Never commit `.env` to version control. The `.env.example` file contains placeholder values only.
+
+### Optional Variables
+
 - `RECORD_CALLS`: Set to "true" to record calls (optional)
 - `PORT`: Server port (optional, defaults to 3004)
+- `API_SECRET`: Webhook security secret (randomly generated if not set)
 
 ### Nginx Configuration
 
 You need to configure nginx (or similar reverse proxy) to forward requests to the server. Example nginx location block:
 
 ```nginx
-# Voice Call MCP Server - Twilio webhooks and WebSocket
+# Phony - Twilio webhooks and WebSocket
 location /call/ {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -122,9 +151,9 @@ To use this server with Claude Desktop, add the following to your configuration 
 ```json
 {
   "mcpServers": {
-    "voice-call": {
+    "phony": {
       "command": "node",
-      "args": ["/path/to/your/voice-call-mcp-server/dist/start-all.cjs"],
+      "args": ["/path/to/your/phony/dist/start-all.cjs"],
       "env": {
         "PUBLIC_URL": "https://your-domain.com",
         "TWILIO_ACCOUNT_SID": "your_account_sid",
@@ -199,6 +228,18 @@ Contributions are welcome! Here are some areas we're looking to improve:
 - Implement improved call monitoring and analytics
 
 If you'd like to contribute, please open an issue to discuss your ideas before submitting a pull request.
+
+## Credits
+
+Phony is a fork of the [Voice Call MCP Server](https://github.com/popcornspace/voice-call-mcp-server) originally created by the [Popcorn](https://careers.popcorn.space) team.
+
+We've extended it with:
+- SMS messaging capabilities (send, receive, conversation tracking)
+- Incoming call handling with proper greeting protocols
+- Human-in-the-loop call management with real-time context injection
+- React frontend UI for call and SMS management
+- Call hold/resume functionality with TTS hold messages
+- Enhanced features and comprehensive documentation
 
 ## License
 
