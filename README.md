@@ -250,8 +250,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 Please do not include any sensitive information (like phone numbers or API credentials) in GitHub issues or pull requests. This server handles sensitive communications; deploy it responsibly and ensure all credentials are kept secure.
 
 
-## Time For a New Mission?
-
-We’re hiring engineers to build at the frontier of voice AI — and bake it into a next-gen telco.
-
-Curious? Head to [careers.popcorn.space](https://careers.popcorn.space/apply) 🍿 !
