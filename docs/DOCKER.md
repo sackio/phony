@@ -1,6 +1,6 @@
-# Docker Setup for Voice Call MCP Server
+# Docker Setup for Phony
 
-This guide explains how to run the Voice Call MCP Server with MongoDB using Docker Compose.
+This guide explains how to run Phony with MongoDB using Docker Compose.
 
 ## Prerequisites
 
@@ -37,13 +37,13 @@ This guide explains how to run the Voice Call MCP Server with MongoDB using Dock
 ## Services
 
 ### MongoDB
-- **Container**: `voice-call-mongodb`
+- **Container**: `phony-mongodb`
 - **Port**: 27017
-- **Database**: voice-calls
+- **Database**: phony
 - **Data**: Persisted in Docker volume `mongodb_data`
 
 ### Voice Server
-- **Container**: `voice-call-server`
+- **Container**: `phony-server`
 - **Port**: 3004
 - **Dependencies**: MongoDB (waits for health check)
 
@@ -81,12 +81,12 @@ docker compose restart voice-server
 
 ### Access MongoDB shell
 ```bash
-docker compose exec mongodb mongosh voice-calls
+docker compose exec mongodb mongosh phony
 ```
 
 ### View call transcripts in MongoDB
 ```bash
-docker compose exec mongodb mongosh voice-calls --eval "db.calls.find().pretty()"
+docker compose exec mongodb mongosh phony --eval "db.calls.find().pretty()"
 ```
 
 ## Stopping and Cleaning Up
@@ -149,12 +149,12 @@ For production:
 environment:
   MONGO_INITDB_ROOT_USERNAME: admin
   MONGO_INITDB_ROOT_PASSWORD: your-secure-password
-  MONGO_INITDB_DATABASE: voice-calls
+  MONGO_INITDB_DATABASE: phony
 ```
 
 4. Update the connection string:
 ```bash
-MONGODB_URI=mongodb://admin:your-secure-password@mongodb:27017/voice-calls?authSource=admin
+MONGODB_URI=mongodb://admin:your-secure-password@mongodb:27017/phony?authSource=admin
 ```
 
 ## Data Backup

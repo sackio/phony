@@ -56,7 +56,13 @@ export class IncomingConfigService {
         }
 
         try {
-            return await IncomingConfigModel.findOne({ phoneNumber, enabled: true });
+            // Normalize phone number: ensure it starts with '+'
+            // Twilio sends numbers without '+' prefix, but we store them with '+'
+            const normalizedNumber = phoneNumber.trim().startsWith('+')
+                ? phoneNumber.trim()
+                : `+${phoneNumber.trim()}`;
+
+            return await IncomingConfigModel.findOne({ phoneNumber: normalizedNumber, enabled: true });
         } catch (error) {
             console.error(`[IncomingConfig] Error retrieving config:`, error);
             return null;

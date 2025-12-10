@@ -66,6 +66,9 @@ export class TwilioEventService {
         case 'mark':
             this.handleMarkEvent();
             break;
+        case 'dtmf':
+            await this.handleDTMFEvent(data);
+            break;
         case 'stop':
             console.log('[Twilio] Call stopped');
             break;
@@ -145,6 +148,27 @@ export class TwilioEventService {
 
         this.callState.callSid = data.start.callSid;
 
+        // For incoming calls, add to CallStateService and start duration timer
+        if (this.callState.callType === 'INBOUND') {
+            const { CallStateService } = await import('../call-state.service.js');
+            const callStateService = CallStateService.getInstance();
+
+            callStateService.addCall(this.callState.callSid, {
+                callSid: this.callState.callSid,
+                twilioCallSid: this.callState.callSid,
+                toNumber: data.start.customParameters.toNumber,
+                fromNumber: data.start.customParameters.fromNumber,
+                callType: 'incoming',
+                voice: this.callState.voice,
+                status: 'in-progress',
+                startedAt: new Date(),
+                conversationHistory: []
+            });
+
+            // Production Safety Control: Start auto-hangup timer for incoming call
+            callStateService.startDurationTimer(this.callState.callSid);
+        }
+
         // Notify that call context is ready (triggers OpenAI session initialization)
         if (this.onContextReady) {
             console.log('[Twilio Start] Call context ready, triggering OpenAI session initialization');
@@ -158,6 +182,54 @@ export class TwilioEventService {
     private handleMarkEvent(): void {
         if (this.callState.markQueue.length > 0) {
             this.callState.markQueue.shift();
+        }
+    }
+
+    /**
+     * Handle a DTMF event from Twilio Media Streams
+     * @param data The event data containing DTMF digit
+     */
+    private async handleDTMFEvent(data: any): Promise<void> {
+        const digit = data.dtmf?.digit;
+
+        if (!digit) {
+            console.error('[Twilio DTMF] Received DTMF event without digit');
+            return;
+        }
+
+        console.log(`[Twilio DTMF] Detected keypress: ${digit}`);
+
+        // Add DTMF detection to conversation history
+        const dtmfMessage = {
+            role: 'system' as const,
+            content: `User pressed keypad button: ${digit}`,
+            timestamp: new Date()
+        };
+
+        this.callState.addToConversation(dtmfMessage);
+
+        // Emit via Socket.IO for real-time UI updates
+        try {
+            const { SocketService } = await import('../socket.service.js');
+            const { CallStateService } = await import('../call-state.service.js');
+            const socketService = SocketService.getInstance();
+            const callStateService = CallStateService.getInstance();
+
+            if (this.callState.callSid) {
+                // Emit transcript update
+                socketService.emitTranscriptUpdate(this.callState.callSid, {
+                    speaker: 'system' as const,
+                    text: `🔢 Keypress detected: ${digit}`,
+                    timestamp: dtmfMessage.timestamp,
+                    isPartial: false,
+                    isInterruption: false
+                });
+
+                // Add to CallStateService for persistence
+                callStateService.addTranscript(this.callState.callSid, dtmfMessage);
+            }
+        } catch (error) {
+            console.error('[Twilio DTMF] Error emitting DTMF event:', error);
         }
     }
 }

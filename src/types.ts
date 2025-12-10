@@ -3,6 +3,21 @@ export enum CallType {
     OUTBOUND = 'OUTBOUND',
 }
 
+export enum SmsDirection {
+    INBOUND = 'inbound',
+    OUTBOUND = 'outbound',
+}
+
+export enum SmsStatus {
+    QUEUED = 'queued',
+    SENDING = 'sending',
+    SENT = 'sent',
+    DELIVERED = 'delivered',
+    UNDELIVERED = 'undelivered',
+    FAILED = 'failed',
+    RECEIVED = 'received',
+}
+
 export interface ConversationMessage {
     role: 'system' | 'user' | 'assistant';
     content: string;
@@ -79,6 +94,11 @@ export class CallState {
             timestamp: new Date(),
             data: JSON.parse(JSON.stringify(data)) // Deep clone to avoid reference issues
         });
+    }
+
+    // Helper method for adding messages to conversation history
+    addToConversation(message: ConversationMessage): void {
+        this.conversationHistory.push(message);
     }
 }
 

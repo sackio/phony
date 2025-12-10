@@ -1,6 +1,6 @@
 # Voice Call MCP Server - Available Tools
 
-The Voice Call MCP Server provides comprehensive tools for managing voice calls, context templates, and incoming call handlers via Twilio and OpenAI.
+Phony provides comprehensive tools for managing voice calls, context templates, and incoming call handlers via Twilio and OpenAI.
 
 ## Outbound Calls
 
@@ -163,6 +163,59 @@ Inject additional context or instructions into an active call.
   "context": "The customer just mentioned they're interested in premium features. Offer them a 20% discount."
 }
 ```
+
+### `send-dtmf`
+Send DTMF (phone keypad) tones to an active call.
+
+**Parameters:**
+- `callSid` (string, required): The call SID to send DTMF tones to
+- `digits` (string, required): DTMF digits to send
+
+**Supported Characters:**
+- `0-9`: Phone keypad digits
+- `*`: Star key
+- `#`: Pound/hash key
+- `A-D`: Extended DTMF tones
+- `w`: 0.5 second pause
+- `W`: 1 second pause
+
+**Use Cases:**
+- Navigate IVR (Interactive Voice Response) menus
+- Enter access codes or PINs
+- Select menu options
+- Enter confirmation codes
+
+**Examples:**
+```json
+// Press 1 for English
+{
+  "callSid": "CA1234567890abcdef1234567890abcdef",
+  "digits": "1"
+}
+
+// Enter a 4-digit PIN with pauses
+{
+  "callSid": "CA1234567890abcdef1234567890abcdef",
+  "digits": "1w2w3w4"
+}
+
+// Navigate IVR: Press 2, wait, then 3, then #
+{
+  "callSid": "CA1234567890abcdef1234567890abcdef",
+  "digits": "2w3#"
+}
+```
+
+**AI Agent Usage:**
+The AI agent can also send DTMF tones automatically using the `send_dtmf` function tool. The agent can detect when it needs to navigate IVR systems or enter codes and will use this function autonomously.
+
+**DTMF Detection:**
+When callers press keys on their phone keypad during a call, these are detected and logged in the conversation transcript as system messages:
+```
+🔢 Keypress detected: 1
+```
+
+The AI agent receives these keypress notifications in the conversation context and can respond accordingly.
 
 ## Context Templates
 
@@ -357,6 +410,115 @@ Delete an incoming call handler.
 }
 ```
 
+## SMS Messaging
+
+Send and receive SMS text messages via Twilio. All messages are stored in MongoDB for conversation history tracking.
+
+### `phony_send_sms`
+Send an SMS text message to a phone number.
+
+**Parameters:**
+- `toNumber` (string, required): Recipient phone number in E.164 format (e.g., +15551234567)
+- `body` (string, required): The text message to send (max 1600 characters)
+- `fromNumber` (string, optional): Sender phone number (defaults to TWILIO_NUMBER)
+
+**Examples:**
+```json
+// Send basic SMS
+{
+  "toNumber": "+15559876543",
+  "body": "Hello! Your appointment is confirmed for tomorrow at 2 PM."
+}
+
+// Send from specific number
+{
+  "toNumber": "+15559876543",
+  "body": "This is a notification from our support team.",
+  "fromNumber": "+14786065924"
+}
+```
+
+### `phony_list_messages`
+List SMS message history with optional filtering.
+
+**Parameters:**
+- `direction` (enum, optional): Filter by message direction - "inbound" or "outbound"
+- `fromNumber` (string, optional): Filter by sender phone number
+- `toNumber` (string, optional): Filter by recipient phone number
+- `status` (enum, optional): Filter by message status - "queued", "sending", "sent", "delivered", "undelivered", "failed", or "received"
+- `startDate` (string, optional): Filter messages after this date (ISO format: YYYY-MM-DD)
+- `endDate` (string, optional): Filter messages before this date (ISO format: YYYY-MM-DD)
+- `limit` (number, optional): Maximum number of messages to return (default: 100, max: 200)
+
+**Examples:**
+```json
+// List all messages
+{}
+
+// List only outbound messages
+{
+  "direction": "outbound"
+}
+
+// List messages to specific number
+{
+  "toNumber": "+15559876543",
+  "limit": 50
+}
+
+// List delivered messages in date range
+{
+  "status": "delivered",
+  "startDate": "2024-01-01",
+  "endDate": "2024-01-31"
+}
+```
+
+### `phony_get_message`
+Get detailed information about a specific SMS message.
+
+**Parameters:**
+- `messageSid` (string, required): Twilio message SID (e.g., SM1234567890abcdef)
+
+**Example:**
+```json
+{
+  "messageSid": "SM1234567890abcdef1234567890abcdef"
+}
+```
+
+### `phony_get_conversation`
+Get all SMS messages between two phone numbers (conversation history).
+
+**Parameters:**
+- `phoneNumber1` (string, required): First phone number in E.164 format
+- `phoneNumber2` (string, required): Second phone number in E.164 format
+- `limit` (number, optional): Maximum number of messages to return (default: 100)
+
+**Example:**
+```json
+{
+  "phoneNumber1": "+15551234567",
+  "phoneNumber2": "+15559876543",
+  "limit": 200
+}
+```
+
+**SMS Status Flow:**
+Messages progress through these statuses:
+1. `queued` - Message accepted by Twilio
+2. `sending` - Being transmitted to carrier
+3. `sent` - Sent to carrier
+4. `delivered` - Successfully delivered to recipient
+5. `failed` / `undelivered` - Delivery failed (with error details)
+
+**Features:**
+- All messages stored in MongoDB with full metadata
+- Supports MMS (multimedia messages) with media URL storage
+- Automatic status tracking via Twilio webhooks
+- Bidirectional conversation history
+- Character count tracking (SMS segments every 160 chars)
+
 ## Usage Examples
 
 ### Making a Call
@@ -423,6 +585,12 @@ Delete an incoming call handler.
   "context": "Customer mentioned they're interested in premium plan"
 }}
 
+// Send DTMF tones (navigate IVR menu)
+{ "tool": "send-dtmf", "parameters": {
+  "callSid": "CA123...",
+  "digits": "1"
+}}
+
 // Resume call
 { "tool": "resume-call", "parameters": { "callSid": "CA123..." } }
 
@@ -456,6 +624,66 @@ Delete an incoming call handler.
     "messageOnly": true,
     "hangupMessage": "Thank you for calling. We're closed right now. Business hours are Monday through Friday, 9 AM to 5 PM.",
     "voice": "sage"
+  }
+}
+```
+
+### Sending and Managing SMS
+```json
+// Send a simple text message
+{
+  "tool": "phony_send_sms",
+  "parameters": {
+    "toNumber": "+15559876543",
+    "body": "Your order #12345 has shipped and will arrive tomorrow!"
+  }
+}
+
+// Send SMS after a call completes
+{
+  "tool": "phony_send_sms",
+  "parameters": {
+    "toNumber": "+15559876543",
+    "body": "Thank you for calling! Your reference number is REF-789. If you have any questions, reply to this message."
+  }
+}
+
+// List all SMS messages
+{ "tool": "phony_list_messages" }
+
+// List outbound messages sent this week
+{
+  "tool": "phony_list_messages",
+  "parameters": {
+    "direction": "outbound",
+    "startDate": "2024-01-15",
+    "limit": 100
+  }
+}
+
+// Get conversation history with a customer
+{
+  "tool": "phony_get_conversation",
+  "parameters": {
+    "phoneNumber1": "+15551234567",
+    "phoneNumber2": "+15559876543",
+    "limit": 200
+  }
+}
+
+// Check specific message status
+{
+  "tool": "phony_get_message",
+  "parameters": {
+    "messageSid": "SM1234567890abcdef"
+  }
+}
+
+// List failed messages for troubleshooting
+{
+  "tool": "phony_list_messages",
+  "parameters": {
+    "status": "failed"
   }
 }
 ```

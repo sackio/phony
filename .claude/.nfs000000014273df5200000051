@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__nginx__read_domain_config"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

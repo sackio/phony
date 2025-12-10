@@ -4,6 +4,10 @@ import { CallPage } from './pages/CallPage';
 import { CallsListPage } from './pages/CallsListPage';
 import { IncomingConfigsPage } from './pages/IncomingConfigsPage';
 import { ContextsPage } from './pages/ContextsPage';
+import { SendSmsPage } from './pages/SendSmsPage';
+import { ConversationPage } from './pages/ConversationPage';
+import { ConversationsListPage } from './pages/ConversationsListPage';
+import { GroupConversationPage } from './pages/GroupConversationPage';
 import './App.css';
 
 function AppContent() {
@@ -18,6 +22,8 @@ function AppContent() {
         <div className="navbar-links">
           <Link to="/" className="nav-link">New Call</Link>
           <Link to="/calls" className="nav-link">Call History</Link>
+          <Link to="/sms/send" className="nav-link">Send SMS</Link>
+          <Link to="/sms/messages" className="nav-link">Messages</Link>
           <Link to="/incoming" className="nav-link">Incoming Calls</Link>
           <Link to="/contexts" className="nav-link">Contexts</Link>
         </div>
@@ -28,6 +34,10 @@ function AppContent() {
           <Route path="/" element={<HomePage />} />
           <Route path="/calls" element={<CallsListPage />} />
           <Route path="/call/:callSid" element={<CallPage />} />
+          <Route path="/sms/send" element={<SendSmsPage />} />
+          <Route path="/sms/messages" element={<ConversationsListPage />} />
+          <Route path="/sms/conversation/:phoneNumber" element={<ConversationPage />} />
+          <Route path="/sms/conversations/:conversationId" element={<GroupConversationPage />} />
           <Route path="/incoming" element={<IncomingConfigsPage />} />
           <Route path="/contexts" element={<ContextsPage />} />
         </Routes>

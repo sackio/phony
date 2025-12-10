@@ -9,6 +9,7 @@ import { callToolsDefinitions, createCallToolHandlers } from './calls.tools.js';
 import { incomingToolsDefinitions, createIncomingToolHandlers } from './incoming.tools.js';
 import { contextsToolsDefinitions, createContextsToolHandlers } from './contexts.tools.js';
 import { debugToolsDefinitions, createDebugToolHandlers } from './debug.tools.js';
+import { smsToolsDefinitions, createSmsToolHandlers } from './sms.tools.js';
 
 /**
  * Tool Registry
@@ -31,7 +32,8 @@ export class ToolRegistry {
             ...callToolsDefinitions,
             ...incomingToolsDefinitions,
             ...contextsToolsDefinitions,
-            ...debugToolsDefinitions
+            ...debugToolsDefinitions,
+            ...smsToolsDefinitions
         ];
 
         // Create all tool handlers
@@ -39,13 +41,15 @@ export class ToolRegistry {
         const incomingHandlers = createIncomingToolHandlers(incomingConfigService, twilioService);
         const contextsHandlers = createContextsToolHandlers(contextService);
         const debugHandlers = createDebugToolHandlers(transcriptService, incomingConfigService, contextService);
+        const smsHandlers = createSmsToolHandlers();
 
         // Combine into map
         this.handlers = new Map([
             ...Object.entries(callHandlers),
             ...Object.entries(incomingHandlers),
             ...Object.entries(contextsHandlers),
-            ...Object.entries(debugHandlers)
+            ...Object.entries(debugHandlers),
+            ...Object.entries(smsHandlers)
         ]);
     }
 

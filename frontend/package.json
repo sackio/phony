@@ -1,7 +1,7 @@
 {
-  "name": "voice-call-frontend",
+  "name": "phony-frontend",
   "version": "1.0.0",
-  "description": "Voice Call MCP Server - Frontend",
+  "description": "Phony - AI Voice Call Server Frontend",
   "type": "module",
   "scripts": {
     "dev": "vite",

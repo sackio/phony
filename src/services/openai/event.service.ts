@@ -86,6 +86,9 @@ export class OpenAIEventService {
         case 'conversation.item.truncated':
             this.handleItemTruncated(response);
             break;
+        case 'response.function_call_arguments.done':
+            this.handleFunctionCall(response);
+            break;
         case 'session.created':
         case 'session.updated':
         case 'conversation.created':
@@ -266,6 +269,56 @@ export class OpenAIEventService {
 
         if (response.item_id) {
             this.callState.lastAssistantItemId = response.item_id;
+        }
+    }
+
+    /**
+     * Handle a function call from the AI agent
+     * @param response The function call event data
+     */
+    private async handleFunctionCall(response: any): Promise<void> {
+        const functionName = response.name;
+        const callId = response.call_id;
+
+        console.log(`[OpenAI Function Call] ${functionName} called with ID: ${callId}`);
+
+        try {
+            const args = JSON.parse(response.arguments);
+
+            if (functionName === 'send_dtmf') {
+                const digits = args.digits;
+                console.log(`[OpenAI Function Call] AI agent sending DTMF: ${digits}`);
+
+                // Call the backend API to send DTMF tones
+                if (this.callState.callSid) {
+                    const fetch = (await import('node-fetch')).default;
+                    const response = await fetch(`http://localhost:3004/api/calls/${this.callState.callSid}/dtmf`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ digits })
+                    });
+
+                    if (!response.ok) {
+                        const error = await response.json();
+                        console.error('[OpenAI Function Call] Failed to send DTMF:', error);
+                        // Return error result to OpenAI
+                        return;
+                    }
+
+                    console.log(`[OpenAI Function Call] DTMF sent successfully: ${digits}`);
+
+                    // Add to conversation history
+                    const message = {
+                        role: 'system' as const,
+                        content: `AI assistant sent DTMF tones: ${digits}`
+                    };
+                    this.callState.conversationHistory.push(message);
+                }
+            }
+        } catch (error) {
+            console.error('[OpenAI Function Call] Error processing function call:', error);
         }
     }
 }

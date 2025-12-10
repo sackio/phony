@@ -3,14 +3,12 @@ version: '3.8'
 services:
   mongodb:
     image: mongo:7
-    container_name: voice-call-mongodb
+    container_name: phony-mongodb
     restart: unless-stopped
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD}
-      MONGO_INITDB_DATABASE: ${MONGODB_DATABASE:-voice-calls}
-    # Port 27017 not exposed to host - only accessible from voice-server container
-    # To access from host, use: docker compose exec mongodb mongosh -u voicecalls_admin -p
+      MONGO_INITDB_DATABASE: ${MONGODB_DATABASE:-phony}
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
@@ -26,7 +24,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: voice-call-server
+    container_name: phony-server
     restart: unless-stopped
     ports:
       - "3004:3004"
@@ -48,7 +46,7 @@ services:
       API_SECRET: ${API_SECRET:-test-secret-12345}
 
       # MongoDB connection (with authentication)
-      MONGODB_URI: ${MONGODB_URI}
+      MONGODB_URI: mongodb://voicecalls_admin:SOvGiNF7ogSBB7hTSnTbPLArF+GuV3MSZ7RDr8q9IJw=@mongodb:27017/voice-calls?authSource=admin
 
       # Optional settings
       RECORD_CALLS: ${RECORD_CALLS:-false}

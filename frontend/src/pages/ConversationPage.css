@@ -1,0 +1,263 @@
+.conversation-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 80px);
+  max-width: 1000px;
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.conversation-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #f9f9f9;
+}
+
+.back-button {
+  padding: 8px 16px;
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9375rem;
+  color: #666;
+  transition: all 0.2s;
+}
+
+.back-button:hover {
+  background: #f5f5f5;
+  border-color: #ccc;
+}
+
+.conversation-title {
+  flex: 1;
+}
+
+.conversation-title h2 {
+  margin: 0 0 4px 0;
+  font-size: 1.25rem;
+}
+
+.message-count {
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.from-number-select {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  background: #f5f5f5;
+}
+
+.empty-conversation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #999;
+}
+
+.empty-conversation .empty-icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+}
+
+.messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.message {
+  display: flex;
+  max-width: 70%;
+}
+
+.message.outbound {
+  align-self: flex-end;
+  margin-left: auto;
+}
+
+.message.inbound {
+  align-self: flex-start;
+}
+
+.message-bubble {
+  padding: 12px 16px;
+  border-radius: 16px;
+  word-wrap: break-word;
+  max-width: 100%;
+}
+
+.message.outbound .message-bubble {
+  background: #4a90e2;
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.message.inbound .message-bubble {
+  background: white;
+  color: #333;
+  border: 1px solid #e0e0e0;
+  border-bottom-left-radius: 4px;
+}
+
+.message-body {
+  margin-bottom: 4px;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.message.inbound .message-meta {
+  color: #666;
+}
+
+.message-time {
+  font-size: 0.75rem;
+}
+
+.message-status {
+  font-size: 0.75rem;
+}
+
+.message-error {
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+.message-input-form {
+  display: flex;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  background: white;
+}
+
+.input-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.message-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  font-size: 1rem;
+  font-family: inherit;
+  resize: none;
+  max-height: 120px;
+  transition: border-color 0.2s;
+}
+
+.message-input:focus {
+  outline: none;
+  border-color: #4a90e2;
+}
+
+.message-input:disabled {
+  background: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.input-meta {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 12px 0;
+  font-size: 0.75rem;
+  color: #999;
+}
+
+.send-button {
+  width: 48px;
+  height: 48px;
+  border: none;
+  background: #4a90e2;
+  color: white;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.send-button:hover:not(:disabled) {
+  background: #357abd;
+  transform: scale(1.05);
+}
+
+.send-button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #666;
+}
+
+@media (max-width: 768px) {
+  .conversation-page {
+    height: calc(100vh - 60px);
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+
+  .conversation-header {
+    padding: 12px 16px;
+  }
+
+  .conversation-title h2 {
+    font-size: 1.1rem;
+  }
+
+  .message {
+    max-width: 85%;
+  }
+
+  .messages-container {
+    padding: 16px;
+  }
+
+  .from-number-select {
+    font-size: 0.8125rem;
+    padding: 6px 10px;
+  }
+}

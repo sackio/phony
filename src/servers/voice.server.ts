@@ -7,7 +7,7 @@ import path from 'path';
 import twilio from 'twilio';
 import { Server as HTTPServer } from 'http';
 import { CallType } from '../types.js';
-import { DYNAMIC_API_SECRET, ENABLE_TEST_MODE, TEST_AUTO_HANGUP_TIMEOUT } from '../config/constants.js';
+import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER } from '../config/constants.js';
 import { CallSessionManager } from '../handlers/openai.handler.js';
 import { TwilioCallService } from '../services/twilio/call.service.js';
 import { TwilioSmsService } from '../services/twilio/sms.service.js';
@@ -156,7 +156,7 @@ export class VoiceServer {
         this.app.ws('/call/connection-incoming/:secret', this.handleIncomingConnection.bind(this));
 
         // Test mode route - for internal testing without consuming OpenAI credits
-        if (ENABLE_TEST_MODE) {
+        if (ENABLE_TEST_RECEIVER) {
             this.app.post('/call/test-receiver', this.handleTestReceiver.bind(this));
             console.log('[Voice Server] Test receiver endpoint enabled at /call/test-receiver');
         }
@@ -201,6 +201,22 @@ export class VoiceServer {
             return;
         }
 
+        // Production Safety Control: Check concurrent outgoing call limit
+        if (!this.callStateService.canAcceptOutgoingCall()) {
+            const stats = {
+                totalCalls: this.callStateService.getActiveCallCount(),
+                outgoingCalls: this.callStateService.getOutgoingCallCount(),
+                incomingCalls: this.callStateService.getIncomingCallCount()
+            };
+            console.log('[Voice Server] ⚠️  Outgoing call rejected - limit reached', stats);
+            res.status(429).json({
+                error: 'Too many active calls',
+                message: 'Maximum concurrent outgoing call limit reached',
+                stats
+            });
+            return;
+        }
+
         try {
             const callerNumber = fromNumber || process.env.TWILIO_NUMBER || '';
             console.log('[Voice Server] Creating call from:', callerNumber, 'to:', toNumber, 'with voice:', voice);
@@ -212,11 +228,15 @@ export class VoiceServer {
                 twilioCallSid: twilioCallSid,
                 toNumber: toNumber,
                 fromNumber: callerNumber,
+                callType: 'outgoing',
                 voice: voice,
                 status: 'initiated',
                 startedAt: new Date(),
                 conversationHistory: []
             });
+
+            // Production Safety Control: Start auto-hangup timer
+            this.callStateService.startDurationTimer(twilioCallSid);
 
             console.log('[Voice Server] Call created successfully. SID:', twilioCallSid);
             res.status(200).json({
@@ -1052,6 +1072,22 @@ export class VoiceServer {
 
         const fromNumber = req.body.From;
         const toNumber = req.body.To;
+
+        // Production Safety Control: Check concurrent incoming call limit
+        if (!this.callStateService.canAcceptIncomingCall()) {
+            const stats = {
+                totalCalls: this.callStateService.getActiveCallCount(),
+                outgoingCalls: this.callStateService.getOutgoingCallCount(),
+                incomingCalls: this.callStateService.getIncomingCallCount()
+            };
+            console.log('[Voice Server] ⚠️  Incoming call rejected - limit reached', stats);
+            const twiml = new VoiceResponse();
+            twiml.say('Sorry, we are currently at maximum capacity. Please try again later.');
+            twiml.hangup();
+            res.writeHead(200, { 'Content-Type': 'text/xml' });
+            res.end(twiml.toString());
+            return;
+        }
 
         // Look up configuration for this phone number
         const config = await this.incomingConfigService.getConfigByNumber(toNumber);

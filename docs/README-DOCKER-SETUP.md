@@ -2,16 +2,16 @@
 
 ## What's Running
 
-Your Voice Call MCP Server is now running in Docker with MongoDB for transcript storage.
+Your Phony server is now running in Docker with MongoDB for transcript storage.
 
 ### Services
 
-1. **voice-call-mongodb** - MongoDB 7 for storing call transcripts
+1. **phony-mongodb** - MongoDB 7 for storing call transcripts
    - Internal port: 27017 (not exposed to host)
-   - Database: `voice-calls`
+   - Database: `phony`
    - Persistent data in Docker volume
 
-2. **voice-call-server** - Voice Call Server with UI
+2. **phony-server** - Phony Voice Call Server with UI
    - Port: 3004
    - Public URL: https://phony.pushbuild.com
    - MongoDB connected ✅
@@ -59,7 +59,7 @@ docker compose up -d --build
 ### Using MongoDB Shell
 ```bash
 # Access MongoDB shell
-docker compose exec mongodb mongosh voice-calls
+docker compose exec mongodb mongosh phony
 
 # In the mongo shell:
 db.calls.find().pretty()              # View all calls
@@ -70,13 +70,13 @@ db.calls.findOne()                     # View one call with full transcript
 ### From Command Line
 ```bash
 # View all calls
-docker compose exec mongodb mongosh voice-calls --eval "db.calls.find().pretty()"
+docker compose exec mongodb mongosh phony --eval "db.calls.find().pretty()"
 
 # Count total calls
-docker compose exec mongodb mongosh voice-calls --eval "db.calls.countDocuments()"
+docker compose exec mongodb mongosh phony --eval "db.calls.countDocuments()"
 
 # View most recent call
-docker compose exec mongodb mongosh voice-calls --eval "db.calls.find().sort({startedAt:-1}).limit(1).pretty()"
+docker compose exec mongodb mongosh phony --eval "db.calls.find().sort({startedAt:-1}).limit(1).pretty()"
 ```
 
 ## How Call Transcripts are Saved
@@ -135,7 +135,7 @@ docker compose exec mongodb mongorestore /data/backup
 ### Clear Old Call Data
 ```bash
 # Delete calls older than 30 days
-docker compose exec mongodb mongosh voice-calls --eval '
+docker compose exec mongodb mongosh phony --eval '
   db.calls.deleteMany({
     startedAt: { $lt: new Date(Date.now() - 30*24*60*60*1000) }
   })
