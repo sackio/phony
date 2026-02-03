@@ -12,6 +12,54 @@ import { SmsDirection, SmsStatus } from '../../types.js';
 
 export const smsToolsDefinitions: MCPToolDefinition[] = [
     {
+        name: 'phony_list_numbers',
+        description: 'List all available Twilio phone numbers in the account',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                includeCapabilities: {
+                    type: 'boolean',
+                    description: 'Include SMS/Voice/MMS capabilities for each number (default: false)'
+                }
+            }
+        }
+    },
+    {
+        name: 'phony_search_messages',
+        description: 'Search SMS messages by text content using full-text search',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                query: {
+                    type: 'string',
+                    description: 'Search query text to find in message body'
+                },
+                direction: {
+                    type: 'string',
+                    description: 'Filter by message direction',
+                    enum: ['inbound', 'outbound']
+                },
+                phoneNumber: {
+                    type: 'string',
+                    description: 'Filter by phone number (matches either sender or recipient)'
+                },
+                startDate: {
+                    type: 'string',
+                    description: 'Filter messages after this date (ISO format, e.g., 2024-01-15)'
+                },
+                endDate: {
+                    type: 'string',
+                    description: 'Filter messages before this date (ISO format, e.g., 2024-01-20)'
+                },
+                limit: {
+                    type: 'number',
+                    description: 'Maximum number of messages to return (default: 100)'
+                }
+            },
+            required: ['query']
+        }
+    },
+    {
         name: 'phony_send_sms',
         description: 'Send an SMS text message to a phone number',
         inputSchema: {
@@ -266,6 +314,100 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
     const conversationService = new ConversationService();
 
     return {
+        phony_list_numbers: async (args: any) => {
+            try {
+                const includeCapabilities = args.includeCapabilities || false;
+
+                const phoneNumbers = await twilioClient.incomingPhoneNumbers.list();
+
+                const numbers = phoneNumbers.map(number => {
+                    const result: any = {
+                        phoneNumber: number.phoneNumber,
+                        friendlyName: number.friendlyName,
+                        sid: number.sid
+                    };
+
+                    if (includeCapabilities) {
+                        result.capabilities = {
+                            sms: number.capabilities?.sms || false,
+                            voice: number.capabilities?.voice || false,
+                            mms: number.capabilities?.mms || false
+                        };
+                    }
+
+                    return result;
+                });
+
+                return createToolResponse({
+                    status: 'success',
+                    message: `Found ${numbers.length} phone number(s)`,
+                    data: {
+                        count: numbers.length,
+                        numbers
+                    }
+                });
+            } catch (error: any) {
+                console.error('[MCP SMS] Error listing phone numbers:', error);
+                return createToolError(`Failed to list phone numbers: ${error.message}`);
+            }
+        },
+
+        phony_search_messages: async (args: any) => {
+            try {
+                const query = args.query;
+
+                if (!query || typeof query !== 'string' || query.trim().length === 0) {
+                    return createToolError('Search query is required');
+                }
+
+                const options: any = { query: query.trim() };
+
+                if (args.direction) {
+                    options.direction = args.direction as SmsDirection;
+                }
+
+                if (args.phoneNumber) {
+                    options.phoneNumber = sanitizePhoneNumber(args.phoneNumber);
+                }
+
+                if (args.startDate) {
+                    options.startDate = new Date(args.startDate);
+                }
+
+                if (args.endDate) {
+                    options.endDate = new Date(args.endDate);
+                }
+
+                if (args.limit) {
+                    options.limit = Math.min(args.limit, 200);
+                }
+
+                const messages = await storageService.searchSms(options);
+
+                return createToolResponse({
+                    status: 'success',
+                    message: `Found ${messages.length} message(s) matching "${query}"`,
+                    data: {
+                        query,
+                        count: messages.length,
+                        messages: messages.map(msg => ({
+                            messageSid: msg.messageSid,
+                            fromNumber: msg.fromNumber,
+                            toNumber: msg.toNumber,
+                            direction: msg.direction,
+                            body: msg.body,
+                            status: msg.status,
+                            createdAt: msg.createdAt,
+                            numMedia: msg.numMedia
+                        }))
+                    }
+                });
+            } catch (error: any) {
+                console.error('[MCP SMS] Error searching messages:', error);
+                return createToolError(`Failed to search messages: ${error.message}`);
+            }
+        },
+
         phony_send_sms: async (args: any) => {
             try {
                 const toNumber = sanitizePhoneNumber(args.toNumber);

@@ -7,7 +7,7 @@ import path from 'path';
 import twilio from 'twilio';
 import { Server as HTTPServer } from 'http';
 import { CallType } from '../types.js';
-import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER } from '../config/constants.js';
+import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER, DEFAULT_INCOMING_CALL_MESSAGE, DEFAULT_INCOMING_CALL_VOICE } from '../config/constants.js';
 import { CallSessionManager } from '../handlers/openai.handler.js';
 import { TwilioCallService } from '../services/twilio/call.service.js';
 import { TwilioSmsService } from '../services/twilio/sms.service.js';
@@ -1093,9 +1093,10 @@ export class VoiceServer {
         const config = await this.incomingConfigService.getConfigByNumber(toNumber);
 
         if (!config) {
-            console.log('[Voice Server] No configuration found for', toNumber);
+            // Default behavior: Play SMS redirect message and hang up
+            console.log('[Voice Server] No configuration found for', toNumber, '- playing SMS redirect message');
             const twiml = new VoiceResponse();
-            twiml.say('Sorry, this number is not configured to receive calls.');
+            twiml.say({ voice: DEFAULT_INCOMING_CALL_VOICE as any }, DEFAULT_INCOMING_CALL_MESSAGE);
             twiml.hangup();
             res.writeHead(200, { 'Content-Type': 'text/xml' });
             res.end(twiml.toString());

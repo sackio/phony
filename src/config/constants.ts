@@ -58,3 +58,17 @@ export const ENABLE_TEST_RECEIVER = process.env.ENABLE_TEST_RECEIVER === 'true';
 export const SMS_ENABLED_NUMBERS = process.env.SMS_ENABLED_NUMBERS
     ? process.env.SMS_ENABLED_NUMBERS.split(',').map(n => n.trim())
     : ['+18578167225']; // Default to 857 number only
+
+// Default incoming call redirect message (played when no config exists)
+// Encourages callers to use SMS instead of phone calls
+export const DEFAULT_INCOMING_CALL_MESSAGE = process.env.DEFAULT_INCOMING_CALL_MESSAGE ||
+    'Due to unwanted calls, please send text messages to this number instead. If you absolutely must speak over the phone, send a message to setup a call, but messages are preferred. Thank you.';
+
+// Voice for the default incoming call message (Polly.Matthew is a natural male US English voice)
+export const DEFAULT_INCOMING_CALL_VOICE = process.env.DEFAULT_INCOMING_CALL_VOICE || 'Polly.Matthew';
+
+// SMS Proxy Configuration
+// When enabled, incoming SMS messages are forwarded to this number
+// Replies from this number are routed back to the original sender
+export const SMS_PROXY_TARGET_NUMBER = process.env.SMS_PROXY_TARGET_NUMBER || '+13012379630';
+export const SMS_PROXY_ENABLED = process.env.SMS_PROXY_ENABLED !== 'false'; // Enabled by default
