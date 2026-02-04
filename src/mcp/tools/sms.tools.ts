@@ -61,7 +61,7 @@ export const smsToolsDefinitions: MCPToolDefinition[] = [
     },
     {
         name: 'phony_send_sms',
-        description: 'Send an SMS text message to a phone number',
+        description: 'Send an SMS/MMS message to a phone number. Supports text and media (images, files, etc.)',
         inputSchema: {
             type: 'object',
             properties: {
@@ -71,14 +71,19 @@ export const smsToolsDefinitions: MCPToolDefinition[] = [
                 },
                 body: {
                     type: 'string',
-                    description: 'The text message to send (max 1600 characters)'
+                    description: 'The text message to send (max 1600 characters). Can be empty if sending media only.'
                 },
                 fromNumber: {
                     type: 'string',
                     description: 'Optional sender phone number (defaults to TWILIO_NUMBER)'
+                },
+                mediaUrls: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Optional array of publicly accessible URLs for media files (images, PDFs, etc.). Max 10 URLs. Supported formats: jpg, gif, png, pdf, and more. URLs must be publicly accessible.'
                 }
             },
-            required: ['toNumber', 'body']
+            required: ['toNumber']
         }
     },
     {
@@ -285,7 +290,7 @@ export const smsToolsDefinitions: MCPToolDefinition[] = [
     },
     {
         name: 'phony_send_group_sms',
-        description: 'Send an SMS message to all participants in a group conversation',
+        description: 'Send an SMS/MMS message to all participants in a group conversation',
         inputSchema: {
             type: 'object',
             properties: {
@@ -295,14 +300,19 @@ export const smsToolsDefinitions: MCPToolDefinition[] = [
                 },
                 body: {
                     type: 'string',
-                    description: 'The text message to send (max 1600 characters)'
+                    description: 'The text message to send (max 1600 characters). Can be empty if sending media only.'
                 },
                 fromNumber: {
                     type: 'string',
                     description: 'Sender phone number in E.164 format'
+                },
+                mediaUrls: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Optional array of publicly accessible URLs for media files (images, PDFs, etc.). Max 10 URLs.'
                 }
             },
-            required: ['conversationId', 'body', 'fromNumber']
+            required: ['conversationId', 'fromNumber']
         }
     }
 ];
@@ -411,28 +421,49 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
         phony_send_sms: async (args: any) => {
             try {
                 const toNumber = sanitizePhoneNumber(args.toNumber);
-                const body = args.body;
+                const body = args.body || '';
                 const fromNumber = args.fromNumber ? sanitizePhoneNumber(args.fromNumber) : undefined;
+                const mediaUrls = args.mediaUrls as string[] | undefined;
 
                 if (!toNumber) {
                     return createToolError('Invalid recipient phone number');
                 }
 
-                if (!body || typeof body !== 'string' || body.trim().length === 0) {
-                    return createToolError('Message body is required');
+                // Require either body or media
+                const hasBody = body && typeof body === 'string' && body.trim().length > 0;
+                const hasMedia = mediaUrls && Array.isArray(mediaUrls) && mediaUrls.length > 0;
+
+                if (!hasBody && !hasMedia) {
+                    return createToolError('Either message body or media URLs are required');
                 }
 
-                const result = await smsService.sendSms(toNumber, body, fromNumber);
+                // Validate media URLs if provided
+                if (hasMedia) {
+                    for (const url of mediaUrls) {
+                        if (typeof url !== 'string' || !url.startsWith('http')) {
+                            return createToolError(`Invalid media URL: ${url}. URLs must be publicly accessible HTTP/HTTPS URLs.`);
+                        }
+                    }
+                    if (mediaUrls.length > 10) {
+                        return createToolError('Maximum 10 media URLs allowed per message');
+                    }
+                }
+
+                const result = await smsService.sendSms(toNumber, body, fromNumber, mediaUrls);
+
+                const messageType = hasMedia ? (hasBody ? 'MMS' : 'MMS (media only)') : 'SMS';
 
                 return createToolResponse({
                     status: 'success',
-                    message: `SMS sent successfully to ${toNumber}`,
+                    message: `${messageType} sent successfully to ${toNumber}`,
                     data: {
                         messageSid: result.messageSid,
                         status: result.status,
                         toNumber: toNumber,
                         fromNumber: fromNumber || process.env.TWILIO_NUMBER,
                         body: body.trim(),
+                        mediaUrls: mediaUrls,
+                        mediaCount: mediaUrls?.length || 0,
                         sentAt: new Date().toISOString()
                     }
                 });
@@ -824,19 +855,29 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
         phony_send_group_sms: async (args: any) => {
             try {
                 const conversationId = args.conversationId;
-                const body = args.body;
+                const body = args.body || '';
                 const fromNumber = sanitizePhoneNumber(args.fromNumber);
+                const mediaUrls = args.mediaUrls as string[] | undefined;
 
                 if (!conversationId) {
                     return createToolError('Conversation ID is required');
                 }
 
-                if (!body || typeof body !== 'string' || body.trim().length === 0) {
-                    return createToolError('Message body is required');
-                }
-
                 if (!fromNumber) {
                     return createToolError('Sender phone number is required');
+                }
+
+                // Require either body or media
+                const hasBody = body && typeof body === 'string' && body.trim().length > 0;
+                const hasMedia = mediaUrls && Array.isArray(mediaUrls) && mediaUrls.length > 0;
+
+                if (!hasBody && !hasMedia) {
+                    return createToolError('Either message body or media URLs are required');
+                }
+
+                // Validate media URLs if provided
+                if (hasMedia && mediaUrls.length > 10) {
+                    return createToolError('Maximum 10 media URLs allowed per message');
                 }
 
                 // Get conversation details
@@ -846,13 +887,13 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
                     return createToolError(`Conversation not found: ${conversationId}`);
                 }
 
-                // Send SMS to all participants except sender
+                // Send SMS/MMS to all participants except sender
                 const recipients = conversation.participants.filter(p => p !== fromNumber);
                 const results = [];
 
                 for (const recipient of recipients) {
                     try {
-                        const result = await smsService.sendSms(recipient, body, fromNumber);
+                        const result = await smsService.sendSms(recipient, body, fromNumber, mediaUrls);
                         results.push({
                             toNumber: recipient,
                             messageSid: result.messageSid,
@@ -870,15 +911,17 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
 
                 const successCount = results.filter(r => r.status === 'sent').length;
                 const failCount = results.filter(r => r.status === 'failed').length;
+                const messageType = hasMedia ? 'MMS' : 'SMS';
 
                 return createToolResponse({
                     status: 'success',
-                    message: `Sent group SMS to ${successCount}/${recipients.length} recipients`,
+                    message: `Sent group ${messageType} to ${successCount}/${recipients.length} recipients`,
                     data: {
                         conversationId,
                         recipientCount: recipients.length,
                         successCount,
                         failCount,
+                        mediaCount: mediaUrls?.length || 0,
                         results
                     }
                 });

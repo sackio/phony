@@ -90,16 +90,18 @@ export class TwilioSmsService {
     }
 
     /**
-     * Send an SMS message
+     * Send an SMS/MMS message
      * @param toNumber The recipient phone number (E.164 format)
      * @param body The message body
      * @param fromNumber Optional sender phone number (defaults to TWILIO_NUMBER)
+     * @param mediaUrls Optional array of media URLs for MMS (images, files, etc.)
      * @returns The message SID
      */
     public async sendSms(
         toNumber: string,
         body: string,
-        fromNumber?: string
+        fromNumber?: string,
+        mediaUrls?: string[]
     ): Promise<{ messageSid: string; status: string }> {
         // Validate phone numbers
         if (!this.isValidE164(toNumber)) {
@@ -137,12 +139,21 @@ export class TwilioSmsService {
             const publicUrl = process.env.PUBLIC_URL;
             const statusCallbackUrl = publicUrl ? `${publicUrl}/sms/status` : undefined;
 
-            const message = await this.twilioClient.messages.create({
+            // Build message options
+            const messageOptions: any = {
                 from: sender,
                 to: toNumber,
                 body: body.trim(),
                 ...(statusCallbackUrl && { statusCallback: statusCallbackUrl })
-            });
+            };
+
+            // Add media URLs for MMS if provided
+            if (mediaUrls && mediaUrls.length > 0) {
+                // Twilio accepts up to 10 media URLs
+                messageOptions.mediaUrl = mediaUrls.slice(0, 10);
+            }
+
+            const message = await this.twilioClient.messages.create(messageOptions);
 
             // Save to MongoDB
             await this.storageService.saveSms({
@@ -153,7 +164,8 @@ export class TwilioSmsService {
                 body: body.trim(),
                 status: this.mapTwilioStatus(message.status),
                 twilioStatus: message.status,
-                numMedia: message.numMedia ? parseInt(message.numMedia) : 0
+                numMedia: mediaUrls ? mediaUrls.length : 0,
+                mediaUrls: mediaUrls
             });
 
             console.log(`[TwilioSMS] Sent SMS ${message.sid} from ${sender} to ${toNumber}`);
