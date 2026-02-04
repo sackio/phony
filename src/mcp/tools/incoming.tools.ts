@@ -26,7 +26,7 @@ export const incomingToolsDefinitions: MCPToolDefinition[] = [
     },
     {
         name: 'phony_create_incoming_config',
-        description: 'Configure a phone number to handle incoming calls',
+        description: 'Configure a phone number to handle incoming calls. Supports three modes: AI conversation (default), message-only (play message and hang up), or voicemail (record and transcribe messages).',
         inputSchema: {
             type: 'object',
             properties: {
@@ -40,7 +40,7 @@ export const incomingToolsDefinitions: MCPToolDefinition[] = [
                 },
                 systemInstructions: {
                     type: 'string',
-                    description: 'System instructions for incoming calls'
+                    description: 'System instructions for incoming calls (required for AI conversation mode)'
                 },
                 callInstructions: {
                     type: 'string',
@@ -48,15 +48,35 @@ export const incomingToolsDefinitions: MCPToolDefinition[] = [
                 },
                 voice: {
                     type: 'string',
-                    description: 'OpenAI voice to use',
-                    enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
+                    description: 'Voice to use for TTS',
+                    enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'sage']
                 },
                 enabled: {
                     type: 'boolean',
                     description: 'Whether this configuration is enabled'
+                },
+                messageOnly: {
+                    type: 'boolean',
+                    description: 'If true, play hangupMessage and hang up (no AI conversation)'
+                },
+                hangupMessage: {
+                    type: 'string',
+                    description: 'Message to play when messageOnly is true'
+                },
+                voicemailEnabled: {
+                    type: 'boolean',
+                    description: 'If true, record voicemail with transcription instead of AI conversation'
+                },
+                voicemailGreeting: {
+                    type: 'string',
+                    description: 'Custom greeting message for voicemail (TTS text)'
+                },
+                voicemailMaxLength: {
+                    type: 'number',
+                    description: 'Maximum voicemail recording length in seconds (default: 120)'
                 }
             },
-            required: ['phoneNumber', 'name', 'systemInstructions', 'callInstructions']
+            required: ['phoneNumber', 'name']
         }
     },
     {
@@ -84,11 +104,31 @@ export const incomingToolsDefinitions: MCPToolDefinition[] = [
                 voice: {
                     type: 'string',
                     description: 'New voice',
-                    enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
+                    enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'sage']
                 },
                 enabled: {
                     type: 'boolean',
                     description: 'Enable or disable configuration'
+                },
+                messageOnly: {
+                    type: 'boolean',
+                    description: 'If true, play hangupMessage and hang up (no AI conversation)'
+                },
+                hangupMessage: {
+                    type: 'string',
+                    description: 'Message to play when messageOnly is true'
+                },
+                voicemailEnabled: {
+                    type: 'boolean',
+                    description: 'If true, record voicemail with transcription instead of AI conversation'
+                },
+                voicemailGreeting: {
+                    type: 'string',
+                    description: 'Custom greeting message for voicemail (TTS text)'
+                },
+                voicemailMaxLength: {
+                    type: 'number',
+                    description: 'Maximum voicemail recording length in seconds (default: 120)'
                 }
             },
             required: ['phoneNumber']
@@ -171,6 +211,11 @@ export function createIncomingToolHandlers(
                         callInstructions: config.callInstructions,
                         voice: config.voice,
                         enabled: config.enabled,
+                        messageOnly: config.messageOnly,
+                        hangupMessage: config.hangupMessage,
+                        voicemailEnabled: config.voicemailEnabled,
+                        voicemailGreeting: config.voicemailGreeting,
+                        voicemailMaxLength: config.voicemailMaxLength,
                         createdAt: config.createdAt,
                         updatedAt: config.updatedAt
                     })),
@@ -183,19 +228,34 @@ export function createIncomingToolHandlers(
 
         phony_create_incoming_config: async (args) => {
             try {
-                validateArgs(args, ['phoneNumber', 'name', 'systemInstructions', 'callInstructions']);
+                validateArgs(args, ['phoneNumber', 'name']);
 
                 const phoneNumber = sanitizePhoneNumber(args.phoneNumber);
-                const voice = args.voice || 'alloy';
+                const voice = args.voice || 'sage';
                 const enabled = args.enabled !== false; // Default to true
+                const messageOnly = args.messageOnly || false;
+                const voicemailEnabled = args.voicemailEnabled || false;
+
+                // Validate based on mode
+                if (!messageOnly && !voicemailEnabled && !args.systemInstructions) {
+                    return createToolError('systemInstructions is required for AI conversation mode');
+                }
+                if (messageOnly && !args.hangupMessage) {
+                    return createToolError('hangupMessage is required when messageOnly is true');
+                }
 
                 const config = await incomingConfigService.createConfig({
                     phoneNumber,
                     name: args.name,
-                    systemInstructions: args.systemInstructions,
-                    callInstructions: args.callInstructions,
+                    systemInstructions: args.systemInstructions || '',
+                    callInstructions: args.callInstructions || '',
                     voice,
-                    enabled
+                    enabled,
+                    messageOnly,
+                    hangupMessage: args.hangupMessage,
+                    voicemailEnabled,
+                    voicemailGreeting: args.voicemailGreeting,
+                    voicemailMaxLength: args.voicemailMaxLength || 120
                 });
 
                 return createToolResponse({
@@ -206,6 +266,11 @@ export function createIncomingToolHandlers(
                         callInstructions: config.callInstructions,
                         voice: config.voice,
                         enabled: config.enabled,
+                        messageOnly: config.messageOnly,
+                        hangupMessage: config.hangupMessage,
+                        voicemailEnabled: config.voicemailEnabled,
+                        voicemailGreeting: config.voicemailGreeting,
+                        voicemailMaxLength: config.voicemailMaxLength,
                         createdAt: config.createdAt,
                         updatedAt: config.updatedAt
                     },
@@ -229,6 +294,11 @@ export function createIncomingToolHandlers(
                 if (args.callInstructions !== undefined) updates.callInstructions = args.callInstructions;
                 if (args.voice !== undefined) updates.voice = args.voice;
                 if (args.enabled !== undefined) updates.enabled = args.enabled;
+                if (args.messageOnly !== undefined) updates.messageOnly = args.messageOnly;
+                if (args.hangupMessage !== undefined) updates.hangupMessage = args.hangupMessage;
+                if (args.voicemailEnabled !== undefined) updates.voicemailEnabled = args.voicemailEnabled;
+                if (args.voicemailGreeting !== undefined) updates.voicemailGreeting = args.voicemailGreeting;
+                if (args.voicemailMaxLength !== undefined) updates.voicemailMaxLength = args.voicemailMaxLength;
 
                 if (Object.keys(updates).length === 0) {
                     return createToolError('No fields provided to update');
@@ -248,6 +318,11 @@ export function createIncomingToolHandlers(
                         callInstructions: config.callInstructions,
                         voice: config.voice,
                         enabled: config.enabled,
+                        messageOnly: config.messageOnly,
+                        hangupMessage: config.hangupMessage,
+                        voicemailEnabled: config.voicemailEnabled,
+                        voicemailGreeting: config.voicemailGreeting,
+                        voicemailMaxLength: config.voicemailMaxLength,
                         createdAt: config.createdAt,
                         updatedAt: config.updatedAt
                     },

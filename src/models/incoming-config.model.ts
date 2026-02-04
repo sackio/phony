@@ -9,6 +9,10 @@ export interface IIncomingConfig extends Document {
     enabled: boolean;
     messageOnly: boolean; // If true, just play hangupMessage and hang up (no AI conversation)
     hangupMessage?: string; // Message to play when messageOnly is true
+    // Voicemail settings
+    voicemailEnabled: boolean; // If true, record voicemail instead of AI conversation
+    voicemailGreeting?: string; // Custom greeting message (TTS text)
+    voicemailMaxLength: number; // Max recording length in seconds (default 120)
     createdAt: Date;
     updatedAt: Date;
 }
@@ -49,6 +53,18 @@ const IncomingConfigSchema: Schema = new Schema(
         hangupMessage: {
             type: String,
             required: false
+        },
+        voicemailEnabled: {
+            type: Boolean,
+            default: false
+        },
+        voicemailGreeting: {
+            type: String,
+            required: false
+        },
+        voicemailMaxLength: {
+            type: Number,
+            default: 120 // 2 minutes default
         }
     },
     {

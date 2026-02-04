@@ -19,6 +19,7 @@ import { ContextService } from '../services/database/context.service.js';
 import { CallTranscriptService } from '../services/database/call-transcript.service.js';
 import { SessionManagerService } from '../services/session-manager.service.js';
 import { createMCPRouter } from '../mcp/router.js';
+import { VoicemailService } from '../services/voicemail/voicemail.service.js';
 dotenv.config();
 
 export class VoiceServer {
@@ -35,6 +36,7 @@ export class VoiceServer {
     private incomingConfigService: IncomingConfigService;
     private contextService: ContextService;
     private transcriptService: CallTranscriptService;
+    private voicemailService: VoicemailService;
 
     constructor(callbackUrl: string, sessionManager: CallSessionManager, transcriptService: CallTranscriptService) {
         this.callbackUrl = callbackUrl;
@@ -56,6 +58,7 @@ export class VoiceServer {
         this.callStateService = CallStateService.getInstance();
         this.incomingConfigService = new IncomingConfigService();
         this.contextService = new ContextService();
+        this.voicemailService = new VoicemailService();
 
         this.configureMiddleware();
         this.setupRoutes();
@@ -164,6 +167,10 @@ export class VoiceServer {
         // SMS webhook routes
         this.app.post('/sms/incoming', this.handleIncomingSms.bind(this));
         this.app.post('/sms/status', this.handleSmsStatus.bind(this));
+
+        // Voicemail webhook routes
+        this.app.post('/voicemail/recording', this.handleVoicemailRecording.bind(this));
+        this.app.post('/voicemail/transcription', this.handleVoicemailTranscription.bind(this));
 
         // Serve frontend for all other routes (SPA fallback)
         this.app.get('*', (req, res) => {
@@ -898,7 +905,11 @@ export class VoiceServer {
 
     private async handleCreateIncomingConfig(req: express.Request, res: Response): Promise<void> {
         try {
-            const { phoneNumber, name, systemInstructions, callInstructions, voice, enabled, messageOnly, hangupMessage } = req.body;
+            const {
+                phoneNumber, name, systemInstructions, callInstructions, voice, enabled,
+                messageOnly, hangupMessage,
+                voicemailEnabled, voicemailGreeting, voicemailMaxLength
+            } = req.body;
 
             if (!phoneNumber || !name) {
                 res.status(400).json({ error: 'Missing required fields: phoneNumber, name' });
@@ -911,8 +922,8 @@ export class VoiceServer {
                 return;
             }
 
-            // If not messageOnly, require systemInstructions
-            if (!messageOnly && !systemInstructions) {
+            // If not messageOnly and not voicemailEnabled, require systemInstructions (AI mode)
+            if (!messageOnly && !voicemailEnabled && !systemInstructions) {
                 res.status(400).json({ error: 'systemInstructions is required for AI conversation mode' });
                 return;
             }
@@ -925,7 +936,10 @@ export class VoiceServer {
                 voice,
                 enabled,
                 messageOnly,
-                hangupMessage
+                hangupMessage,
+                voicemailEnabled,
+                voicemailGreeting,
+                voicemailMaxLength
             });
 
             res.status(201).json(config);
@@ -1113,6 +1127,30 @@ export class VoiceServer {
             const message = config.hangupMessage || 'Thank you for calling.';
             twiml.say({ voice: config.voice }, message);
             twiml.hangup();
+            res.writeHead(200, { 'Content-Type': 'text/xml' });
+            res.end(twiml.toString());
+            return;
+        }
+
+        // Check if voicemail mode is enabled
+        if (config.voicemailEnabled) {
+            console.log('[Voice Server] Voicemail mode - recording message');
+            const greeting = config.voicemailGreeting || 'Please leave a message after the beep.';
+            const maxLength = config.voicemailMaxLength || 120;
+
+            twiml.say({ voice: config.voice }, greeting);
+            twiml.record({
+                maxLength: maxLength,
+                transcribe: true,
+                transcribeCallback: `${this.callbackUrl}/voicemail/transcription?apiSecret=${DYNAMIC_API_SECRET}`,
+                recordingStatusCallback: `${this.callbackUrl}/voicemail/recording?apiSecret=${DYNAMIC_API_SECRET}&fromNumber=${encodeURIComponent(fromNumber)}&toNumber=${encodeURIComponent(toNumber)}`,
+                recordingStatusCallbackEvent: ['completed'],
+                playBeep: true,
+                finishOnKey: '#'
+            });
+            twiml.say({ voice: config.voice }, 'Thank you for your message. Goodbye.');
+            twiml.hangup();
+
             res.writeHead(200, { 'Content-Type': 'text/xml' });
             res.end(twiml.toString());
             return;
@@ -1531,6 +1569,106 @@ export class VoiceServer {
             res.status(200).send('OK');
         } catch (error) {
             console.error('[Voice Server] Error handling SMS status callback:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Handle voicemail recording completion callback from Twilio
+     */
+    private async handleVoicemailRecording(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] Voicemail recording callback');
+        console.log('[Voice Server] Recording body:', JSON.stringify(req.body, null, 2));
+
+        // Verify API secret
+        const apiSecret = req.query.apiSecret?.toString();
+        if (apiSecret !== DYNAMIC_API_SECRET) {
+            console.log('[Voice Server] 401: Unauthorized - Invalid or missing API secret');
+            res.status(401).json({ error: 'Unauthorized: Invalid or missing API secret' });
+            return;
+        }
+
+        try {
+            const {
+                CallSid,
+                RecordingSid,
+                RecordingUrl,
+                RecordingDuration
+            } = req.body;
+
+            // Get phone numbers from query params (passed in the callback URL)
+            const fromNumber = req.query.fromNumber?.toString() || '';
+            const toNumber = req.query.toNumber?.toString() || '';
+
+            console.log(`[Voice Server] Voicemail recorded: ${RecordingSid}`);
+            console.log(`[Voice Server] From: ${fromNumber}, To: ${toNumber}`);
+            console.log(`[Voice Server] Duration: ${RecordingDuration}s`);
+            console.log(`[Voice Server] URL: ${RecordingUrl}`);
+
+            // Create voicemail record in database
+            await this.voicemailService.createVoicemail({
+                callSid: CallSid,
+                recordingSid: RecordingSid,
+                fromNumber,
+                toNumber,
+                duration: parseInt(RecordingDuration) || 0,
+                recordingUrl: RecordingUrl
+            });
+
+            res.status(200).send('OK');
+        } catch (error) {
+            console.error('[Voice Server] Error handling voicemail recording:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Handle voicemail transcription callback from Twilio
+     */
+    private async handleVoicemailTranscription(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] Voicemail transcription callback');
+        console.log('[Voice Server] Transcription body:', JSON.stringify(req.body, null, 2));
+
+        // Verify API secret
+        const apiSecret = req.query.apiSecret?.toString();
+        if (apiSecret !== DYNAMIC_API_SECRET) {
+            console.log('[Voice Server] 401: Unauthorized - Invalid or missing API secret');
+            res.status(401).json({ error: 'Unauthorized: Invalid or missing API secret' });
+            return;
+        }
+
+        try {
+            const {
+                RecordingSid,
+                TranscriptionSid,
+                TranscriptionText,
+                TranscriptionStatus
+            } = req.body;
+
+            console.log(`[Voice Server] Transcription for recording: ${RecordingSid}`);
+            console.log(`[Voice Server] Status: ${TranscriptionStatus}`);
+            console.log(`[Voice Server] Text: ${TranscriptionText}`);
+
+            if (TranscriptionStatus === 'completed' && TranscriptionText) {
+                // Update voicemail with transcription
+                await this.voicemailService.updateTranscription(
+                    RecordingSid,
+                    TranscriptionText,
+                    TranscriptionSid
+                );
+                console.log(`[Voice Server] Voicemail transcription saved for ${RecordingSid}`);
+            } else if (TranscriptionStatus === 'failed') {
+                // Mark transcription as failed
+                await this.voicemailService.markTranscriptionFailed(
+                    RecordingSid,
+                    'Twilio transcription failed'
+                );
+                console.log(`[Voice Server] Voicemail transcription failed for ${RecordingSid}`);
+            }
+
+            res.status(200).send('OK');
+        } catch (error) {
+            console.error('[Voice Server] Error handling voicemail transcription:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     }

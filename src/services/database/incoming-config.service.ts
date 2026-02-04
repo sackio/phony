@@ -17,12 +17,15 @@ export class IncomingConfigService {
     public async createConfig(data: {
         phoneNumber: string;
         name: string;
-        systemInstructions: string;
+        systemInstructions?: string;
         callInstructions?: string;
         voice?: string;
         enabled?: boolean;
         messageOnly?: boolean;
         hangupMessage?: string;
+        voicemailEnabled?: boolean;
+        voicemailGreeting?: string;
+        voicemailMaxLength?: number;
     }): Promise<IIncomingConfig> {
         if (!this.mongoService.getIsConnected()) {
             throw new Error('MongoDB not connected');
@@ -32,14 +35,18 @@ export class IncomingConfigService {
             const config = await IncomingConfigModel.create({
                 phoneNumber: data.phoneNumber,
                 name: data.name,
-                systemInstructions: data.systemInstructions,
+                systemInstructions: data.systemInstructions || '',
                 callInstructions: data.callInstructions || '',
                 voice: data.voice || 'sage',
                 enabled: data.enabled !== undefined ? data.enabled : true,
                 messageOnly: data.messageOnly || false,
-                hangupMessage: data.hangupMessage || undefined
+                hangupMessage: data.hangupMessage || undefined,
+                voicemailEnabled: data.voicemailEnabled || false,
+                voicemailGreeting: data.voicemailGreeting || undefined,
+                voicemailMaxLength: data.voicemailMaxLength || 120
             });
-            console.log(`[IncomingConfig] Created config for ${data.phoneNumber}${data.messageOnly ? ' (message-only mode)' : ''}`);
+            const mode = data.voicemailEnabled ? ' (voicemail mode)' : (data.messageOnly ? ' (message-only mode)' : '');
+            console.log(`[IncomingConfig] Created config for ${data.phoneNumber}${mode}`);
             return config;
         } catch (error) {
             console.error(`[IncomingConfig] Error creating config:`, error);
@@ -98,6 +105,9 @@ export class IncomingConfigService {
             enabled?: boolean;
             messageOnly?: boolean;
             hangupMessage?: string;
+            voicemailEnabled?: boolean;
+            voicemailGreeting?: string;
+            voicemailMaxLength?: number;
         }
     ): Promise<IIncomingConfig | null> {
         if (!this.mongoService.getIsConnected()) {
