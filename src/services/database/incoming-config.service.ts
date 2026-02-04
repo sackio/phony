@@ -19,7 +19,10 @@ export class IncomingConfigService {
         name: string;
         systemInstructions?: string;
         callInstructions?: string;
+        voiceProvider?: 'openai' | 'elevenlabs';
         voice?: string;
+        elevenLabsAgentId?: string;
+        elevenLabsVoiceId?: string;
         enabled?: boolean;
         messageOnly?: boolean;
         hangupMessage?: string;
@@ -37,7 +40,10 @@ export class IncomingConfigService {
                 name: data.name,
                 systemInstructions: data.systemInstructions || '',
                 callInstructions: data.callInstructions || '',
+                voiceProvider: data.voiceProvider || 'openai',
                 voice: data.voice || 'sage',
+                elevenLabsAgentId: data.elevenLabsAgentId || undefined,
+                elevenLabsVoiceId: data.elevenLabsVoiceId || undefined,
                 enabled: data.enabled !== undefined ? data.enabled : true,
                 messageOnly: data.messageOnly || false,
                 hangupMessage: data.hangupMessage || undefined,
@@ -46,7 +52,8 @@ export class IncomingConfigService {
                 voicemailMaxLength: data.voicemailMaxLength || 120
             });
             const mode = data.voicemailEnabled ? ' (voicemail mode)' : (data.messageOnly ? ' (message-only mode)' : '');
-            console.log(`[IncomingConfig] Created config for ${data.phoneNumber}${mode}`);
+            const provider = data.voiceProvider || 'openai';
+            console.log(`[IncomingConfig] Created config for ${data.phoneNumber}${mode} (provider: ${provider})`);
             return config;
         } catch (error) {
             console.error(`[IncomingConfig] Error creating config:`, error);
@@ -101,7 +108,10 @@ export class IncomingConfigService {
             name?: string;
             systemInstructions?: string;
             callInstructions?: string;
+            voiceProvider?: 'openai' | 'elevenlabs';
             voice?: string;
+            elevenLabsAgentId?: string;
+            elevenLabsVoiceId?: string;
             enabled?: boolean;
             messageOnly?: boolean;
             hangupMessage?: string;

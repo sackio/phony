@@ -72,3 +72,12 @@ export const DEFAULT_INCOMING_CALL_VOICE = process.env.DEFAULT_INCOMING_CALL_VOI
 // Replies from this number are routed back to the original sender
 export const SMS_PROXY_TARGET_NUMBER = process.env.SMS_PROXY_TARGET_NUMBER || '+13012379630';
 export const SMS_PROXY_ENABLED = process.env.SMS_PROXY_ENABLED !== 'false'; // Enabled by default
+
+// ElevenLabs Configuration
+export const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '';
+export const ELEVENLABS_DEFAULT_AGENT_ID = process.env.ELEVENLABS_DEFAULT_AGENT_ID || '';
+export const ELEVENLABS_DEFAULT_VOICE_ID = process.env.ELEVENLABS_DEFAULT_VOICE_ID || '';
+
+// Default voice provider for new calls
+// Can be 'openai' or 'elevenlabs'
+export const DEFAULT_VOICE_PROVIDER = (process.env.DEFAULT_VOICE_PROVIDER || 'openai') as 'openai' | 'elevenlabs';

@@ -12,7 +12,7 @@ import { SessionManagerService } from '../../services/session-manager.service.js
 export const callToolsDefinitions: MCPToolDefinition[] = [
     {
         name: 'phony_create_call',
-        description: 'Create an outbound phone call with AI voice assistant',
+        description: 'Create an outbound phone call with AI voice assistant. Supports OpenAI (default) or ElevenLabs voice providers.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -28,10 +28,23 @@ export const callToolsDefinitions: MCPToolDefinition[] = [
                     type: 'string',
                     description: 'Specific instructions for this particular call'
                 },
+                provider: {
+                    type: 'string',
+                    description: 'Voice provider to use: openai (default) or elevenlabs',
+                    enum: ['openai', 'elevenlabs']
+                },
                 voice: {
                     type: 'string',
-                    description: 'OpenAI voice to use: alloy, echo, fable, onyx, nova, or shimmer',
+                    description: 'OpenAI voice to use: alloy, echo, fable, onyx, nova, or shimmer (only for openai provider)',
                     enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
+                },
+                elevenLabsAgentId: {
+                    type: 'string',
+                    description: 'ElevenLabs agent ID (uses default if not specified, only for elevenlabs provider)'
+                },
+                elevenLabsVoiceId: {
+                    type: 'string',
+                    description: 'ElevenLabs voice ID (uses agent default if not specified, only for elevenlabs provider)'
                 }
             },
             required: ['toNumber', 'systemInstructions', 'callInstructions']
@@ -209,20 +222,25 @@ export function createCallToolHandlers(
                 validateArgs(args, ['toNumber', 'systemInstructions', 'callInstructions']);
 
                 const toNumber = sanitizePhoneNumber(args.toNumber);
+                const provider = args.provider || 'openai';
                 const voice = args.voice || 'alloy';
 
-                // Create call via Twilio
+                // Create call via Twilio with provider selection
                 const result = await twilioService.makeOutboundCall(
                     toNumber,
                     args.systemInstructions,
                     args.callInstructions,
-                    voice
+                    voice,
+                    provider,
+                    args.elevenLabsAgentId,
+                    args.elevenLabsVoiceId
                 );
 
                 return createToolResponse({
                     callSid: result.sid,
                     status: result.status,
-                    message: `Call initiated to ${toNumber}`
+                    provider: provider,
+                    message: `Call initiated to ${toNumber} using ${provider} voice provider`
                 });
             } catch (error: any) {
                 return createToolError('Failed to create call', { message: error.message });

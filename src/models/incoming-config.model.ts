@@ -5,7 +5,10 @@ export interface IIncomingConfig extends Document {
     name: string;
     systemInstructions: string;
     callInstructions: string; // Optional call-specific context (usually empty for incoming)
+    voiceProvider: 'openai' | 'elevenlabs';
     voice: string;
+    elevenLabsAgentId?: string; // ElevenLabs agent ID (uses default if not specified)
+    elevenLabsVoiceId?: string; // ElevenLabs voice ID
     enabled: boolean;
     messageOnly: boolean; // If true, just play hangupMessage and hang up (no AI conversation)
     hangupMessage?: string; // Message to play when messageOnly is true
@@ -38,9 +41,20 @@ const IncomingConfigSchema: Schema = new Schema(
             type: String,
             default: '' // Usually empty for incoming calls
         },
+        voiceProvider: {
+            type: String,
+            enum: ['openai', 'elevenlabs'],
+            default: 'openai'
+        },
         voice: {
             type: String,
             default: 'sage'
+        },
+        elevenLabsAgentId: {
+            type: String
+        },
+        elevenLabsVoiceId: {
+            type: String
         },
         enabled: {
             type: Boolean,

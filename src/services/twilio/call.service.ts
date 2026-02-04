@@ -90,7 +90,20 @@ export class TwilioCallService {
     }
 
 
-    public async makeCall(twilioCallbackUrl: string, toNumber: string, systemInstructions: string, callInstructions: string, voice = 'sage', fromNumber?: string): Promise<string> {
+    /**
+     * Options for making an outbound call
+     */
+    public async makeCall(
+        twilioCallbackUrl: string,
+        toNumber: string,
+        systemInstructions: string,
+        callInstructions: string,
+        voice = 'sage',
+        fromNumber?: string,
+        provider: 'openai' | 'elevenlabs' = 'openai',
+        elevenLabsAgentId?: string,
+        elevenLabsVoiceId?: string
+    ): Promise<string> {
         try {
             const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
@@ -100,10 +113,23 @@ export class TwilioCallService {
             // Use provided fromNumber or fall back to default TWILIO_NUMBER
             const callerNumber = fromNumber || process.env.TWILIO_NUMBER || '';
 
+            // Build URL with provider information
+            let url = `${twilioCallbackUrl}/call/outgoing?apiSecret=${DYNAMIC_API_SECRET}&callType=outgoing&systemInstructions=${systemInstructionsEncoded}&callInstructions=${callInstructionsEncoded}&voice=${voice}&provider=${provider}`;
+
+            // Add ElevenLabs-specific parameters if using elevenlabs provider
+            if (provider === 'elevenlabs') {
+                if (elevenLabsAgentId) {
+                    url += `&elevenLabsAgentId=${encodeURIComponent(elevenLabsAgentId)}`;
+                }
+                if (elevenLabsVoiceId) {
+                    url += `&elevenLabsVoiceId=${encodeURIComponent(elevenLabsVoiceId)}`;
+                }
+            }
+
             const call = await twilioClient.calls.create({
                 to: toNumber,
                 from: callerNumber,
-                url: `${twilioCallbackUrl}/call/outgoing?apiSecret=${DYNAMIC_API_SECRET}&callType=outgoing&systemInstructions=${systemInstructionsEncoded}&callInstructions=${callInstructionsEncoded}&voice=${voice}`,
+                url: url,
             });
 
             return call.sid;
@@ -111,6 +137,36 @@ export class TwilioCallService {
             console.error(`Error making call: ${error}`);
             throw error;
         }
+    }
+
+    /**
+     * Make an outbound call with options object (new interface)
+     */
+    public async makeOutboundCall(
+        toNumber: string,
+        systemInstructions: string,
+        callInstructions: string,
+        voice: string = 'alloy',
+        provider: 'openai' | 'elevenlabs' = 'openai',
+        elevenLabsAgentId?: string,
+        elevenLabsVoiceId?: string,
+        fromNumber?: string
+    ): Promise<{ sid: string; status: string }> {
+        const publicUrl = process.env.PUBLIC_URL || '';
+
+        const callSid = await this.makeCall(
+            publicUrl,
+            toNumber,
+            systemInstructions,
+            callInstructions,
+            voice,
+            fromNumber,
+            provider,
+            elevenLabsAgentId,
+            elevenLabsVoiceId
+        );
+
+        return { sid: callSid, status: 'initiated' };
     }
 
     /**

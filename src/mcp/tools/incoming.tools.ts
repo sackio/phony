@@ -26,7 +26,7 @@ export const incomingToolsDefinitions: MCPToolDefinition[] = [
     },
     {
         name: 'phony_create_incoming_config',
-        description: 'Configure a phone number to handle incoming calls. Supports three modes: AI conversation (default), message-only (play message and hang up), or voicemail (record and transcribe messages).',
+        description: 'Configure a phone number to handle incoming calls. Supports three modes: AI conversation (default), message-only (play message and hang up), or voicemail (record and transcribe messages). AI conversation mode supports OpenAI or ElevenLabs voice providers.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -46,10 +46,23 @@ export const incomingToolsDefinitions: MCPToolDefinition[] = [
                     type: 'string',
                     description: 'Default call instructions for incoming calls'
                 },
+                voiceProvider: {
+                    type: 'string',
+                    description: 'Voice provider to use: openai (default) or elevenlabs',
+                    enum: ['openai', 'elevenlabs']
+                },
                 voice: {
                     type: 'string',
-                    description: 'Voice to use for TTS',
+                    description: 'Voice to use for TTS (OpenAI voices)',
                     enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'sage']
+                },
+                elevenLabsAgentId: {
+                    type: 'string',
+                    description: 'ElevenLabs agent ID (uses default if not specified, only for elevenlabs provider)'
+                },
+                elevenLabsVoiceId: {
+                    type: 'string',
+                    description: 'ElevenLabs voice ID (uses agent default if not specified, only for elevenlabs provider)'
                 },
                 enabled: {
                     type: 'boolean',
@@ -101,10 +114,23 @@ export const incomingToolsDefinitions: MCPToolDefinition[] = [
                     type: 'string',
                     description: 'New call instructions'
                 },
+                voiceProvider: {
+                    type: 'string',
+                    description: 'Voice provider: openai or elevenlabs',
+                    enum: ['openai', 'elevenlabs']
+                },
                 voice: {
                     type: 'string',
-                    description: 'New voice',
+                    description: 'New voice (OpenAI voices)',
                     enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'sage']
+                },
+                elevenLabsAgentId: {
+                    type: 'string',
+                    description: 'ElevenLabs agent ID'
+                },
+                elevenLabsVoiceId: {
+                    type: 'string',
+                    description: 'ElevenLabs voice ID'
                 },
                 enabled: {
                     type: 'boolean',
@@ -209,7 +235,10 @@ export function createIncomingToolHandlers(
                         name: config.name,
                         systemInstructions: config.systemInstructions,
                         callInstructions: config.callInstructions,
+                        voiceProvider: config.voiceProvider || 'openai',
                         voice: config.voice,
+                        elevenLabsAgentId: config.elevenLabsAgentId,
+                        elevenLabsVoiceId: config.elevenLabsVoiceId,
                         enabled: config.enabled,
                         messageOnly: config.messageOnly,
                         hangupMessage: config.hangupMessage,
@@ -231,6 +260,7 @@ export function createIncomingToolHandlers(
                 validateArgs(args, ['phoneNumber', 'name']);
 
                 const phoneNumber = sanitizePhoneNumber(args.phoneNumber);
+                const voiceProvider = args.voiceProvider || 'openai';
                 const voice = args.voice || 'sage';
                 const enabled = args.enabled !== false; // Default to true
                 const messageOnly = args.messageOnly || false;
@@ -249,7 +279,10 @@ export function createIncomingToolHandlers(
                     name: args.name,
                     systemInstructions: args.systemInstructions || '',
                     callInstructions: args.callInstructions || '',
+                    voiceProvider,
                     voice,
+                    elevenLabsAgentId: args.elevenLabsAgentId,
+                    elevenLabsVoiceId: args.elevenLabsVoiceId,
                     enabled,
                     messageOnly,
                     hangupMessage: args.hangupMessage,
@@ -264,7 +297,10 @@ export function createIncomingToolHandlers(
                         name: config.name,
                         systemInstructions: config.systemInstructions,
                         callInstructions: config.callInstructions,
+                        voiceProvider: config.voiceProvider,
                         voice: config.voice,
+                        elevenLabsAgentId: config.elevenLabsAgentId,
+                        elevenLabsVoiceId: config.elevenLabsVoiceId,
                         enabled: config.enabled,
                         messageOnly: config.messageOnly,
                         hangupMessage: config.hangupMessage,
@@ -274,7 +310,7 @@ export function createIncomingToolHandlers(
                         createdAt: config.createdAt,
                         updatedAt: config.updatedAt
                     },
-                    message: `Configuration created for ${phoneNumber}`
+                    message: `Configuration created for ${phoneNumber} with ${voiceProvider} provider`
                 });
             } catch (error: any) {
                 return createToolError('Failed to create configuration', { message: error.message });
@@ -292,7 +328,10 @@ export function createIncomingToolHandlers(
                 if (args.name !== undefined) updates.name = args.name;
                 if (args.systemInstructions !== undefined) updates.systemInstructions = args.systemInstructions;
                 if (args.callInstructions !== undefined) updates.callInstructions = args.callInstructions;
+                if (args.voiceProvider !== undefined) updates.voiceProvider = args.voiceProvider;
                 if (args.voice !== undefined) updates.voice = args.voice;
+                if (args.elevenLabsAgentId !== undefined) updates.elevenLabsAgentId = args.elevenLabsAgentId;
+                if (args.elevenLabsVoiceId !== undefined) updates.elevenLabsVoiceId = args.elevenLabsVoiceId;
                 if (args.enabled !== undefined) updates.enabled = args.enabled;
                 if (args.messageOnly !== undefined) updates.messageOnly = args.messageOnly;
                 if (args.hangupMessage !== undefined) updates.hangupMessage = args.hangupMessage;
@@ -316,7 +355,10 @@ export function createIncomingToolHandlers(
                         name: config.name,
                         systemInstructions: config.systemInstructions,
                         callInstructions: config.callInstructions,
+                        voiceProvider: config.voiceProvider,
                         voice: config.voice,
+                        elevenLabsAgentId: config.elevenLabsAgentId,
+                        elevenLabsVoiceId: config.elevenLabsVoiceId,
                         enabled: config.enabled,
                         messageOnly: config.messageOnly,
                         hangupMessage: config.hangupMessage,
