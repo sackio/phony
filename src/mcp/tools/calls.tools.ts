@@ -224,6 +224,7 @@ export function createCallToolHandlers(
                 const toNumber = sanitizePhoneNumber(args.toNumber);
                 const provider = args.provider || 'openai';
                 const voice = args.voice || 'alloy';
+                const fromNumber = process.env.TWILIO_NUMBER || '';
 
                 // Create call via Twilio with provider selection
                 const result = await twilioService.makeOutboundCall(
@@ -235,6 +236,26 @@ export function createCallToolHandlers(
                     args.elevenLabsAgentId,
                     args.elevenLabsVoiceId
                 );
+
+                // Register in CallStateService so mid-call tools (hold, inject, DTMF) work
+                const callStateService = CallStateService.getInstance();
+                callStateService.addCall(result.sid, {
+                    callSid: result.sid,
+                    twilioCallSid: result.sid,
+                    toNumber: toNumber,
+                    fromNumber: fromNumber,
+                    callType: 'outgoing',
+                    voiceProvider: provider,
+                    voice: voice,
+                    elevenLabsAgentId: args.elevenLabsAgentId,
+                    elevenLabsVoiceId: args.elevenLabsVoiceId,
+                    status: 'initiated',
+                    startedAt: new Date(),
+                    conversationHistory: []
+                });
+
+                // Start auto-hangup safety timer
+                callStateService.startDurationTimer(result.sid);
 
                 return createToolResponse({
                     callSid: result.sid,

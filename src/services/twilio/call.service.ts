@@ -11,6 +11,10 @@ export class TwilioCallService {
     private readonly twilioClient: twilio.Twilio;
     private readonly openaiClient: OpenAI;
 
+    // Deduplication: track recent call attempts to prevent double-dial
+    private recentCallAttempts: Map<string, number> = new Map();
+    private static DEDUP_WINDOW_MS = 15000; // 15 seconds
+
     /**
      * Create a new Twilio call service
      * @param twilioClient The Twilio client
@@ -105,6 +109,25 @@ export class TwilioCallService {
         elevenLabsVoiceId?: string
     ): Promise<string> {
         try {
+            // Deduplication: prevent placing two calls to the same number within the window
+            const now = Date.now();
+            const lastAttempt = this.recentCallAttempts.get(toNumber);
+            if (lastAttempt && (now - lastAttempt) < TwilioCallService.DEDUP_WINDOW_MS) {
+                const secondsAgo = ((now - lastAttempt) / 1000).toFixed(1);
+                console.log(`[Twilio Service] Duplicate call to ${toNumber} rejected - last attempt was ${secondsAgo}s ago`);
+                throw new Error(`Duplicate call to ${toNumber} rejected - another call was placed ${secondsAgo}s ago`);
+            }
+            this.recentCallAttempts.set(toNumber, now);
+
+            // Clean up old entries periodically
+            if (this.recentCallAttempts.size > 50) {
+                for (const [key, timestamp] of this.recentCallAttempts) {
+                    if (now - timestamp > TwilioCallService.DEDUP_WINDOW_MS) {
+                        this.recentCallAttempts.delete(key);
+                    }
+                }
+            }
+
             const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
             const systemInstructionsEncoded = encodeURIComponent(systemInstructions);

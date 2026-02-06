@@ -57,12 +57,13 @@ export function ulawToPcm16k(ulawData: Buffer): Buffer {
  * for fallback if we need to convert from PCM output
  */
 export function pcmToUlaw(pcmData: Buffer, inputSampleRate: number = 16000): Buffer {
-    // If input is 16kHz, downsample to 8kHz first
     let pcm8k: Buffer;
     if (inputSampleRate === 16000) {
-        // Downsample by taking every other sample
-        pcm8k = Buffer.alloc(pcmData.length / 2);
-        for (let i = 0; i < pcm8k.length / 2; i++) {
+        // Each PCM sample is 2 bytes. Downsample 16kHz→8kHz by taking every other sample.
+        const inputSamples = Math.floor(pcmData.length / 2);
+        const outputSamples = Math.floor(inputSamples / 2);
+        pcm8k = Buffer.alloc(outputSamples * 2);
+        for (let i = 0; i < outputSamples; i++) {
             const sample = pcmData.readInt16LE(i * 4);
             pcm8k.writeInt16LE(sample, i * 2);
         }
@@ -71,9 +72,10 @@ export function pcmToUlaw(pcmData: Buffer, inputSampleRate: number = 16000): Buf
     }
 
     // Convert 16-bit linear PCM to 8-bit µ-law
-    const ulawData = Buffer.alloc(pcm8k.length / 2);
+    const numSamples = Math.floor(pcm8k.length / 2);
+    const ulawData = Buffer.alloc(numSamples);
 
-    for (let i = 0; i < ulawData.length; i++) {
+    for (let i = 0; i < numSamples; i++) {
         const sample = pcm8k.readInt16LE(i * 2);
         ulawData[i] = linearToUlaw(sample);
     }

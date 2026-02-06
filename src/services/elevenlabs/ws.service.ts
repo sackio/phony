@@ -33,6 +33,9 @@ export class ElevenLabsWsService {
     private callbacks: ElevenLabsCallbacks | null = null;
     private conversationId: string | null = null;
     private isSessionActive: boolean = false;
+    private pendingSystemPrompt: string | null = null;
+    private pendingDynamicVars: Record<string, string> | null = null;
+    private agentOutputFormat: string = 'pcm_16000';
 
     constructor(config: ElevenLabsConfig) {
         this.config = config;
@@ -57,6 +60,8 @@ export class ElevenLabsWsService {
 
         this.webSocket.on('open', () => {
             console.log('[ElevenLabs WS] Connected successfully');
+            // Send conversation_initiation_client_data immediately on open
+            this.sendConversationInit();
         });
 
         this.webSocket.on('message', (data: WebSocket.Data) => {
@@ -85,15 +90,26 @@ export class ElevenLabsWsService {
             switch (message.type) {
                 case 'conversation_initiation_metadata':
                     // Session established
-                    this.conversationId = message.conversation_id;
+                    this.conversationId = message.conversation_initiation_metadata_event?.conversation_id;
+                    this.agentOutputFormat = message.conversation_initiation_metadata_event?.agent_output_audio_format || 'pcm_16000';
                     this.isSessionActive = true;
                     console.log('[ElevenLabs WS] Session started, conversation_id:', this.conversationId);
+                    console.log('[ElevenLabs WS] Agent output audio format:', this.agentOutputFormat);
                     this.callbacks?.onReady();
+
+                    // Inject pending system prompt via contextual_update after session starts
+                    if (this.pendingSystemPrompt) {
+                        console.log('[ElevenLabs WS] Injecting system prompt via contextual_update...');
+                        this.injectContext(this.pendingSystemPrompt);
+                        this.pendingSystemPrompt = null;
+                    }
                     break;
 
                 case 'audio':
-                    // Audio chunk from ElevenLabs (already in ulaw_8000 format when requested)
-                    if (message.audio && message.audio.chunk) {
+                    // Audio chunk from ElevenLabs (handle both old and new formats)
+                    if (message.audio_event?.audio_base_64) {
+                        this.callbacks?.onAudio(message.audio_event.audio_base_64);
+                    } else if (message.audio?.chunk) {
                         this.callbacks?.onAudio(message.audio.chunk);
                     }
                     break;
@@ -101,16 +117,16 @@ export class ElevenLabsWsService {
                 case 'user_transcript':
                     // User speech transcription
                     this.callbacks?.onUserTranscript(
-                        message.user_transcript || '',
-                        message.is_final || false
+                        message.user_transcription_event?.user_transcript || '',
+                        true
                     );
                     break;
 
                 case 'agent_response':
                     // Agent response text
                     this.callbacks?.onAgentTranscript(
-                        message.agent_response || '',
-                        message.is_final || true
+                        message.agent_response_event?.agent_response || '',
+                        true
                     );
                     break;
 
@@ -125,13 +141,17 @@ export class ElevenLabsWsService {
                     this.sendPong(message.ping_event?.event_id);
                     break;
 
+                case 'internal_vad':
+                    // Voice Activity Detection event - ignore
+                    break;
+
                 case 'error':
-                    console.error('[ElevenLabs WS] Error from server:', message.error);
-                    this.callbacks?.onError(new Error(message.error?.message || 'Unknown error'));
+                    console.error('[ElevenLabs WS] Error from server:', JSON.stringify(message));
+                    this.callbacks?.onError(new Error(message.error?.message || JSON.stringify(message)));
                     break;
 
                 default:
-                    console.log('[ElevenLabs WS] Unhandled message type:', message.type);
+                    console.log('[ElevenLabs WS] Unhandled message type:', message.type, JSON.stringify(message).substring(0, 200));
             }
         } catch (error) {
             console.error('[ElevenLabs WS] Error parsing message:', error);
@@ -139,46 +159,53 @@ export class ElevenLabsWsService {
     }
 
     /**
-     * Send conversation initialization with system prompt override
+     * Set system prompt to inject after session starts via contextual_update.
+     * We don't use conversation_config_override for prompt because many agents
+     * have prompt overrides disabled. Instead we inject via contextual_update.
      */
     public initializeConversation(systemPrompt: string, dynamicVariables?: Record<string, string>): void {
+        if (dynamicVariables) {
+            this.pendingDynamicVars = dynamicVariables;
+        }
+
+        if (this.isSessionActive) {
+            // Already connected - inject immediately
+            console.log('[ElevenLabs WS] Session active, injecting system prompt immediately');
+            this.injectContext(systemPrompt);
+        } else {
+            // Store for injection after session starts
+            console.log('[ElevenLabs WS] Queuing system prompt for injection after session starts');
+            this.pendingSystemPrompt = systemPrompt;
+        }
+    }
+
+    /**
+     * Send conversation_initiation_client_data on WebSocket open.
+     * Minimal config to avoid rejection by agents that block overrides.
+     * System prompt is injected via contextual_update after session starts.
+     */
+    private sendConversationInit(): void {
         if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
-            console.error('[ElevenLabs WS] Cannot initialize conversation - WebSocket not ready');
             return;
         }
 
         const initMessage: any = {
             type: 'conversation_initiation_client_data',
-            conversation_config_override: {
-                agent: {
-                    prompt: {
-                        prompt: systemPrompt
-                    }
-                },
-                // Request ulaw_8000 output format to match Twilio's native format
-                tts: {
-                    output_format: 'ulaw_8000'
-                }
-            }
         };
 
         // Add dynamic variables if provided
-        if (dynamicVariables && Object.keys(dynamicVariables).length > 0) {
-            initMessage.dynamic_variables = dynamicVariables;
+        if (this.pendingDynamicVars && Object.keys(this.pendingDynamicVars).length > 0) {
+            initMessage.dynamic_variables = this.pendingDynamicVars;
+            this.pendingDynamicVars = null;
         }
 
-        // Add voice override if specified
-        if (this.config.voiceId) {
-            initMessage.conversation_config_override.tts.voice_id = this.config.voiceId;
-        }
-
-        console.log('[ElevenLabs WS] Sending conversation init with prompt:', systemPrompt.substring(0, 100) + '...');
+        console.log('[ElevenLabs WS] Sending conversation init');
         this.webSocket.send(JSON.stringify(initMessage));
     }
 
     /**
      * Send audio data to ElevenLabs
-     * Input should be base64-encoded µ-law from Twilio
+     * Converts Twilio µ-law 8kHz to PCM 16kHz (ElevenLabs expects PCM input)
      */
     public sendAudio(twilioBase64Audio: string): void {
         if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
@@ -189,28 +216,7 @@ export class ElevenLabsWsService {
         const pcmBase64 = convertTwilioToElevenLabs(twilioBase64Audio);
 
         const audioMessage = {
-            type: 'audio',
-            audio: {
-                chunk: pcmBase64
-            }
-        };
-
-        this.webSocket.send(JSON.stringify(audioMessage));
-    }
-
-    /**
-     * Send raw PCM audio to ElevenLabs (already in correct format)
-     */
-    public sendRawAudio(pcmBase64Audio: string): void {
-        if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
-            return;
-        }
-
-        const audioMessage = {
-            type: 'audio',
-            audio: {
-                chunk: pcmBase64Audio
-            }
+            user_audio_chunk: pcmBase64
         };
 
         this.webSocket.send(JSON.stringify(audioMessage));
@@ -247,7 +253,7 @@ export class ElevenLabsWsService {
         };
 
         if (eventId !== undefined) {
-            pongMessage.pong_event = { event_id: eventId };
+            pongMessage.event_id = eventId;
         }
 
         this.webSocket.send(JSON.stringify(pongMessage));
@@ -294,5 +300,12 @@ export class ElevenLabsWsService {
     public updateVoiceId(voiceId: string): void {
         this.config.voiceId = voiceId;
         console.log('[ElevenLabs WS] Voice ID updated to:', voiceId);
+    }
+
+    /**
+     * Get the agent's output audio format (from metadata)
+     */
+    public getAgentOutputFormat(): string {
+        return this.agentOutputFormat;
     }
 }

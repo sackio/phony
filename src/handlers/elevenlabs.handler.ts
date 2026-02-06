@@ -2,7 +2,7 @@ import { WebSocket } from 'ws';
 import twilio from 'twilio';
 import dotenv from 'dotenv';
 import { CallState, CallType, ElevenLabsConfig } from '../types.js';
-import { ELEVENLABS_API_KEY, ELEVENLABS_DEFAULT_AGENT_ID } from '../config/constants.js';
+import { ELEVENLABS_API_KEY, ELEVENLABS_DEFAULT_AGENT_ID, MAX_OUTGOING_CALL_DURATION, MAX_INCOMING_CALL_DURATION, GOODBYE_PHRASES } from '../config/constants.js';
 import { ElevenLabsWsService } from '../services/elevenlabs/ws.service.js';
 import { ElevenLabsEventService } from '../services/elevenlabs/event.service.js';
 import { TwilioWsService } from '../services/twilio/ws.service.js';
@@ -32,6 +32,9 @@ export class ElevenLabsCallHandler implements ICallHandler {
     private audioBuffer: string[] = [];
     private callContextReady: boolean = false;
     private needsInitialization: boolean = false;
+    private maxDurationTimer: NodeJS.Timeout | null = null;
+    private callEnding: boolean = false;
+    private sessionInitialized: boolean = false;
 
     constructor(
         ws: WebSocket,
@@ -87,9 +90,11 @@ export class ElevenLabsCallHandler implements ICallHandler {
 
     public async endCall(): Promise<void> {
         // Prevent double-ending
-        if (!this.callState.callSid) {
+        if (!this.callState.callSid || this.callEnding) {
             return;
         }
+        this.callEnding = true;
+        this.clearTimers();
 
         const callSid = this.callState.callSid;
         console.log(`[ElevenLabs Handler] Ending call ${callSid}`);
@@ -153,9 +158,11 @@ export class ElevenLabsCallHandler implements ICallHandler {
             },
             onUserTranscript: (text, isFinal) => {
                 this.elevenLabsEventProcessor.handleUserTranscript(text, isFinal);
+                if (isFinal) this.checkGoodbye(text, 'user');
             },
             onAgentTranscript: (text, isFinal) => {
                 this.elevenLabsEventProcessor.handleAgentTranscript(text, isFinal);
+                if (isFinal) this.checkGoodbye(text, 'agent');
             },
             onInterruption: () => {
                 this.elevenLabsEventProcessor.handleInterruption();
@@ -168,6 +175,10 @@ export class ElevenLabsCallHandler implements ICallHandler {
             },
             onReady: async () => {
                 console.log('[ElevenLabs Handler] ElevenLabs WebSocket ready');
+
+                // Set audio format on event processor based on agent metadata
+                const outputFormat = this.elevenLabsService.getAgentOutputFormat();
+                this.elevenLabsEventProcessor.setAudioOutputFormat(outputFormat);
 
                 // If already initialized, don't do it again
                 if (this.elevenLabsReady) {
@@ -234,6 +245,9 @@ export class ElevenLabsCallHandler implements ICallHandler {
         this.elevenLabsReady = true;
         this.needsInitialization = false;
         this.flushAudioBuffer();
+
+        // Start safety timer to prevent zombie calls
+        this.startMaxDurationTimer();
     }
 
     private sendAudioToElevenLabs(payload: string): void {
@@ -266,6 +280,41 @@ export class ElevenLabsCallHandler implements ICallHandler {
         this.callState.markQueue = [];
         this.callState.lastAssistantItemId = null;
         this.callState.responseStartTimestampTwilio = null;
+    }
+
+    /**
+     * Check transcript for goodbye phrases and end the call if detected
+     */
+    private checkGoodbye(text: string, speaker: string): void {
+        const lower = text.toLowerCase();
+        const isGoodbye = GOODBYE_PHRASES.some(phrase => lower.includes(phrase));
+        if (isGoodbye) {
+            console.log(`[ElevenLabs Handler] Goodbye detected from ${speaker}: "${text}"`);
+            // Small delay to let the final audio play
+            setTimeout(() => this.endCall(), 2000);
+        }
+    }
+
+    /**
+     * Start max duration safety timer to prevent zombie calls
+     */
+    private startMaxDurationTimer(): void {
+        const maxDuration = this.callState.callType === CallType.INBOUND
+            ? MAX_INCOMING_CALL_DURATION
+            : MAX_OUTGOING_CALL_DURATION;
+
+        console.log(`[ElevenLabs Handler] Max call duration timer set: ${maxDuration}s`);
+        this.maxDurationTimer = setTimeout(() => {
+            console.log(`[ElevenLabs Handler] Max call duration (${maxDuration}s) reached - ending call`);
+            this.endCall();
+        }, maxDuration * 1000);
+    }
+
+    private clearTimers(): void {
+        if (this.maxDurationTimer) {
+            clearTimeout(this.maxDurationTimer);
+            this.maxDurationTimer = null;
+        }
     }
 
     /**
@@ -306,7 +355,10 @@ export class ElevenLabsCallHandler implements ICallHandler {
                 await this.twilioEventProcessor.processMessage(message);
 
                 // If callSid was just set (from Twilio start event), handle call record
-                if (!prevCallSid && this.callState.callSid) {
+                // Guard against double-initialization (e.g., if processMessage triggers twice)
+                if (!prevCallSid && this.callState.callSid && !this.sessionInitialized) {
+                    this.sessionInitialized = true;
+
                     // Check if call already exists (resume from hold scenario)
                     const existingCall = await this.transcriptService.getCall(this.callState.callSid);
 

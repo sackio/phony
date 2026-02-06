@@ -157,6 +157,7 @@ export class VoiceServer {
         this.app.post('/call/incoming', this.handleIncomingCall.bind(this));
         this.app.post('/call/hold', this.handleHoldLoop.bind(this));
         this.app.ws('/call/connection-outgoing/:secret', this.handleOutgoingConnection.bind(this));
+        this.app.ws('/call/connection-outgoing/:secret/:provider', this.handleOutgoingConnection.bind(this));
         this.app.ws('/call/connection-incoming/:secret', this.handleIncomingConnection.bind(this));
 
         // Test mode route - for internal testing without consuming OpenAI credits
@@ -310,14 +311,8 @@ export class VoiceServer {
         const twiml = new VoiceResponse();
         const connect = twiml.connect();
 
-        // Include provider info in the WebSocket URL so it's available at connection time
-        let wsUrl = `${this.callbackUrl.replace('https://', 'wss://')}/call/connection-outgoing/${apiSecret}?provider=${provider}`;
-        if (elevenLabsAgentId) {
-            wsUrl += `&elevenLabsAgentId=${encodeURIComponent(elevenLabsAgentId)}`;
-        }
-        if (elevenLabsVoiceId) {
-            wsUrl += `&elevenLabsVoiceId=${encodeURIComponent(elevenLabsVoiceId)}`;
-        }
+        // Include provider info in the URL path (Twilio strips query params from WebSocket URLs)
+        let wsUrl = `${this.callbackUrl.replace('https://', 'wss://')}/call/connection-outgoing/${apiSecret}/${provider}`;
 
         const stream = connect.stream({
             url: wsUrl,
@@ -335,6 +330,9 @@ export class VoiceServer {
         if (elevenLabsVoiceId) {
             stream.parameter({ name: 'elevenLabsVoiceId', value: elevenLabsVoiceId });
         }
+
+        // Hang up when the stream ends (prevents falling through to voicemail)
+        twiml.hangup();
 
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         res.end(twiml.toString());
@@ -409,7 +407,7 @@ export class VoiceServer {
     }
 
     private handleOutgoingConnection(ws: WebSocket, req: express.Request): void {
-        console.log('[Voice Server] Incoming WebSocket connection /call/connection-outgoing/:secret');
+        console.log('[Voice Server] Incoming WebSocket connection /call/connection-outgoing');
         console.log('[Voice Server] Secret check:', {
             received: req.params.secret,
             expected: DYNAMIC_API_SECRET,
@@ -422,17 +420,15 @@ export class VoiceServer {
             return;
         }
 
-        // Extract provider info from query params
-        const provider = (req.query.provider?.toString() || DEFAULT_VOICE_PROVIDER) as VoiceProvider;
-        const elevenLabsAgentId = req.query.elevenLabsAgentId?.toString();
-        const elevenLabsVoiceId = req.query.elevenLabsVoiceId?.toString();
+        // Extract provider from URL path (Twilio strips query params from WebSocket URLs)
+        const provider = (req.params.provider as VoiceProvider) || DEFAULT_VOICE_PROVIDER;
 
         console.log('[Voice Server] Creating session for outbound call with provider:', provider);
 
+        // ElevenLabs agent/voice IDs come from stream custom parameters (in the start event)
+        // They are passed as stream.parameter() in the TwiML and available via callState
         const options: CreateSessionOptions = {
             provider,
-            elevenLabsAgentId,
-            elevenLabsVoiceId
         };
 
         this.sessionManager.createSession(ws, CallType.OUTBOUND, options);

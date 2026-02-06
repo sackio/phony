@@ -1,6 +1,7 @@
 import { CallState, ConversationMessage } from '../../types.js';
 import { SocketService } from '../socket.service.js';
 import { CallStateService } from '../call-state.service.js';
+import { pcmToUlaw, audioToBase64, base64ToAudio } from './audio.service.js';
 
 /**
  * Service for processing ElevenLabs events and managing conversation state
@@ -11,6 +12,7 @@ export class ElevenLabsEventService {
     private sendAudioToTwilio: (payload: string) => void;
     private sendMarkToTwilio: () => void;
     private onInterruption: () => void;
+    private audioOutputFormat: string = 'ulaw_8000';
 
     constructor(
         callState: CallState,
@@ -27,8 +29,16 @@ export class ElevenLabsEventService {
     }
 
     /**
+     * Set the audio output format from the agent metadata
+     */
+    public setAudioOutputFormat(format: string): void {
+        this.audioOutputFormat = format;
+        console.log('[ElevenLabs Event] Audio output format set to:', format);
+    }
+
+    /**
      * Handle audio chunk from ElevenLabs
-     * ElevenLabs sends audio in ulaw_8000 format (matching Twilio)
+     * Converts PCM to µ-law if agent outputs PCM format
      */
     public handleAudio(audioBase64: string): void {
         // Track response timing
@@ -37,8 +47,16 @@ export class ElevenLabsEventService {
             console.log('[ElevenLabs Event] Response started at timestamp:', this.callState.responseStartTimestampTwilio);
         }
 
-        // Send audio directly to Twilio (already in µ-law format)
-        this.sendAudioToTwilio(audioBase64);
+        // Convert PCM to µ-law if needed (Twilio requires µ-law 8kHz)
+        if (this.audioOutputFormat === 'pcm_16000') {
+            const pcmBuffer = base64ToAudio(audioBase64);
+            const ulawBuffer = pcmToUlaw(pcmBuffer, 16000);
+            const ulawBase64 = audioToBase64(ulawBuffer);
+            this.sendAudioToTwilio(ulawBase64);
+        } else {
+            // Already in µ-law format, send directly
+            this.sendAudioToTwilio(audioBase64);
+        }
     }
 
     /**
