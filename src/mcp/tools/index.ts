@@ -10,6 +10,7 @@ import { incomingToolsDefinitions, createIncomingToolHandlers } from './incoming
 import { contextsToolsDefinitions, createContextsToolHandlers } from './contexts.tools.js';
 import { debugToolsDefinitions, createDebugToolHandlers } from './debug.tools.js';
 import { smsToolsDefinitions, createSmsToolHandlers } from './sms.tools.js';
+import { voicemailToolsDefinitions, createVoicemailToolHandlers } from './voicemail.tools.js';
 
 /**
  * Tool Registry
@@ -33,7 +34,8 @@ export class ToolRegistry {
             ...incomingToolsDefinitions,
             ...contextsToolsDefinitions,
             ...debugToolsDefinitions,
-            ...smsToolsDefinitions
+            ...smsToolsDefinitions,
+            ...voicemailToolsDefinitions
         ];
 
         // Create all tool handlers
@@ -42,6 +44,7 @@ export class ToolRegistry {
         const contextsHandlers = createContextsToolHandlers(contextService);
         const debugHandlers = createDebugToolHandlers(transcriptService, incomingConfigService, contextService);
         const smsHandlers = createSmsToolHandlers();
+        const voicemailHandlers = createVoicemailToolHandlers();
 
         // Combine into map
         this.handlers = new Map([
@@ -49,7 +52,8 @@ export class ToolRegistry {
             ...Object.entries(incomingHandlers),
             ...Object.entries(contextsHandlers),
             ...Object.entries(debugHandlers),
-            ...Object.entries(smsHandlers)
+            ...Object.entries(smsHandlers),
+            ...Object.entries(voicemailHandlers)
         ]);
     }
 

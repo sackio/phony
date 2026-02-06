@@ -6,8 +6,9 @@ import { WebSocket } from 'ws';
 import path from 'path';
 import twilio from 'twilio';
 import { Server as HTTPServer } from 'http';
-import { CallType } from '../types.js';
-import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER } from '../config/constants.js';
+import { CallType, VoiceProvider } from '../types.js';
+import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER, DEFAULT_INCOMING_CALL_MESSAGE, DEFAULT_INCOMING_CALL_VOICE, DEFAULT_VOICE_PROVIDER } from '../config/constants.js';
+import { CreateSessionOptions } from '../services/session-manager.service.js';
 import { CallSessionManager } from '../handlers/openai.handler.js';
 import { TwilioCallService } from '../services/twilio/call.service.js';
 import { TwilioSmsService } from '../services/twilio/sms.service.js';
@@ -19,6 +20,7 @@ import { ContextService } from '../services/database/context.service.js';
 import { CallTranscriptService } from '../services/database/call-transcript.service.js';
 import { SessionManagerService } from '../services/session-manager.service.js';
 import { createMCPRouter } from '../mcp/router.js';
+import { VoicemailService } from '../services/voicemail/voicemail.service.js';
 dotenv.config();
 
 export class VoiceServer {
@@ -35,6 +37,7 @@ export class VoiceServer {
     private incomingConfigService: IncomingConfigService;
     private contextService: ContextService;
     private transcriptService: CallTranscriptService;
+    private voicemailService: VoicemailService;
 
     constructor(callbackUrl: string, sessionManager: CallSessionManager, transcriptService: CallTranscriptService) {
         this.callbackUrl = callbackUrl;
@@ -56,6 +59,7 @@ export class VoiceServer {
         this.callStateService = CallStateService.getInstance();
         this.incomingConfigService = new IncomingConfigService();
         this.contextService = new ContextService();
+        this.voicemailService = new VoicemailService();
 
         this.configureMiddleware();
         this.setupRoutes();
@@ -153,6 +157,7 @@ export class VoiceServer {
         this.app.post('/call/incoming', this.handleIncomingCall.bind(this));
         this.app.post('/call/hold', this.handleHoldLoop.bind(this));
         this.app.ws('/call/connection-outgoing/:secret', this.handleOutgoingConnection.bind(this));
+        this.app.ws('/call/connection-outgoing/:secret/:provider', this.handleOutgoingConnection.bind(this));
         this.app.ws('/call/connection-incoming/:secret', this.handleIncomingConnection.bind(this));
 
         // Test mode route - for internal testing without consuming OpenAI credits
@@ -164,6 +169,10 @@ export class VoiceServer {
         // SMS webhook routes
         this.app.post('/sms/incoming', this.handleIncomingSms.bind(this));
         this.app.post('/sms/status', this.handleSmsStatus.bind(this));
+
+        // Voicemail webhook routes
+        this.app.post('/voicemail/recording', this.handleVoicemailRecording.bind(this));
+        this.app.post('/voicemail/transcription', this.handleVoicemailTranscription.bind(this));
 
         // Serve frontend for all other routes (SPA fallback)
         this.app.get('*', (req, res) => {
@@ -190,6 +199,9 @@ export class VoiceServer {
         const callInstructions = req.query.callInstructions?.toString() || req.body.callInstructions || '';
         const voice = req.query.voice?.toString() || req.body.voice || 'sage';
         const fromNumber = req.query.fromNumber?.toString() || req.body.fromNumber || req.body.From;
+        const provider = (req.query.provider?.toString() || req.body.provider || DEFAULT_VOICE_PROVIDER) as VoiceProvider;
+        const elevenLabsAgentId = req.query.elevenLabsAgentId?.toString() || req.body.elevenLabsAgentId;
+        const elevenLabsVoiceId = req.query.elevenLabsVoiceId?.toString() || req.body.elevenLabsVoiceId;
 
         if (!toNumber) {
             res.status(400).json({ error: 'Missing required field: To' });
@@ -219,8 +231,18 @@ export class VoiceServer {
 
         try {
             const callerNumber = fromNumber || process.env.TWILIO_NUMBER || '';
-            console.log('[Voice Server] Creating call from:', callerNumber, 'to:', toNumber, 'with voice:', voice);
-            const twilioCallSid = await this.twilioCallService.makeCall(this.callbackUrl, toNumber, systemInstructions, callInstructions, voice, fromNumber);
+            console.log('[Voice Server] Creating call from:', callerNumber, 'to:', toNumber, 'with voice:', voice, 'provider:', provider);
+            const twilioCallSid = await this.twilioCallService.makeCall(
+                this.callbackUrl,
+                toNumber,
+                systemInstructions,
+                callInstructions,
+                voice,
+                fromNumber,
+                provider,
+                elevenLabsAgentId,
+                elevenLabsVoiceId
+            );
 
             // Store call state (will be created in MongoDB when websocket connects)
             this.callStateService.addCall(twilioCallSid, {
@@ -229,7 +251,10 @@ export class VoiceServer {
                 toNumber: toNumber,
                 fromNumber: callerNumber,
                 callType: 'outgoing',
+                voiceProvider: provider,
                 voice: voice,
+                elevenLabsAgentId: elevenLabsAgentId,
+                elevenLabsVoiceId: elevenLabsVoiceId,
                 status: 'initiated',
                 startedAt: new Date(),
                 conversationHistory: []
@@ -242,7 +267,8 @@ export class VoiceServer {
             res.status(200).json({
                 callSid: twilioCallSid,
                 status: 'initiated',
-                message: 'Call created successfully'
+                provider: provider,
+                message: `Call created successfully using ${provider} provider`
             });
         } catch (error) {
             console.error('[Voice Server] Error creating call:', error);
@@ -276,14 +302,20 @@ export class VoiceServer {
         const systemInstructions = req.query.systemInstructions?.toString() || '';
         const callInstructions = req.query.callInstructions?.toString() || '';
         const voice = req.query.voice?.toString() || 'sage';
+        const provider = (req.query.provider?.toString() || DEFAULT_VOICE_PROVIDER) as VoiceProvider;
+        const elevenLabsAgentId = req.query.elevenLabsAgentId?.toString() || '';
+        const elevenLabsVoiceId = req.query.elevenLabsVoiceId?.toString() || '';
 
-        console.log('[Voice Server] Creating call with voice:', voice);
+        console.log('[Voice Server] Creating call with voice:', voice, 'provider:', provider);
 
         const twiml = new VoiceResponse();
         const connect = twiml.connect();
 
+        // Include provider info in the URL path (Twilio strips query params from WebSocket URLs)
+        let wsUrl = `${this.callbackUrl.replace('https://', 'wss://')}/call/connection-outgoing/${apiSecret}/${provider}`;
+
         const stream = connect.stream({
-            url: `${this.callbackUrl.replace('https://', 'wss://')}/call/connection-outgoing/${apiSecret}`,
+            url: wsUrl,
         });
 
         stream.parameter({ name: 'fromNumber', value: fromNumber });
@@ -291,6 +323,16 @@ export class VoiceServer {
         stream.parameter({ name: 'systemInstructions', value: systemInstructions });
         stream.parameter({ name: 'callInstructions', value: callInstructions });
         stream.parameter({ name: 'voice', value: voice });
+        stream.parameter({ name: 'provider', value: provider });
+        if (elevenLabsAgentId) {
+            stream.parameter({ name: 'elevenLabsAgentId', value: elevenLabsAgentId });
+        }
+        if (elevenLabsVoiceId) {
+            stream.parameter({ name: 'elevenLabsVoiceId', value: elevenLabsVoiceId });
+        }
+
+        // Hang up when the stream ends (prevents falling through to voicemail)
+        twiml.hangup();
 
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         res.end(twiml.toString());
@@ -365,7 +407,7 @@ export class VoiceServer {
     }
 
     private handleOutgoingConnection(ws: WebSocket, req: express.Request): void {
-        console.log('[Voice Server] Incoming WebSocket connection /call/connection-outgoing/:secret');
+        console.log('[Voice Server] Incoming WebSocket connection /call/connection-outgoing');
         console.log('[Voice Server] Secret check:', {
             received: req.params.secret,
             expected: DYNAMIC_API_SECRET,
@@ -378,8 +420,18 @@ export class VoiceServer {
             return;
         }
 
-        console.log('[Voice Server] Creating session for outbound call');
-        this.sessionManager.createSession(ws, CallType.OUTBOUND);
+        // Extract provider from URL path (Twilio strips query params from WebSocket URLs)
+        const provider = (req.params.provider as VoiceProvider) || DEFAULT_VOICE_PROVIDER;
+
+        console.log('[Voice Server] Creating session for outbound call with provider:', provider);
+
+        // ElevenLabs agent/voice IDs come from stream custom parameters (in the start event)
+        // They are passed as stream.parameter() in the TwiML and available via callState
+        const options: CreateSessionOptions = {
+            provider,
+        };
+
+        this.sessionManager.createSession(ws, CallType.OUTBOUND, options);
     }
 
     private async handleListCalls(req: express.Request, res: Response): Promise<void> {
@@ -898,7 +950,11 @@ export class VoiceServer {
 
     private async handleCreateIncomingConfig(req: express.Request, res: Response): Promise<void> {
         try {
-            const { phoneNumber, name, systemInstructions, callInstructions, voice, enabled, messageOnly, hangupMessage } = req.body;
+            const {
+                phoneNumber, name, systemInstructions, callInstructions, voice, enabled,
+                messageOnly, hangupMessage,
+                voicemailEnabled, voicemailGreeting, voicemailMaxLength
+            } = req.body;
 
             if (!phoneNumber || !name) {
                 res.status(400).json({ error: 'Missing required fields: phoneNumber, name' });
@@ -911,8 +967,8 @@ export class VoiceServer {
                 return;
             }
 
-            // If not messageOnly, require systemInstructions
-            if (!messageOnly && !systemInstructions) {
+            // If not messageOnly and not voicemailEnabled, require systemInstructions (AI mode)
+            if (!messageOnly && !voicemailEnabled && !systemInstructions) {
                 res.status(400).json({ error: 'systemInstructions is required for AI conversation mode' });
                 return;
             }
@@ -925,7 +981,10 @@ export class VoiceServer {
                 voice,
                 enabled,
                 messageOnly,
-                hangupMessage
+                hangupMessage,
+                voicemailEnabled,
+                voicemailGreeting,
+                voicemailMaxLength
             });
 
             res.status(201).json(config);
@@ -1093,9 +1152,10 @@ export class VoiceServer {
         const config = await this.incomingConfigService.getConfigByNumber(toNumber);
 
         if (!config) {
-            console.log('[Voice Server] No configuration found for', toNumber);
+            // Default behavior: Play SMS redirect message and hang up
+            console.log('[Voice Server] No configuration found for', toNumber, '- playing SMS redirect message');
             const twiml = new VoiceResponse();
-            twiml.say('Sorry, this number is not configured to receive calls.');
+            twiml.say({ voice: DEFAULT_INCOMING_CALL_VOICE as any }, DEFAULT_INCOMING_CALL_MESSAGE);
             twiml.hangup();
             res.writeHead(200, { 'Content-Type': 'text/xml' });
             res.end(twiml.toString());
@@ -1117,11 +1177,49 @@ export class VoiceServer {
             return;
         }
 
+        // Check if voicemail mode is enabled
+        if (config.voicemailEnabled) {
+            console.log('[Voice Server] Voicemail mode - recording message');
+            const greeting = config.voicemailGreeting || 'Please leave a message after the beep.';
+            const maxLength = config.voicemailMaxLength || 120;
+
+            twiml.say({ voice: config.voice }, greeting);
+            twiml.record({
+                maxLength: maxLength,
+                transcribe: true,
+                transcribeCallback: `${this.callbackUrl}/voicemail/transcription?apiSecret=${DYNAMIC_API_SECRET}`,
+                recordingStatusCallback: `${this.callbackUrl}/voicemail/recording?apiSecret=${DYNAMIC_API_SECRET}&fromNumber=${encodeURIComponent(fromNumber)}&toNumber=${encodeURIComponent(toNumber)}`,
+                recordingStatusCallbackEvent: ['completed'],
+                playBeep: true,
+                finishOnKey: '#'
+            });
+            twiml.say({ voice: config.voice }, 'Thank you for your message. Goodbye.');
+            twiml.hangup();
+
+            res.writeHead(200, { 'Content-Type': 'text/xml' });
+            res.end(twiml.toString());
+            return;
+        }
+
         // Normal AI conversation mode
         const connect = twiml.connect();
 
+        // Get provider info from config
+        const provider = config.voiceProvider || 'openai';
+        const elevenLabsAgentId = config.elevenLabsAgentId || '';
+        const elevenLabsVoiceId = config.elevenLabsVoiceId || '';
+
+        // Include provider info in WebSocket URL
+        let wsUrl = `${this.callbackUrl.replace('https://', 'wss://')}/call/connection-incoming/${DYNAMIC_API_SECRET}?provider=${provider}`;
+        if (elevenLabsAgentId) {
+            wsUrl += `&elevenLabsAgentId=${encodeURIComponent(elevenLabsAgentId)}`;
+        }
+        if (elevenLabsVoiceId) {
+            wsUrl += `&elevenLabsVoiceId=${encodeURIComponent(elevenLabsVoiceId)}`;
+        }
+
         const stream = connect.stream({
-            url: `${this.callbackUrl.replace('https://', 'wss://')}/call/connection-incoming/${DYNAMIC_API_SECRET}`,
+            url: wsUrl,
         });
 
         stream.parameter({ name: 'fromNumber', value: fromNumber });
@@ -1130,6 +1228,13 @@ export class VoiceServer {
         stream.parameter({ name: 'systemInstructions', value: config.systemInstructions });
         stream.parameter({ name: 'callInstructions', value: config.callInstructions });
         stream.parameter({ name: 'voice', value: config.voice });
+        stream.parameter({ name: 'provider', value: provider });
+        if (elevenLabsAgentId) {
+            stream.parameter({ name: 'elevenLabsAgentId', value: elevenLabsAgentId });
+        }
+        if (elevenLabsVoiceId) {
+            stream.parameter({ name: 'elevenLabsVoiceId', value: elevenLabsVoiceId });
+        }
 
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         res.end(twiml.toString());
@@ -1149,8 +1254,20 @@ export class VoiceServer {
             return;
         }
 
-        console.log('[Voice Server] Creating session for inbound call');
-        this.sessionManager.createSession(ws, CallType.INBOUND);
+        // Extract provider info from query params
+        const provider = (req.query.provider?.toString() || DEFAULT_VOICE_PROVIDER) as VoiceProvider;
+        const elevenLabsAgentId = req.query.elevenLabsAgentId?.toString();
+        const elevenLabsVoiceId = req.query.elevenLabsVoiceId?.toString();
+
+        console.log('[Voice Server] Creating session for inbound call with provider:', provider);
+
+        const options: CreateSessionOptions = {
+            provider,
+            elevenLabsAgentId,
+            elevenLabsVoiceId
+        };
+
+        this.sessionManager.createSession(ws, CallType.INBOUND, options);
     }
 
     private async handleSendSmsApi(req: express.Request, res: Response): Promise<void> {
@@ -1530,6 +1647,106 @@ export class VoiceServer {
             res.status(200).send('OK');
         } catch (error) {
             console.error('[Voice Server] Error handling SMS status callback:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Handle voicemail recording completion callback from Twilio
+     */
+    private async handleVoicemailRecording(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] Voicemail recording callback');
+        console.log('[Voice Server] Recording body:', JSON.stringify(req.body, null, 2));
+
+        // Verify API secret
+        const apiSecret = req.query.apiSecret?.toString();
+        if (apiSecret !== DYNAMIC_API_SECRET) {
+            console.log('[Voice Server] 401: Unauthorized - Invalid or missing API secret');
+            res.status(401).json({ error: 'Unauthorized: Invalid or missing API secret' });
+            return;
+        }
+
+        try {
+            const {
+                CallSid,
+                RecordingSid,
+                RecordingUrl,
+                RecordingDuration
+            } = req.body;
+
+            // Get phone numbers from query params (passed in the callback URL)
+            const fromNumber = req.query.fromNumber?.toString() || '';
+            const toNumber = req.query.toNumber?.toString() || '';
+
+            console.log(`[Voice Server] Voicemail recorded: ${RecordingSid}`);
+            console.log(`[Voice Server] From: ${fromNumber}, To: ${toNumber}`);
+            console.log(`[Voice Server] Duration: ${RecordingDuration}s`);
+            console.log(`[Voice Server] URL: ${RecordingUrl}`);
+
+            // Create voicemail record in database
+            await this.voicemailService.createVoicemail({
+                callSid: CallSid,
+                recordingSid: RecordingSid,
+                fromNumber,
+                toNumber,
+                duration: parseInt(RecordingDuration) || 0,
+                recordingUrl: RecordingUrl
+            });
+
+            res.status(200).send('OK');
+        } catch (error) {
+            console.error('[Voice Server] Error handling voicemail recording:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Handle voicemail transcription callback from Twilio
+     */
+    private async handleVoicemailTranscription(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] Voicemail transcription callback');
+        console.log('[Voice Server] Transcription body:', JSON.stringify(req.body, null, 2));
+
+        // Verify API secret
+        const apiSecret = req.query.apiSecret?.toString();
+        if (apiSecret !== DYNAMIC_API_SECRET) {
+            console.log('[Voice Server] 401: Unauthorized - Invalid or missing API secret');
+            res.status(401).json({ error: 'Unauthorized: Invalid or missing API secret' });
+            return;
+        }
+
+        try {
+            const {
+                RecordingSid,
+                TranscriptionSid,
+                TranscriptionText,
+                TranscriptionStatus
+            } = req.body;
+
+            console.log(`[Voice Server] Transcription for recording: ${RecordingSid}`);
+            console.log(`[Voice Server] Status: ${TranscriptionStatus}`);
+            console.log(`[Voice Server] Text: ${TranscriptionText}`);
+
+            if (TranscriptionStatus === 'completed' && TranscriptionText) {
+                // Update voicemail with transcription
+                await this.voicemailService.updateTranscription(
+                    RecordingSid,
+                    TranscriptionText,
+                    TranscriptionSid
+                );
+                console.log(`[Voice Server] Voicemail transcription saved for ${RecordingSid}`);
+            } else if (TranscriptionStatus === 'failed') {
+                // Mark transcription as failed
+                await this.voicemailService.markTranscriptionFailed(
+                    RecordingSid,
+                    'Twilio transcription failed'
+                );
+                console.log(`[Voice Server] Voicemail transcription failed for ${RecordingSid}`);
+            }
+
+            res.status(200).send('OK');
+        } catch (error) {
+            console.error('[Voice Server] Error handling voicemail transcription:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     }

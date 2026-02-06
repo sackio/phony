@@ -20,7 +20,10 @@ export class CallTranscriptService {
         fromNumber: string;
         toNumber: string;
         callType: CallType;
+        voiceProvider?: 'openai' | 'elevenlabs';
         voice: string;
+        elevenLabsAgentId?: string;
+        elevenLabsVoiceId?: string;
         callContext: string;
         systemInstructions?: string;
         callInstructions?: string;
@@ -36,7 +39,10 @@ export class CallTranscriptService {
                 fromNumber: data.fromNumber,
                 toNumber: data.toNumber,
                 callType: data.callType === CallType.INBOUND ? 'inbound' : 'outbound',
+                voiceProvider: data.voiceProvider || 'openai',
                 voice: data.voice,
+                elevenLabsAgentId: data.elevenLabsAgentId,
+                elevenLabsVoiceId: data.elevenLabsVoiceId,
                 callContext: data.callContext,
                 systemInstructions: data.systemInstructions,
                 callInstructions: data.callInstructions,
@@ -46,7 +52,7 @@ export class CallTranscriptService {
                 openaiEvents: [],
                 startedAt: new Date()
             });
-            console.log(`[CallTranscript] Created call record for ${data.callSid}`);
+            console.log(`[CallTranscript] Created call record for ${data.callSid} (provider: ${data.voiceProvider || 'openai'})`);
         } catch (error) {
             console.error(`[CallTranscript] Error creating call record:`, error);
         }

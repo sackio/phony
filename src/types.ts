@@ -1,7 +1,13 @@
 // state.ts - Shared state variables
 export enum CallType {
     OUTBOUND = 'OUTBOUND',
+    INBOUND = 'INBOUND',
 }
+
+/**
+ * Voice provider enum
+ */
+export type VoiceProvider = 'openai' | 'elevenlabs';
 
 export enum SmsDirection {
     INBOUND = 'inbound',
@@ -44,6 +50,9 @@ export class CallState {
     // Call type and direction
     callType: CallType = CallType.OUTBOUND;
 
+    // Voice provider
+    voiceProvider: VoiceProvider = 'openai';
+
     // Phone numbers
     fromNumber = '';
     toNumber = '';
@@ -52,7 +61,9 @@ export class CallState {
     callContext = '';
     initialMessage = '';
     conversationHistory: ConversationMessage[] = [];
-    voice = 'sage'; // Default voice
+    voice = 'sage'; // Default voice for OpenAI
+    elevenLabsAgentId?: string; // ElevenLabs agent ID
+    elevenLabsVoiceId?: string; // ElevenLabs voice ID
     systemInstructions = '';
     callInstructions = '';
 
@@ -119,4 +130,13 @@ export interface TwilioConfig {
     accountSid: string;
     authToken: string;
     recordCalls: boolean;
+}
+
+/**
+ * Configuration for ElevenLabs Conversational AI
+ */
+export interface ElevenLabsConfig {
+    apiKey: string;
+    agentId: string;
+    voiceId?: string;
 }

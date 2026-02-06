@@ -84,4 +84,7 @@ SmsSchema.index({ direction: 1, createdAt: -1 });
 SmsSchema.index({ status: 1, createdAt: -1 });
 SmsSchema.index({ createdAt: -1 });
 
+// Text index for full-text search on message body
+SmsSchema.index({ body: 'text' });
+
 export const SmsModel = mongoose.model<ISms>('Sms', SmsSchema);

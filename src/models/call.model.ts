@@ -25,7 +25,10 @@ export interface ICall extends Document {
     fromNumber: string;
     toNumber: string;
     callType: 'inbound' | 'outbound';
+    voiceProvider: 'openai' | 'elevenlabs';
     voice: string;
+    elevenLabsAgentId?: string;
+    elevenLabsVoiceId?: string;
     callContext: string;
     conversationHistory: ConversationMessage[];
     twilioEvents: TwilioEvent[];
@@ -113,9 +116,20 @@ const CallSchema = new Schema<ICall>({
         enum: ['inbound', 'outbound'],
         required: true
     },
+    voiceProvider: {
+        type: String,
+        enum: ['openai', 'elevenlabs'],
+        default: 'openai'
+    },
     voice: {
         type: String,
         default: 'sage'
+    },
+    elevenLabsAgentId: {
+        type: String
+    },
+    elevenLabsVoiceId: {
+        type: String
     },
     callContext: {
         type: String,

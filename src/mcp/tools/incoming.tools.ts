@@ -26,7 +26,7 @@ export const incomingToolsDefinitions: MCPToolDefinition[] = [
     },
     {
         name: 'phony_create_incoming_config',
-        description: 'Configure a phone number to handle incoming calls',
+        description: 'Configure a phone number to handle incoming calls. Supports three modes: AI conversation (default), message-only (play message and hang up), or voicemail (record and transcribe messages). AI conversation mode supports OpenAI or ElevenLabs voice providers.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -40,23 +40,56 @@ export const incomingToolsDefinitions: MCPToolDefinition[] = [
                 },
                 systemInstructions: {
                     type: 'string',
-                    description: 'System instructions for incoming calls'
+                    description: 'System instructions for incoming calls (required for AI conversation mode)'
                 },
                 callInstructions: {
                     type: 'string',
                     description: 'Default call instructions for incoming calls'
                 },
+                voiceProvider: {
+                    type: 'string',
+                    description: 'Voice provider to use: openai (default) or elevenlabs',
+                    enum: ['openai', 'elevenlabs']
+                },
                 voice: {
                     type: 'string',
-                    description: 'OpenAI voice to use',
-                    enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
+                    description: 'Voice to use for TTS (OpenAI voices)',
+                    enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'sage']
+                },
+                elevenLabsAgentId: {
+                    type: 'string',
+                    description: 'ElevenLabs agent ID (uses default if not specified, only for elevenlabs provider)'
+                },
+                elevenLabsVoiceId: {
+                    type: 'string',
+                    description: 'ElevenLabs voice ID (uses agent default if not specified, only for elevenlabs provider)'
                 },
                 enabled: {
                     type: 'boolean',
                     description: 'Whether this configuration is enabled'
+                },
+                messageOnly: {
+                    type: 'boolean',
+                    description: 'If true, play hangupMessage and hang up (no AI conversation)'
+                },
+                hangupMessage: {
+                    type: 'string',
+                    description: 'Message to play when messageOnly is true'
+                },
+                voicemailEnabled: {
+                    type: 'boolean',
+                    description: 'If true, record voicemail with transcription instead of AI conversation'
+                },
+                voicemailGreeting: {
+                    type: 'string',
+                    description: 'Custom greeting message for voicemail (TTS text)'
+                },
+                voicemailMaxLength: {
+                    type: 'number',
+                    description: 'Maximum voicemail recording length in seconds (default: 120)'
                 }
             },
-            required: ['phoneNumber', 'name', 'systemInstructions', 'callInstructions']
+            required: ['phoneNumber', 'name']
         }
     },
     {
@@ -81,14 +114,47 @@ export const incomingToolsDefinitions: MCPToolDefinition[] = [
                     type: 'string',
                     description: 'New call instructions'
                 },
+                voiceProvider: {
+                    type: 'string',
+                    description: 'Voice provider: openai or elevenlabs',
+                    enum: ['openai', 'elevenlabs']
+                },
                 voice: {
                     type: 'string',
-                    description: 'New voice',
-                    enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
+                    description: 'New voice (OpenAI voices)',
+                    enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'sage']
+                },
+                elevenLabsAgentId: {
+                    type: 'string',
+                    description: 'ElevenLabs agent ID'
+                },
+                elevenLabsVoiceId: {
+                    type: 'string',
+                    description: 'ElevenLabs voice ID'
                 },
                 enabled: {
                     type: 'boolean',
                     description: 'Enable or disable configuration'
+                },
+                messageOnly: {
+                    type: 'boolean',
+                    description: 'If true, play hangupMessage and hang up (no AI conversation)'
+                },
+                hangupMessage: {
+                    type: 'string',
+                    description: 'Message to play when messageOnly is true'
+                },
+                voicemailEnabled: {
+                    type: 'boolean',
+                    description: 'If true, record voicemail with transcription instead of AI conversation'
+                },
+                voicemailGreeting: {
+                    type: 'string',
+                    description: 'Custom greeting message for voicemail (TTS text)'
+                },
+                voicemailMaxLength: {
+                    type: 'number',
+                    description: 'Maximum voicemail recording length in seconds (default: 120)'
                 }
             },
             required: ['phoneNumber']
@@ -169,8 +235,16 @@ export function createIncomingToolHandlers(
                         name: config.name,
                         systemInstructions: config.systemInstructions,
                         callInstructions: config.callInstructions,
+                        voiceProvider: config.voiceProvider || 'openai',
                         voice: config.voice,
+                        elevenLabsAgentId: config.elevenLabsAgentId,
+                        elevenLabsVoiceId: config.elevenLabsVoiceId,
                         enabled: config.enabled,
+                        messageOnly: config.messageOnly,
+                        hangupMessage: config.hangupMessage,
+                        voicemailEnabled: config.voicemailEnabled,
+                        voicemailGreeting: config.voicemailGreeting,
+                        voicemailMaxLength: config.voicemailMaxLength,
                         createdAt: config.createdAt,
                         updatedAt: config.updatedAt
                     })),
@@ -183,19 +257,38 @@ export function createIncomingToolHandlers(
 
         phony_create_incoming_config: async (args) => {
             try {
-                validateArgs(args, ['phoneNumber', 'name', 'systemInstructions', 'callInstructions']);
+                validateArgs(args, ['phoneNumber', 'name']);
 
                 const phoneNumber = sanitizePhoneNumber(args.phoneNumber);
-                const voice = args.voice || 'alloy';
+                const voiceProvider = args.voiceProvider || 'openai';
+                const voice = args.voice || 'sage';
                 const enabled = args.enabled !== false; // Default to true
+                const messageOnly = args.messageOnly || false;
+                const voicemailEnabled = args.voicemailEnabled || false;
+
+                // Validate based on mode
+                if (!messageOnly && !voicemailEnabled && !args.systemInstructions) {
+                    return createToolError('systemInstructions is required for AI conversation mode');
+                }
+                if (messageOnly && !args.hangupMessage) {
+                    return createToolError('hangupMessage is required when messageOnly is true');
+                }
 
                 const config = await incomingConfigService.createConfig({
                     phoneNumber,
                     name: args.name,
-                    systemInstructions: args.systemInstructions,
-                    callInstructions: args.callInstructions,
+                    systemInstructions: args.systemInstructions || '',
+                    callInstructions: args.callInstructions || '',
+                    voiceProvider,
                     voice,
-                    enabled
+                    elevenLabsAgentId: args.elevenLabsAgentId,
+                    elevenLabsVoiceId: args.elevenLabsVoiceId,
+                    enabled,
+                    messageOnly,
+                    hangupMessage: args.hangupMessage,
+                    voicemailEnabled,
+                    voicemailGreeting: args.voicemailGreeting,
+                    voicemailMaxLength: args.voicemailMaxLength || 120
                 });
 
                 return createToolResponse({
@@ -204,12 +297,20 @@ export function createIncomingToolHandlers(
                         name: config.name,
                         systemInstructions: config.systemInstructions,
                         callInstructions: config.callInstructions,
+                        voiceProvider: config.voiceProvider,
                         voice: config.voice,
+                        elevenLabsAgentId: config.elevenLabsAgentId,
+                        elevenLabsVoiceId: config.elevenLabsVoiceId,
                         enabled: config.enabled,
+                        messageOnly: config.messageOnly,
+                        hangupMessage: config.hangupMessage,
+                        voicemailEnabled: config.voicemailEnabled,
+                        voicemailGreeting: config.voicemailGreeting,
+                        voicemailMaxLength: config.voicemailMaxLength,
                         createdAt: config.createdAt,
                         updatedAt: config.updatedAt
                     },
-                    message: `Configuration created for ${phoneNumber}`
+                    message: `Configuration created for ${phoneNumber} with ${voiceProvider} provider`
                 });
             } catch (error: any) {
                 return createToolError('Failed to create configuration', { message: error.message });
@@ -227,8 +328,16 @@ export function createIncomingToolHandlers(
                 if (args.name !== undefined) updates.name = args.name;
                 if (args.systemInstructions !== undefined) updates.systemInstructions = args.systemInstructions;
                 if (args.callInstructions !== undefined) updates.callInstructions = args.callInstructions;
+                if (args.voiceProvider !== undefined) updates.voiceProvider = args.voiceProvider;
                 if (args.voice !== undefined) updates.voice = args.voice;
+                if (args.elevenLabsAgentId !== undefined) updates.elevenLabsAgentId = args.elevenLabsAgentId;
+                if (args.elevenLabsVoiceId !== undefined) updates.elevenLabsVoiceId = args.elevenLabsVoiceId;
                 if (args.enabled !== undefined) updates.enabled = args.enabled;
+                if (args.messageOnly !== undefined) updates.messageOnly = args.messageOnly;
+                if (args.hangupMessage !== undefined) updates.hangupMessage = args.hangupMessage;
+                if (args.voicemailEnabled !== undefined) updates.voicemailEnabled = args.voicemailEnabled;
+                if (args.voicemailGreeting !== undefined) updates.voicemailGreeting = args.voicemailGreeting;
+                if (args.voicemailMaxLength !== undefined) updates.voicemailMaxLength = args.voicemailMaxLength;
 
                 if (Object.keys(updates).length === 0) {
                     return createToolError('No fields provided to update');
@@ -246,8 +355,16 @@ export function createIncomingToolHandlers(
                         name: config.name,
                         systemInstructions: config.systemInstructions,
                         callInstructions: config.callInstructions,
+                        voiceProvider: config.voiceProvider,
                         voice: config.voice,
+                        elevenLabsAgentId: config.elevenLabsAgentId,
+                        elevenLabsVoiceId: config.elevenLabsVoiceId,
                         enabled: config.enabled,
+                        messageOnly: config.messageOnly,
+                        hangupMessage: config.hangupMessage,
+                        voicemailEnabled: config.voicemailEnabled,
+                        voicemailGreeting: config.voicemailGreeting,
+                        voicemailMaxLength: config.voicemailMaxLength,
                         createdAt: config.createdAt,
                         updatedAt: config.updatedAt
                     },

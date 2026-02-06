@@ -1,9 +1,11 @@
 import express, { Request, Response } from 'express';
+import { IncomingMessage, ServerResponse } from 'http';
 import { ToolRegistry } from './tools/index.js';
 import { ResourceRegistry } from './resources/index.js';
 import { promptDefinitions, getPromptHandler } from './prompts/index.js';
 import { MCPToolCallRequest, MCPResourceReadRequest, MCPPromptExecuteRequest } from './types.js';
 import { createToolError } from './utils.js';
+import { MCPSSEManager } from './sse-transport.js';
 
 import { CallTranscriptService } from '../services/database/call-transcript.service.js';
 import { IncomingConfigService } from '../services/database/incoming-config.service.js';
@@ -13,7 +15,7 @@ import { SessionManagerService } from '../services/session-manager.service.js';
 
 /**
  * MCP HTTP Router
- * Implements Model Context Protocol endpoints
+ * Implements Model Context Protocol endpoints with JSON-RPC 2.0 and SSE transport support
  */
 
 export function createMCPRouter(
@@ -41,9 +43,290 @@ export function createMCPRouter(
         twilioService
     );
 
+    // Initialize SSE Manager for MCP HTTP transport
+    const sseManager = new MCPSSEManager(
+        transcriptService,
+        incomingConfigService,
+        contextService,
+        twilioService,
+        sessionManager
+    );
+
+    /**
+     * GET /mcp/sse - Server-Sent Events endpoint for MCP HTTP transport
+     * This establishes the SSE connection that Claude Code uses
+     */
+    router.get('/sse', async (req: Request, res: Response) => {
+        console.log('[MCP] SSE connection requested');
+
+        try {
+            await sseManager.handleSSEConnection(res);
+        } catch (error: any) {
+            console.error('[MCP] SSE connection error:', error);
+            if (!res.headersSent) {
+                res.status(500).json({ error: 'Failed to establish SSE connection' });
+            }
+        }
+    });
+
+    /**
+     * POST /mcp/messages - Message endpoint for MCP HTTP transport
+     * Claude Code posts JSON-RPC messages here
+     */
+    router.post('/messages', async (req: Request, res: Response) => {
+        const sessionId = req.query.sessionId as string;
+        console.log(`[MCP] POST message received for session: ${sessionId}`);
+
+        if (!sessionId) {
+            res.status(400).json({ error: 'Missing sessionId query parameter' });
+            return;
+        }
+
+        if (!sseManager.hasSession(sessionId)) {
+            res.status(404).json({ error: `No active session found for sessionId: ${sessionId}` });
+            return;
+        }
+
+        try {
+            // Cast Express req/res to Node.js types for SSEServerTransport
+            const nodeReq = req as unknown as IncomingMessage;
+            const nodeRes = res as unknown as ServerResponse;
+
+            const success = await sseManager.handlePostMessage(sessionId, nodeReq, nodeRes, req.body);
+
+            if (!success) {
+                res.status(500).json({ error: 'Failed to process message' });
+            }
+            // Note: handlePostMessage sends the response itself (202 Accepted)
+        } catch (error: any) {
+            console.error('[MCP] POST message error:', error);
+            if (!res.headersSent) {
+                res.status(500).json({ error: error.message || 'Internal server error' });
+            }
+        }
+    });
+
+    /**
+     * POST /mcp/rpc - JSON-RPC 2.0 MCP endpoint
+     * Standard MCP HTTP transport protocol
+     */
+    router.post('/rpc', async (req: Request, res: Response) => {
+        try {
+            const { jsonrpc, method, params, id } = req.body;
+            console.log(`[MCP JSON-RPC] ${method}`, params ? JSON.stringify(params).substring(0, 100) : '');
+
+            // Validate JSON-RPC format
+            if (jsonrpc !== '2.0') {
+                return res.status(400).json({
+                    jsonrpc: '2.0',
+                    error: { code: -32600, message: 'Invalid Request: must be JSON-RPC 2.0' },
+                    id
+                });
+            }
+
+            let result: any;
+
+            switch (method) {
+                case 'initialize':
+                    result = {
+                        protocolVersion: '2024-11-05',
+                        capabilities: {
+                            tools: {},
+                            resources: {},
+                            prompts: {}
+                        },
+                        serverInfo: {
+                            name: 'phony',
+                            version: '1.0.0'
+                        }
+                    };
+                    break;
+
+                case 'initialized':
+                    result = {};
+                    break;
+
+                case 'ping':
+                    result = {};
+                    break;
+
+                case 'tools/list':
+                    result = { tools: toolRegistry.getDefinitions() };
+                    break;
+
+                case 'tools/call':
+                    const toolHandler = toolRegistry.getHandler(params?.name);
+                    if (!toolHandler) {
+                        return res.json({
+                            jsonrpc: '2.0',
+                            error: { code: -32602, message: `Tool not found: ${params?.name}` },
+                            id
+                        });
+                    }
+                    result = await toolHandler(params?.arguments || {});
+                    break;
+
+                case 'resources/list':
+                    result = { resources: resourceRegistry.getDefinitions() };
+                    break;
+
+                case 'resources/read':
+                    result = await resourceRegistry.readResource(params?.uri);
+                    break;
+
+                case 'prompts/list':
+                    result = { prompts: promptDefinitions };
+                    break;
+
+                case 'prompts/get':
+                    const promptHandler = getPromptHandler(params?.name);
+                    if (!promptHandler) {
+                        return res.json({
+                            jsonrpc: '2.0',
+                            error: { code: -32602, message: `Prompt not found: ${params?.name}` },
+                            id
+                        });
+                    }
+                    result = await promptHandler(params?.arguments || {});
+                    break;
+
+                default:
+                    return res.json({
+                        jsonrpc: '2.0',
+                        error: { code: -32601, message: `Method not found: ${method}` },
+                        id
+                    });
+            }
+
+            res.json({
+                jsonrpc: '2.0',
+                result,
+                id
+            });
+        } catch (error: any) {
+            console.error('[MCP JSON-RPC] Error:', error);
+            res.json({
+                jsonrpc: '2.0',
+                error: { code: -32603, message: error.message || 'Internal error' },
+                id: req.body?.id
+            });
+        }
+    });
+
+    // JSON-RPC handler function for reuse
+    const handleJsonRpc = async (req: Request, res: Response) => {
+        try {
+            const { jsonrpc, method, params, id } = req.body;
+
+            // If not JSON-RPC, return 404 for root path
+            if (!jsonrpc || !method) {
+                return res.status(404).json({ error: 'Not found. Use POST with JSON-RPC 2.0 format.' });
+            }
+
+            console.log(`[MCP JSON-RPC] ${method}`, params ? JSON.stringify(params).substring(0, 100) : '');
+
+            if (jsonrpc !== '2.0') {
+                return res.status(400).json({
+                    jsonrpc: '2.0',
+                    error: { code: -32600, message: 'Invalid Request: must be JSON-RPC 2.0' },
+                    id
+                });
+            }
+
+            let result: any;
+
+            switch (method) {
+                case 'initialize':
+                    result = {
+                        protocolVersion: '2024-11-05',
+                        capabilities: {
+                            tools: {},
+                            resources: {},
+                            prompts: {}
+                        },
+                        serverInfo: {
+                            name: 'phony',
+                            version: '1.0.0'
+                        }
+                    };
+                    break;
+
+                case 'initialized':
+                case 'ping':
+                    result = {};
+                    break;
+
+                case 'tools/list':
+                    result = { tools: toolRegistry.getDefinitions() };
+                    break;
+
+                case 'tools/call':
+                    const toolHandler = toolRegistry.getHandler(params?.name);
+                    if (!toolHandler) {
+                        return res.json({
+                            jsonrpc: '2.0',
+                            error: { code: -32602, message: `Tool not found: ${params?.name}` },
+                            id
+                        });
+                    }
+                    result = await toolHandler(params?.arguments || {});
+                    break;
+
+                case 'resources/list':
+                    result = { resources: resourceRegistry.getDefinitions() };
+                    break;
+
+                case 'resources/read':
+                    result = await resourceRegistry.readResource(params?.uri);
+                    break;
+
+                case 'prompts/list':
+                    result = { prompts: promptDefinitions };
+                    break;
+
+                case 'prompts/get':
+                    const promptHandler = getPromptHandler(params?.name);
+                    if (!promptHandler) {
+                        return res.json({
+                            jsonrpc: '2.0',
+                            error: { code: -32602, message: `Prompt not found: ${params?.name}` },
+                            id
+                        });
+                    }
+                    result = await promptHandler(params?.arguments || {});
+                    break;
+
+                default:
+                    return res.json({
+                        jsonrpc: '2.0',
+                        error: { code: -32601, message: `Method not found: ${method}` },
+                        id
+                    });
+            }
+
+            res.json({
+                jsonrpc: '2.0',
+                result,
+                id
+            });
+        } catch (error: any) {
+            console.error('[MCP JSON-RPC] Error:', error);
+            res.json({
+                jsonrpc: '2.0',
+                error: { code: -32603, message: error.message || 'Internal error' },
+                id: req.body?.id
+            });
+        }
+    };
+
+    /**
+     * POST /mcp/ - Root JSON-RPC endpoint (for Claude Code compatibility)
+     */
+    router.post('/', handleJsonRpc);
+
     /**
      * POST /mcp/list-tools
-     * List all available tools
+     * List all available tools (legacy REST endpoint)
      */
     router.post('/list-tools', (req: Request, res: Response) => {
         try {

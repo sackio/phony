@@ -11,13 +11,14 @@ import { TwilioEventService } from '../services/twilio/event.service.js';
 import { SessionManagerService } from '../services/session-manager.service.js';
 import { TwilioCallService } from '../services/twilio/call.service.js';
 import { CallTranscriptService } from '../services/database/call-transcript.service.js';
+import { ICallHandler } from './call.handler.js';
 
 dotenv.config();
 
 /**
  * Handles the communication between Twilio and OpenAI for voice calls
  */
-export class OpenAICallHandler {
+export class OpenAICallHandler implements ICallHandler {
     private readonly twilioStream: TwilioWsService;
     private readonly openAIService: OpenAIWsService;
     private readonly openAIEventProcessor: OpenAIEventService;
@@ -66,7 +67,7 @@ export class OpenAICallHandler {
             this.twilioCallService,
             contextService,
             (payload) => this.sendAudioToOpenAI(payload), // Buffer audio until OpenAI is ready
-            () => this.startOpenAISession() // Called when call context is ready
+            () => this.startSession() // Called when call context is ready
         );
 
         this.setupEventHandlers();
@@ -166,10 +167,25 @@ export class OpenAICallHandler {
     }
 
     /**
+     * Get the Twilio call SID
+     */
+    public getCallSid(): string {
+        return this.callState.callSid;
+    }
+
+    /**
      * Initialize OpenAI session with call context
      * Called by Twilio event processor after receiving start event with instructions
      */
-    public startOpenAISession(): void {
+    public startSession(): void {
+        this.startOpenAISession();
+    }
+
+    /**
+     * Initialize OpenAI session with call context (internal)
+     * Called by Twilio event processor after receiving start event with instructions
+     */
+    private startOpenAISession(): void {
         console.log('[OpenAI Handler] Call context ready');
         this.callContextReady = true;
 
@@ -358,6 +374,7 @@ export class OpenAICallHandler {
                             fromNumber: this.callState.fromNumber,
                             toNumber: this.callState.toNumber,
                             callType: this.callState.callType,
+                            voiceProvider: 'openai',
                             voice: this.callState.voice,
                             callContext: this.callState.callContext,
                             systemInstructions: this.callState.systemInstructions,
@@ -428,11 +445,14 @@ export class OpenAICallHandler {
     }
 }
 
+import { CreateSessionOptions } from '../services/session-manager.service.js';
+
 /**
  * Manages multiple concurrent call sessions
  */
 export class CallSessionManager {
-    private readonly sessionManager: SessionManagerService;
+    // Expose sessionManager for advanced usage (e.g., MCP routes)
+    public readonly sessionManager: SessionManagerService;
 
     constructor(twilioClient: twilio.Twilio, transcriptService: any) {
         this.sessionManager = new SessionManagerService(twilioClient, transcriptService);
@@ -442,9 +462,10 @@ export class CallSessionManager {
      * Creates a new call session
      * @param ws The WebSocket connection
      * @param callType The type of call
+     * @param options Optional session creation options (provider, agentId, voiceId)
      */
-    public createSession(ws: WebSocket, callType: CallType): void {
-        this.sessionManager.createSession(ws, callType);
+    public createSession(ws: WebSocket, callType: CallType, options?: CreateSessionOptions): void {
+        this.sessionManager.createSession(ws, callType, options);
     }
 
     /**

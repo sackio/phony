@@ -200,4 +200,57 @@ export class SmsStorageService {
             return [];
         }
     }
+
+    /**
+     * Search SMS messages by text content using MongoDB full-text search
+     */
+    public async searchSms(options: {
+        query: string;
+        direction?: SmsDirection;
+        phoneNumber?: string;
+        startDate?: Date;
+        endDate?: Date;
+        limit?: number;
+    }): Promise<ISms[]> {
+        if (!this.mongoService.getIsConnected()) {
+            return [];
+        }
+
+        try {
+            const filter: any = {
+                $text: { $search: options.query }
+            };
+
+            if (options.direction) {
+                filter.direction = options.direction;
+            }
+
+            if (options.phoneNumber) {
+                // Match either fromNumber or toNumber
+                filter.$or = [
+                    { fromNumber: options.phoneNumber },
+                    { toNumber: options.phoneNumber }
+                ];
+            }
+
+            if (options.startDate || options.endDate) {
+                filter.createdAt = {};
+                if (options.startDate) {
+                    filter.createdAt.$gte = options.startDate;
+                }
+                if (options.endDate) {
+                    filter.createdAt.$lte = options.endDate;
+                }
+            }
+
+            const limit = options.limit || 100;
+
+            return await SmsModel.find(filter, { score: { $meta: 'textScore' } })
+                .sort({ score: { $meta: 'textScore' } })
+                .limit(limit);
+        } catch (error) {
+            console.error(`[SmsStorage] Error searching SMS:`, error);
+            return [];
+        }
+    }
 }
