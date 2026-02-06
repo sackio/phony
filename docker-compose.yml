@@ -15,7 +15,7 @@ services:
     networks:
       - voice-network
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok", "-u", "$MONGODB_USERNAME", "-p", "$MONGODB_PASSWORD", "--authenticationDatabase", "admin"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,6 +28,9 @@ services:
     restart: unless-stopped
     ports:
       - "3004:3004"
+    volumes:
+      - ./dist:/app/dist:ro
+      - ./frontend/dist:/app/frontend/dist:ro
     environment:
       # Server configuration
       PORT: 3004
@@ -42,11 +45,17 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_WEBSOCKET_URL: ${OPENAI_WEBSOCKET_URL:-wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview}
 
+      # ElevenLabs credentials (optional)
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      ELEVENLABS_DEFAULT_AGENT_ID: ${ELEVENLABS_DEFAULT_AGENT_ID:-}
+      ELEVENLABS_DEFAULT_VOICE_ID: ${ELEVENLABS_DEFAULT_VOICE_ID:-}
+      DEFAULT_VOICE_PROVIDER: ${DEFAULT_VOICE_PROVIDER:-openai}
+
       # API Secret
       API_SECRET: ${API_SECRET:-test-secret-12345}
 
-      # MongoDB connection (with authentication)
-      MONGODB_URI: mongodb://voicecalls_admin:SOvGiNF7ogSBB7hTSnTbPLArF+GuV3MSZ7RDr8q9IJw=@mongodb:27017/voice-calls?authSource=admin
+      # MongoDB connection
+      MONGODB_URI: mongodb://${MONGODB_USERNAME}:${MONGODB_PASSWORD}@mongodb:27017/phony?authSource=admin
 
       # Optional settings
       RECORD_CALLS: ${RECORD_CALLS:-false}

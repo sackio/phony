@@ -49,12 +49,18 @@ This is a Model Context Protocol (MCP) server that enables Claude and other AI a
 
 **Call Management Tools:**
 
-**trigger-call**
+**phony_create_call**
 - Initiates an outbound phone call via Twilio
+- Supports OpenAI (default) or ElevenLabs voice providers
 - Parameters:
-  - `toNumber` (string): Phone number in E.164 format (e.g., +11234567890)
-  - `callContext` (string): Instructions for the AI during the call
-- Returns: `{ status, message, callSid }`
+  - `toNumber` (string, required): Phone number in E.164 format (e.g., +11234567890)
+  - `systemInstructions` (string, required): Base system instructions for the AI
+  - `callInstructions` (string, required): Specific instructions for this call
+  - `provider` (enum, optional): Voice provider - 'openai' (default) or 'elevenlabs'
+  - `voice` (string, optional): OpenAI voice (alloy, echo, fable, onyx, nova, shimmer)
+  - `elevenLabsAgentId` (string, optional): ElevenLabs agent ID (uses default if not specified)
+  - `elevenLabsVoiceId` (string, optional): ElevenLabs voice ID
+- Returns: `{ callSid, status, provider, message }`
 
 **SMS Messaging Tools:**
 
@@ -108,6 +114,7 @@ This is a Model Context Protocol (MCP) server that enables Claude and other AI a
 
 ## Audio Flow
 
+### OpenAI Provider (Default)
 ```
 Phone Caller → Twilio → WebSocket → TwilioWsService
                                            ↓
@@ -120,8 +127,26 @@ Phone Caller → Twilio → WebSocket → TwilioWsService
                                     TwilioWsService → Twilio → Phone
 ```
 
+### ElevenLabs Provider
+```
+Phone Caller → Twilio → WebSocket → TwilioWsService
+                                           ↓
+                                    AudioService (µ-law → PCM conversion)
+                                           ↓
+                                    ElevenLabsWsService
+                                           ↓
+                                    ElevenLabs Conversational AI
+                                           ↓
+                                    ElevenLabsEventService
+                                           ↓
+                                    TwilioWsService → Twilio → Phone
+```
+
 **Audio Format**: µ-law (g711_ulaw) 8kHz
-**Voice**: "sage" (configurable in `src/config/constants.ts`)
+- Twilio uses µ-law natively
+- OpenAI: sends/receives µ-law directly
+- ElevenLabs: Converts µ-law → PCM 16kHz for input, requests ulaw_8000 output
+**Voice**: "sage" (default, configurable in `src/config/constants.ts`)
 **Temperature**: 0.6
 
 ## Key Components
@@ -133,6 +158,11 @@ Phone Caller → Twilio → WebSocket → TwilioWsService
 - `event.service.ts` - Processes OpenAI events (transcriptions, audio deltas)
 - `context.service.ts` - Manages conversation context
 
+**ElevenLabs Services** (`src/services/elevenlabs/`)
+- `ws.service.ts` - WebSocket connection to ElevenLabs Conversational AI
+- `event.service.ts` - Processes ElevenLabs events (transcripts, audio, interruptions)
+- `audio.service.ts` - Audio format conversion (µ-law ↔ PCM)
+
 **Twilio Services** (`src/services/twilio/`)
 - `call.service.ts` - Twilio API operations (makeCall, startRecording, endCall)
 - `ws.service.ts` - Handles Twilio media stream WebSocket
@@ -143,9 +173,11 @@ Phone Caller → Twilio → WebSocket → TwilioWsService
 - `storage.service.ts` - MongoDB operations for SMS messages (saveSms, getSms, listSms, getConversation, updateSmsStatus)
 
 **Session Management**
-- `src/handlers/openai.handler.ts` - OpenAICallHandler and CallSessionManager
-- `src/services/session-manager.service.ts` - Manages concurrent call sessions
-- Each call gets isolated CallState instance
+- `src/handlers/call.handler.ts` - ICallHandler interface for provider abstraction
+- `src/handlers/openai.handler.ts` - OpenAICallHandler for OpenAI voice provider
+- `src/handlers/elevenlabs.handler.ts` - ElevenLabsCallHandler for ElevenLabs voice provider
+- `src/services/session-manager.service.ts` - Manages concurrent call sessions, routes by provider
+- Each call gets isolated CallState instance with provider-specific settings
 
 **Public URL Configuration**
 - Server uses PUBLIC_URL environment variable instead of ngrok
@@ -318,7 +350,8 @@ location /call/ {
 
 ### Voice Calls
 - ✅ Outbound phone calls via Twilio
-- ✅ Real-time audio with GPT-4o Realtime model
+- ✅ Real-time audio with GPT-4o Realtime model (OpenAI provider)
+- ✅ ElevenLabs Conversational AI support (alternative provider)
 - ✅ Natural two-way conversations
 - ✅ Multilingual support (language switching mid-call)
 - ✅ Pre-built prompts (restaurant reservations)
@@ -328,6 +361,7 @@ location /call/ {
 - ✅ Goodbye detection (automatic call termination)
 - ✅ Multiple concurrent call sessions
 - ✅ DTMF tone sending (navigate IVR menus)
+- ✅ Context injection mid-call (both providers)
 
 ### SMS Messaging
 - ✅ Send SMS messages via Twilio
@@ -385,6 +419,16 @@ location /call/ {
 - **Graceful shutdown**: 5-second delay before closing WebSockets after call ends
 - **Nginx failover**: Server can run without public access for testing/development
 
+## Voice Provider Comparison
+
+| Feature | OpenAI (default) | ElevenLabs |
+|---------|-----------------|------------|
+| Cost per minute | ~$0.30 | ~$0.08-0.10 |
+| Latency | Low | Low |
+| Audio format | µ-law native | PCM (converted) |
+| Voice customization | 6 voices | Agent-level config |
+| Context injection | ✅ | ✅ (contextual_update) |
+
 ## Technology Stack
 
 | Category | Technology | Version |
@@ -396,7 +440,8 @@ location /call/ {
 | Package Manager | pnpm | 10.7.0 |
 | MCP SDK | @modelcontextprotocol/sdk | 1.8.0 |
 | Telephony | twilio | 5.0.1 |
-| AI Voice | openai | 4.85.1 |
+| AI Voice (OpenAI) | openai | 4.85.1 |
+| AI Voice (ElevenLabs) | Custom WebSocket | v1 |
 | Reverse Proxy | nginx | (external) |
 | HTTP Server | express + express-ws | Latest |
 | Validation | zod | 3.22.4 |
