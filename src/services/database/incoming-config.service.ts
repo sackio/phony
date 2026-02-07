@@ -19,7 +19,7 @@ export class IncomingConfigService {
         name: string;
         systemInstructions?: string;
         callInstructions?: string;
-        voiceProvider?: 'openai' | 'elevenlabs';
+        voiceProvider?: string;
         voice?: string;
         elevenLabsAgentId?: string;
         elevenLabsVoiceId?: string;
@@ -40,7 +40,7 @@ export class IncomingConfigService {
                 name: data.name,
                 systemInstructions: data.systemInstructions || '',
                 callInstructions: data.callInstructions || '',
-                voiceProvider: data.voiceProvider || 'openai',
+                voiceProvider: data.voiceProvider || 'elevenlabs',
                 voice: data.voice || 'sage',
                 elevenLabsAgentId: data.elevenLabsAgentId || undefined,
                 elevenLabsVoiceId: data.elevenLabsVoiceId || undefined,
@@ -52,7 +52,7 @@ export class IncomingConfigService {
                 voicemailMaxLength: data.voicemailMaxLength || 120
             });
             const mode = data.voicemailEnabled ? ' (voicemail mode)' : (data.messageOnly ? ' (message-only mode)' : '');
-            const provider = data.voiceProvider || 'openai';
+            const provider = data.voiceProvider || 'elevenlabs';
             console.log(`[IncomingConfig] Created config for ${data.phoneNumber}${mode} (provider: ${provider})`);
             return config;
         } catch (error) {
@@ -108,7 +108,7 @@ export class IncomingConfigService {
             name?: string;
             systemInstructions?: string;
             callInstructions?: string;
-            voiceProvider?: 'openai' | 'elevenlabs';
+            voiceProvider?: string;
             voice?: string;
             elevenLabsAgentId?: string;
             elevenLabsVoiceId?: string;

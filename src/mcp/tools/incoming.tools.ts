@@ -26,7 +26,7 @@ export const incomingToolsDefinitions: MCPToolDefinition[] = [
     },
     {
         name: 'phony_create_incoming_config',
-        description: 'Configure a phone number to handle incoming calls. Supports three modes: AI conversation (default), message-only (play message and hang up), or voicemail (record and transcribe messages). AI conversation mode supports OpenAI or ElevenLabs voice providers.',
+        description: 'Configure a phone number to handle incoming calls. Supports three modes: AI conversation (default), message-only (play message and hang up), or voicemail (record and transcribe messages).',
         inputSchema: {
             type: 'object',
             properties: {
@@ -46,23 +46,13 @@ export const incomingToolsDefinitions: MCPToolDefinition[] = [
                     type: 'string',
                     description: 'Default call instructions for incoming calls'
                 },
-                voiceProvider: {
-                    type: 'string',
-                    description: 'Voice provider to use: openai (default) or elevenlabs',
-                    enum: ['openai', 'elevenlabs']
-                },
-                voice: {
-                    type: 'string',
-                    description: 'Voice to use for TTS (OpenAI voices)',
-                    enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'sage']
-                },
                 elevenLabsAgentId: {
                     type: 'string',
-                    description: 'ElevenLabs agent ID (uses default if not specified, only for elevenlabs provider)'
+                    description: 'ElevenLabs agent ID (uses default if not specified)'
                 },
                 elevenLabsVoiceId: {
                     type: 'string',
-                    description: 'ElevenLabs voice ID (uses agent default if not specified, only for elevenlabs provider)'
+                    description: 'ElevenLabs voice ID. Female: Rachel (21m00Tcm4TlvDq8ikWAM), Sarah (EXAVITQu4vr4xnSDxMaL), Charlotte (XB0fDUnXU5powFXDhCwa), Matilda (XrExE9yKIg1WjnnlVkGX), Lily (pFZP5JQG7iQjIQuC4Bku). Male: Adam (pNInz6obpgDQGcFmaJgB), Antoni (ErXwobaYiN019PkySvjV), Arnold (VR6AewLTigWG4xSOukaG), Sam (yoZ06aMxZJJ28mfd3POQ), Josh (TxGEqnHWrfWFTfGW9XjX).'
                 },
                 enabled: {
                     type: 'boolean',
@@ -113,16 +103,6 @@ export const incomingToolsDefinitions: MCPToolDefinition[] = [
                 callInstructions: {
                     type: 'string',
                     description: 'New call instructions'
-                },
-                voiceProvider: {
-                    type: 'string',
-                    description: 'Voice provider: openai or elevenlabs',
-                    enum: ['openai', 'elevenlabs']
-                },
-                voice: {
-                    type: 'string',
-                    description: 'New voice (OpenAI voices)',
-                    enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'sage']
                 },
                 elevenLabsAgentId: {
                     type: 'string',
@@ -235,7 +215,7 @@ export function createIncomingToolHandlers(
                         name: config.name,
                         systemInstructions: config.systemInstructions,
                         callInstructions: config.callInstructions,
-                        voiceProvider: config.voiceProvider || 'openai',
+                        voiceProvider: config.voiceProvider || 'elevenlabs',
                         voice: config.voice,
                         elevenLabsAgentId: config.elevenLabsAgentId,
                         elevenLabsVoiceId: config.elevenLabsVoiceId,
@@ -260,7 +240,7 @@ export function createIncomingToolHandlers(
                 validateArgs(args, ['phoneNumber', 'name']);
 
                 const phoneNumber = sanitizePhoneNumber(args.phoneNumber);
-                const voiceProvider = args.voiceProvider || 'openai';
+                const voiceProvider = args.voiceProvider || 'elevenlabs';
                 const voice = args.voice || 'sage';
                 const enabled = args.enabled !== false; // Default to true
                 const messageOnly = args.messageOnly || false;

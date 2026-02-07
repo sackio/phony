@@ -35,7 +35,10 @@ export class ElevenLabsWsService {
     private isSessionActive: boolean = false;
     private pendingSystemPrompt: string | null = null;
     private pendingDynamicVars: Record<string, string> | null = null;
+    private pendingVoiceId: string | null = null;
     private agentOutputFormat: string = 'pcm_16000';
+    private wsReady: boolean = false;
+    private initSent: boolean = false;
 
     constructor(config: ElevenLabsConfig) {
         this.config = config;
@@ -60,7 +63,8 @@ export class ElevenLabsWsService {
 
         this.webSocket.on('open', () => {
             console.log('[ElevenLabs WS] Connected successfully');
-            // Send conversation_initiation_client_data immediately on open
+            this.wsReady = true;
+            // Send init immediately - include prompt override if available
             this.sendConversationInit();
         });
 
@@ -141,6 +145,16 @@ export class ElevenLabsWsService {
                     this.sendPong(message.ping_event?.event_id);
                     break;
 
+                case 'client_tool_call':
+                    // Agent is calling a client tool (e.g., end_call)
+                    const toolName = message.client_tool_call?.tool_name;
+                    console.log('[ElevenLabs WS] Tool call:', toolName);
+                    if (toolName === 'end_call') {
+                        console.log('[ElevenLabs WS] Agent requested end_call');
+                        this.callbacks?.onClose();
+                    }
+                    break;
+
                 case 'internal_vad':
                     // Voice Activity Detection event - ignore
                     break;
@@ -159,30 +173,40 @@ export class ElevenLabsWsService {
     }
 
     /**
-     * Set system prompt to inject after session starts via contextual_update.
-     * We don't use conversation_config_override for prompt because many agents
-     * have prompt overrides disabled. Instead we inject via contextual_update.
+     * Set system prompt for the conversation.
+     * If the session hasn't started yet, queues the prompt to be sent with
+     * conversation_config_override in the init message (faster - no extra round-trip).
+     * If the session is already active, falls back to contextual_update.
      */
-    public initializeConversation(systemPrompt: string, dynamicVariables?: Record<string, string>): void {
+    public initializeConversation(systemPrompt: string, dynamicVariables?: Record<string, string>, voiceId?: string): void {
         if (dynamicVariables) {
             this.pendingDynamicVars = dynamicVariables;
         }
+        if (voiceId) {
+            this.pendingVoiceId = voiceId;
+        }
 
         if (this.isSessionActive) {
-            // Already connected - inject immediately
-            console.log('[ElevenLabs WS] Session active, injecting system prompt immediately');
+            // Already connected - inject via contextual_update (fallback)
+            console.log('[ElevenLabs WS] Session active, injecting system prompt via contextual_update');
             this.injectContext(systemPrompt);
         } else {
-            // Store for injection after session starts
-            console.log('[ElevenLabs WS] Queuing system prompt for injection after session starts');
+            // Queue for inclusion in conversation_config_override (faster path)
             this.pendingSystemPrompt = systemPrompt;
+
+            if (this.wsReady && !this.initSent) {
+                // WS is connected but was waiting for prompt - send init now
+                console.log('[ElevenLabs WS] WebSocket was ready, sending init with prompt now');
+                this.sendConversationInit();
+            } else {
+                console.log('[ElevenLabs WS] Queuing system prompt for conversation_config_override');
+            }
         }
     }
 
     /**
      * Send conversation_initiation_client_data on WebSocket open.
-     * Minimal config to avoid rejection by agents that block overrides.
-     * System prompt is injected via contextual_update after session starts.
+     * Includes system prompt in conversation_config_override for lowest latency.
      */
     private sendConversationInit(): void {
         if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
@@ -193,6 +217,30 @@ export class ElevenLabsWsService {
             type: 'conversation_initiation_client_data',
         };
 
+        // Include overrides in conversation_config_override if available
+        // This is faster than injecting via contextual_update after session starts
+        if (this.pendingSystemPrompt || this.pendingVoiceId) {
+            initMessage.conversation_config_override = {};
+
+            if (this.pendingSystemPrompt) {
+                initMessage.conversation_config_override.agent = {
+                    prompt: {
+                        prompt: this.pendingSystemPrompt
+                    }
+                };
+                console.log('[ElevenLabs WS] Including system prompt in init override');
+                this.pendingSystemPrompt = null;
+            }
+
+            if (this.pendingVoiceId) {
+                initMessage.conversation_config_override.tts = {
+                    voice_id: this.pendingVoiceId
+                };
+                console.log('[ElevenLabs WS] Including voice_id in init override:', this.pendingVoiceId);
+                this.pendingVoiceId = null;
+            }
+        }
+
         // Add dynamic variables if provided
         if (this.pendingDynamicVars && Object.keys(this.pendingDynamicVars).length > 0) {
             initMessage.dynamic_variables = this.pendingDynamicVars;
@@ -200,6 +248,7 @@ export class ElevenLabsWsService {
         }
 
         console.log('[ElevenLabs WS] Sending conversation init');
+        this.initSent = true;
         this.webSocket.send(JSON.stringify(initMessage));
     }
 

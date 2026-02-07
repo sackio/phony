@@ -195,12 +195,6 @@ export class ElevenLabsEventService {
     public handleError(error: Error): void {
         console.error('[ElevenLabs Event] Error:', error.message);
 
-        // Log the error
-        this.callState.logOpenAIEvent('error', {
-            provider: 'elevenlabs',
-            message: error.message
-        });
-
         // Emit error via Socket.IO
         const socketService = SocketService.getInstance();
         if (this.callState.callSid) {
@@ -227,9 +221,6 @@ export class ElevenLabsEventService {
      * Log an ElevenLabs event (for debugging)
      */
     public logEvent(type: string, data: any): void {
-        this.callState.logOpenAIEvent(type, {
-            provider: 'elevenlabs',
-            ...data
-        });
+        this.callState.logTwilioEvent(type, data);
     }
 }

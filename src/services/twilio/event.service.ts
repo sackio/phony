@@ -1,5 +1,5 @@
 import { CallState } from '../../types.js';
-import { OpenAIContextService } from '../openai/context.service.js';
+import { ContextService } from '../context.service.js';
 import { RECORD_CALLS, SHOW_TIMING_MATH } from '../../config/constants.js';
 import { TwilioCallService } from './call.service.js';
 
@@ -9,8 +9,8 @@ import { TwilioCallService } from './call.service.js';
 export class TwilioEventService {
     private readonly callState: CallState;
     private readonly twilioCallService: TwilioCallService;
-    private readonly contextService: OpenAIContextService;
-    private readonly onForwardAudioToOpenAI: (payload: string) => void;
+    private readonly contextService: ContextService;
+    private readonly onForwardAudio: (payload: string) => void;
     private readonly onContextReady?: () => void;
 
     /**
@@ -18,20 +18,20 @@ export class TwilioEventService {
      * @param callState The state of the call
      * @param twilioCallService The Twilio call service
      * @param contextService The context service
-     * @param onForwardAudioToOpenAI Callback for forwarding audio to OpenAI
+     * @param onForwardAudio Callback for forwarding audio to voice provider
      * @param onContextReady Callback when call context is ready (after start event)
      */
     constructor(
         callState: CallState,
         twilioCallService: TwilioCallService,
-        contextService: OpenAIContextService,
-        onForwardAudioToOpenAI: (payload: string) => void,
+        contextService: ContextService,
+        onForwardAudio: (payload: string) => void,
         onContextReady?: () => void
     ) {
         this.callState = callState;
         this.twilioCallService = twilioCallService;
         this.contextService = contextService;
-        this.onForwardAudioToOpenAI = onForwardAudioToOpenAI;
+        this.onForwardAudio = onForwardAudio;
         this.onContextReady = onContextReady;
     }
 
@@ -90,7 +90,7 @@ export class TwilioEventService {
         }
 
         await this.handleFirstMediaEventIfNeeded();
-        this.onForwardAudioToOpenAI(data.media.payload);
+        this.onForwardAudio(data.media.payload);
     }
 
     /**
@@ -124,13 +124,16 @@ export class TwilioEventService {
         this.callState.responseStartTimestampTwilio = null;
         this.callState.latestMediaTimestamp = 0;
 
-        // Extract voice from custom parameters if provided
-        const voice = data.start.customParameters.voice || 'sage';
-        this.callState.voice = voice;
-
-        console.log('[Twilio Start] Initializing call with voice:', voice);
-
         this.contextService.initializeCallState(this.callState, data.start.customParameters.fromNumber, data.start.customParameters.toNumber);
+
+        // Extract ElevenLabs parameters from stream custom parameters
+        if (data.start.customParameters.elevenLabsAgentId) {
+            this.callState.elevenLabsAgentId = data.start.customParameters.elevenLabsAgentId;
+        }
+        if (data.start.customParameters.elevenLabsVoiceId) {
+            this.callState.elevenLabsVoiceId = data.start.customParameters.elevenLabsVoiceId;
+            console.log('[Twilio Start] ElevenLabs voice ID:', this.callState.elevenLabsVoiceId);
+        }
 
         // Use systemInstructions and callInstructions if provided (new context system)
         const systemInstructions = data.start.customParameters.systemInstructions;
@@ -159,7 +162,6 @@ export class TwilioEventService {
                 toNumber: data.start.customParameters.toNumber,
                 fromNumber: data.start.customParameters.fromNumber,
                 callType: 'incoming',
-                voice: this.callState.voice,
                 status: 'in-progress',
                 startedAt: new Date(),
                 conversationHistory: []
@@ -169,9 +171,9 @@ export class TwilioEventService {
             callStateService.startDurationTimer(this.callState.callSid);
         }
 
-        // Notify that call context is ready (triggers OpenAI session initialization)
+        // Notify that call context is ready (triggers ElevenLabs session initialization)
         if (this.onContextReady) {
-            console.log('[Twilio Start] Call context ready, triggering OpenAI session initialization');
+            console.log('[Twilio Start] Call context ready, triggering session initialization');
             this.onContextReady();
         }
     }

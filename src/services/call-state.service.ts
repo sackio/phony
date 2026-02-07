@@ -8,8 +8,7 @@ export interface ActiveCall {
     callType: 'incoming' | 'outgoing';  // Track if this is incoming or outgoing
     status: 'initiated' | 'in-progress' | 'active' | 'on_hold' | 'completed' | 'failed';
     twilioCallSid?: string;
-    voiceProvider?: 'openai' | 'elevenlabs';  // Voice provider
-    voice?: string;
+    voiceProvider?: string;  // Voice provider (elevenlabs)
     elevenLabsAgentId?: string;  // ElevenLabs agent ID
     elevenLabsVoiceId?: string;  // ElevenLabs voice ID
     startedAt: Date;

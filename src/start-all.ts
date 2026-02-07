@@ -4,7 +4,7 @@ import { VoiceCallMcpServer } from './servers/mcp.server.js';
 import { TwilioCallService } from './services/twilio/call.service.js';
 import { VoiceServer } from './servers/voice.server.js';
 import twilio from 'twilio';
-import { CallSessionManager } from './handlers/openai.handler.js';
+import { CallSessionManager } from './services/session-manager.service.js';
 import { MongoDBService } from './services/database/mongodb.service.js';
 import { CallTranscriptService } from './services/database/call-transcript.service.js';
 
@@ -15,7 +15,6 @@ dotenv.config();
 const REQUIRED_ENV_VARS = [
     'TWILIO_ACCOUNT_SID',
     'TWILIO_AUTH_TOKEN',
-    'OPENAI_API_KEY',
     'PUBLIC_URL',
     'TWILIO_NUMBER'
 ] as const;

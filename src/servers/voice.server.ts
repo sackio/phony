@@ -6,10 +6,9 @@ import { WebSocket } from 'ws';
 import path from 'path';
 import twilio from 'twilio';
 import { Server as HTTPServer } from 'http';
-import { CallType, VoiceProvider } from '../types.js';
-import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER, DEFAULT_INCOMING_CALL_MESSAGE, DEFAULT_INCOMING_CALL_VOICE, DEFAULT_VOICE_PROVIDER } from '../config/constants.js';
-import { CreateSessionOptions } from '../services/session-manager.service.js';
-import { CallSessionManager } from '../handlers/openai.handler.js';
+import { CallType } from '../types.js';
+import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER, DEFAULT_INCOMING_CALL_MESSAGE, DEFAULT_INCOMING_CALL_VOICE } from '../config/constants.js';
+import { CreateSessionOptions, CallSessionManager } from '../services/session-manager.service.js';
 import { TwilioCallService } from '../services/twilio/call.service.js';
 import { TwilioSmsService } from '../services/twilio/sms.service.js';
 import { ConversationService } from '../services/sms/conversation.service.js';
@@ -157,7 +156,6 @@ export class VoiceServer {
         this.app.post('/call/incoming', this.handleIncomingCall.bind(this));
         this.app.post('/call/hold', this.handleHoldLoop.bind(this));
         this.app.ws('/call/connection-outgoing/:secret', this.handleOutgoingConnection.bind(this));
-        this.app.ws('/call/connection-outgoing/:secret/:provider', this.handleOutgoingConnection.bind(this));
         this.app.ws('/call/connection-incoming/:secret', this.handleIncomingConnection.bind(this));
 
         // Test mode route - for internal testing without consuming OpenAI credits
@@ -197,9 +195,7 @@ export class VoiceServer {
         const toNumber = req.body.To;
         const systemInstructions = req.query.systemInstructions?.toString() || req.body.systemInstructions || '';
         const callInstructions = req.query.callInstructions?.toString() || req.body.callInstructions || '';
-        const voice = req.query.voice?.toString() || req.body.voice || 'sage';
         const fromNumber = req.query.fromNumber?.toString() || req.body.fromNumber || req.body.From;
-        const provider = (req.query.provider?.toString() || req.body.provider || DEFAULT_VOICE_PROVIDER) as VoiceProvider;
         const elevenLabsAgentId = req.query.elevenLabsAgentId?.toString() || req.body.elevenLabsAgentId;
         const elevenLabsVoiceId = req.query.elevenLabsVoiceId?.toString() || req.body.elevenLabsVoiceId;
 
@@ -231,15 +227,13 @@ export class VoiceServer {
 
         try {
             const callerNumber = fromNumber || process.env.TWILIO_NUMBER || '';
-            console.log('[Voice Server] Creating call from:', callerNumber, 'to:', toNumber, 'with voice:', voice, 'provider:', provider);
+            console.log('[Voice Server] Creating call from:', callerNumber, 'to:', toNumber);
             const twilioCallSid = await this.twilioCallService.makeCall(
                 this.callbackUrl,
                 toNumber,
                 systemInstructions,
                 callInstructions,
-                voice,
                 fromNumber,
-                provider,
                 elevenLabsAgentId,
                 elevenLabsVoiceId
             );
@@ -251,8 +245,7 @@ export class VoiceServer {
                 toNumber: toNumber,
                 fromNumber: callerNumber,
                 callType: 'outgoing',
-                voiceProvider: provider,
-                voice: voice,
+                voiceProvider: 'elevenlabs',
                 elevenLabsAgentId: elevenLabsAgentId,
                 elevenLabsVoiceId: elevenLabsVoiceId,
                 status: 'initiated',
@@ -267,8 +260,8 @@ export class VoiceServer {
             res.status(200).json({
                 callSid: twilioCallSid,
                 status: 'initiated',
-                provider: provider,
-                message: `Call created successfully using ${provider} provider`
+                provider: 'elevenlabs',
+                message: 'Call created successfully using elevenlabs provider'
             });
         } catch (error) {
             console.error('[Voice Server] Error creating call:', error);
@@ -301,18 +294,15 @@ export class VoiceServer {
         const toNumber = req.body.To;
         const systemInstructions = req.query.systemInstructions?.toString() || '';
         const callInstructions = req.query.callInstructions?.toString() || '';
-        const voice = req.query.voice?.toString() || 'sage';
-        const provider = (req.query.provider?.toString() || DEFAULT_VOICE_PROVIDER) as VoiceProvider;
         const elevenLabsAgentId = req.query.elevenLabsAgentId?.toString() || '';
         const elevenLabsVoiceId = req.query.elevenLabsVoiceId?.toString() || '';
 
-        console.log('[Voice Server] Creating call with voice:', voice, 'provider:', provider);
+        console.log('[Voice Server] Creating outgoing call via ElevenLabs');
 
         const twiml = new VoiceResponse();
         const connect = twiml.connect();
 
-        // Include provider info in the URL path (Twilio strips query params from WebSocket URLs)
-        let wsUrl = `${this.callbackUrl.replace('https://', 'wss://')}/call/connection-outgoing/${apiSecret}/${provider}`;
+        const wsUrl = `${this.callbackUrl.replace('https://', 'wss://')}/call/connection-outgoing/${apiSecret}`;
 
         const stream = connect.stream({
             url: wsUrl,
@@ -322,8 +312,6 @@ export class VoiceServer {
         stream.parameter({ name: 'toNumber', value: toNumber });
         stream.parameter({ name: 'systemInstructions', value: systemInstructions });
         stream.parameter({ name: 'callInstructions', value: callInstructions });
-        stream.parameter({ name: 'voice', value: voice });
-        stream.parameter({ name: 'provider', value: provider });
         if (elevenLabsAgentId) {
             stream.parameter({ name: 'elevenLabsAgentId', value: elevenLabsAgentId });
         }
@@ -349,10 +337,7 @@ export class VoiceServer {
             return;
         }
 
-        // Get voice parameter from query (passed by holdCall method)
-        const voice = req.query.voice?.toString() || 'sage';
-
-        console.log('[Voice Server] Creating hold loop with voice:', voice);
+        console.log('[Voice Server] Creating hold loop');
 
         // Create TwiML for hold with music
         const twiml = new VoiceResponse();
@@ -420,16 +405,10 @@ export class VoiceServer {
             return;
         }
 
-        // Extract provider from URL path (Twilio strips query params from WebSocket URLs)
-        const provider = (req.params.provider as VoiceProvider) || DEFAULT_VOICE_PROVIDER;
-
-        console.log('[Voice Server] Creating session for outbound call with provider:', provider);
+        console.log('[Voice Server] Creating ElevenLabs session for outbound call');
 
         // ElevenLabs agent/voice IDs come from stream custom parameters (in the start event)
-        // They are passed as stream.parameter() in the TwiML and available via callState
-        const options: CreateSessionOptions = {
-            provider,
-        };
+        const options: CreateSessionOptions = {};
 
         this.sessionManager.createSession(ws, CallType.OUTBOUND, options);
     }
@@ -552,14 +531,10 @@ export class VoiceServer {
             console.log(`[Voice Server] Saved ${conversationHistory.length} messages to database`);
 
             // Update Twilio call to play hold music
-            // Use the agent's voice for the hold message (fallback to 'alice' if not set)
-            const holdVoice = call.voice || 'alice';
-            console.log(`[Voice Server] Holding call with voice: ${holdVoice} (call.voice was: ${call.voice})`);
-
             await this.twilioCallService.getTwilioClient()
                 .calls(call.twilioCallSid)
                 .update({
-                    twiml: `<Response><Say voice="${holdVoice}">Sorry, one moment please.</Say><Play loop="10">http://com.twilio.sounds.music.s3.amazonaws.com/MARKOVICHAMP-Borghestral.mp3</Play></Response>`
+                    twiml: `<Response><Say voice="Polly.Matthew">Sorry, one moment please.</Say><Play loop="10">http://com.twilio.sounds.music.s3.amazonaws.com/MARKOVICHAMP-Borghestral.mp3</Play></Response>`
                 });
 
             res.json({ status: 'on_hold', message: 'Call placed on hold' });
@@ -780,7 +755,7 @@ export class VoiceServer {
                             method: 'POST'
                         });
 
-                    // Inject context into the OpenAI session
+                    // Inject context into the ElevenLabs session
                     const success = this.sessionManager.injectContext(callSid, context, call.conversationHistory);
 
                     if (!success) {
@@ -798,7 +773,7 @@ export class VoiceServer {
                 }
             }
 
-            // Only inject into active OpenAI session if call is NOT on hold
+            // Only inject into active session if call is NOT on hold
             if (call.status === 'on_hold') {
                 console.log('[Voice Server] Call is on hold - context saved to history but not sent to AI yet');
 
@@ -811,7 +786,7 @@ export class VoiceServer {
                 return;
             }
 
-            // Inject context into the OpenAI session (for active calls)
+            // Inject context into the ElevenLabs session (for active calls)
             const success = this.sessionManager.injectContext(callSid, context, call.conversationHistory);
 
             if (!success) {
@@ -1204,18 +1179,18 @@ export class VoiceServer {
         // Normal AI conversation mode
         const connect = twiml.connect();
 
-        // Get provider info from config
-        const provider = config.voiceProvider || 'openai';
+        // Get ElevenLabs config
         const elevenLabsAgentId = config.elevenLabsAgentId || '';
         const elevenLabsVoiceId = config.elevenLabsVoiceId || '';
 
-        // Include provider info in WebSocket URL
-        let wsUrl = `${this.callbackUrl.replace('https://', 'wss://')}/call/connection-incoming/${DYNAMIC_API_SECRET}?provider=${provider}`;
+        let wsUrl = `${this.callbackUrl.replace('https://', 'wss://')}/call/connection-incoming/${DYNAMIC_API_SECRET}`;
         if (elevenLabsAgentId) {
-            wsUrl += `&elevenLabsAgentId=${encodeURIComponent(elevenLabsAgentId)}`;
-        }
-        if (elevenLabsVoiceId) {
-            wsUrl += `&elevenLabsVoiceId=${encodeURIComponent(elevenLabsVoiceId)}`;
+            wsUrl += `?elevenLabsAgentId=${encodeURIComponent(elevenLabsAgentId)}`;
+            if (elevenLabsVoiceId) {
+                wsUrl += `&elevenLabsVoiceId=${encodeURIComponent(elevenLabsVoiceId)}`;
+            }
+        } else if (elevenLabsVoiceId) {
+            wsUrl += `?elevenLabsVoiceId=${encodeURIComponent(elevenLabsVoiceId)}`;
         }
 
         const stream = connect.stream({
@@ -1227,8 +1202,6 @@ export class VoiceServer {
         stream.parameter({ name: 'configName', value: config.name });
         stream.parameter({ name: 'systemInstructions', value: config.systemInstructions });
         stream.parameter({ name: 'callInstructions', value: config.callInstructions });
-        stream.parameter({ name: 'voice', value: config.voice });
-        stream.parameter({ name: 'provider', value: provider });
         if (elevenLabsAgentId) {
             stream.parameter({ name: 'elevenLabsAgentId', value: elevenLabsAgentId });
         }
@@ -1254,15 +1227,12 @@ export class VoiceServer {
             return;
         }
 
-        // Extract provider info from query params
-        const provider = (req.query.provider?.toString() || DEFAULT_VOICE_PROVIDER) as VoiceProvider;
         const elevenLabsAgentId = req.query.elevenLabsAgentId?.toString();
         const elevenLabsVoiceId = req.query.elevenLabsVoiceId?.toString();
 
-        console.log('[Voice Server] Creating session for inbound call with provider:', provider);
+        console.log('[Voice Server] Creating ElevenLabs session for inbound call');
 
         const options: CreateSessionOptions = {
-            provider,
             elevenLabsAgentId,
             elevenLabsVoiceId
         };

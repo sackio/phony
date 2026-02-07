@@ -20,8 +20,7 @@ export class CallTranscriptService {
         fromNumber: string;
         toNumber: string;
         callType: CallType;
-        voiceProvider?: 'openai' | 'elevenlabs';
-        voice: string;
+        voiceProvider?: string;
         elevenLabsAgentId?: string;
         elevenLabsVoiceId?: string;
         callContext: string;
@@ -39,8 +38,7 @@ export class CallTranscriptService {
                 fromNumber: data.fromNumber,
                 toNumber: data.toNumber,
                 callType: data.callType === CallType.INBOUND ? 'inbound' : 'outbound',
-                voiceProvider: data.voiceProvider || 'openai',
-                voice: data.voice,
+                voiceProvider: data.voiceProvider || 'elevenlabs',
                 elevenLabsAgentId: data.elevenLabsAgentId,
                 elevenLabsVoiceId: data.elevenLabsVoiceId,
                 callContext: data.callContext,
@@ -49,10 +47,9 @@ export class CallTranscriptService {
                 status: 'initiated',
                 conversationHistory: [],
                 twilioEvents: [],
-                openaiEvents: [],
                 startedAt: new Date()
             });
-            console.log(`[CallTranscript] Created call record for ${data.callSid} (provider: ${data.voiceProvider || 'openai'})`);
+            console.log(`[CallTranscript] Created call record for ${data.callSid} (provider: ${data.voiceProvider || 'elevenlabs'})`);
         } catch (error) {
             console.error(`[CallTranscript] Error creating call record:`, error);
         }
@@ -87,7 +84,6 @@ export class CallTranscriptService {
         callSid: string;
         conversationHistory: Array<{ role: string; content: string; truncated?: boolean; truncatedAt?: number; timestamp?: Date }>;
         twilioEvents?: Array<{ type: string; timestamp: Date; data: any }>;
-        openaiEvents?: Array<{ type: string; timestamp: Date; data: any }>;
         endedAt: Date;
         duration?: number;
         status: 'completed' | 'failed';
@@ -119,10 +115,6 @@ export class CallTranscriptService {
                 updateData.twilioEvents = data.twilioEvents;
             }
 
-            if (data.openaiEvents) {
-                updateData.openaiEvents = data.openaiEvents;
-            }
-
             if (data.errorMessage) {
                 updateData.errorMessage = data.errorMessage;
             }
@@ -133,7 +125,7 @@ export class CallTranscriptService {
                 { upsert: true }
             );
 
-            console.log(`[CallTranscript] Saved transcript for call ${data.callSid} with ${data.conversationHistory.length} messages, ${data.twilioEvents?.length || 0} Twilio events, ${data.openaiEvents?.length || 0} OpenAI events`);
+            console.log(`[CallTranscript] Saved transcript for call ${data.callSid} with ${data.conversationHistory.length} messages, ${data.twilioEvents?.length || 0} Twilio events`);
         } catch (error) {
             console.error(`[CallTranscript] Error saving transcript for call ${data.callSid}:`, error);
         }
