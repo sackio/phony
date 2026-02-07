@@ -119,7 +119,7 @@ const CallSchema = new Schema<ICall>({
     voiceProvider: {
         type: String,
         enum: ['openai', 'elevenlabs'],
-        default: 'openai'
+        default: 'elevenlabs'
     },
     voice: {
         type: String,

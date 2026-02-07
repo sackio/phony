@@ -13,7 +13,7 @@ import { MongoDBService } from '../../services/database/mongodb.service.js';
 export const debugToolsDefinitions: MCPToolDefinition[] = [
     {
         name: 'phony_get_call_events',
-        description: 'Get detailed event logs from a call for debugging (Twilio and/or OpenAI events)',
+        description: 'Get detailed Twilio event logs from a call for debugging',
         inputSchema: {
             type: 'object',
             properties: {
@@ -24,7 +24,7 @@ export const debugToolsDefinitions: MCPToolDefinition[] = [
                 eventType: {
                     type: 'string',
                     description: 'Filter by event source',
-                    enum: ['twilio', 'openai', 'all']
+                    enum: ['twilio', 'all']
                 }
             },
             required: ['callSid']
@@ -84,11 +84,6 @@ export function createDebugToolHandlers(
                     result.twilioEventCount = (call.twilioEvents || []).length;
                 }
 
-                if (eventType === 'openai' || eventType === 'all') {
-                    result.openaiEvents = call.openaiEvents || [];
-                    result.openaiEventCount = (call.openaiEvents || []).length;
-                }
-
                 // Add event type summary
                 if (eventType === 'all') {
                     const twilioTypes = new Map<string, number>();
@@ -96,14 +91,8 @@ export function createDebugToolHandlers(
                         twilioTypes.set(event.type, (twilioTypes.get(event.type) || 0) + 1);
                     });
 
-                    const openaiTypes = new Map<string, number>();
-                    (call.openaiEvents || []).forEach(event => {
-                        openaiTypes.set(event.type, (openaiTypes.get(event.type) || 0) + 1);
-                    });
-
                     result.eventSummary = {
-                        twilioEventTypes: Object.fromEntries(twilioTypes),
-                        openaiEventTypes: Object.fromEntries(openaiTypes)
+                        twilioEventTypes: Object.fromEntries(twilioTypes)
                     };
                 }
 

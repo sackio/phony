@@ -44,7 +44,7 @@ const IncomingConfigSchema: Schema = new Schema(
         voiceProvider: {
             type: String,
             enum: ['openai', 'elevenlabs'],
-            default: 'openai'
+            default: 'elevenlabs'
         },
         voice: {
             type: String,
