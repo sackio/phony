@@ -9,14 +9,14 @@ import { TwilioWsService } from '../services/twilio/ws.service.js';
 import { TwilioEventService } from '../services/twilio/event.service.js';
 import { TwilioCallService } from '../services/twilio/call.service.js';
 import { CallTranscriptService } from '../services/database/call-transcript.service.js';
-import { OpenAIContextService } from '../services/openai/context.service.js';
+import { ContextService } from '../services/context.service.js';
 import { ICallHandler } from './call.handler.js';
 
 dotenv.config();
 
 /**
  * Handles the communication between Twilio and ElevenLabs for voice calls
- * Mirrors the OpenAICallHandler structure for consistency
+ * Handles the communication between Twilio and ElevenLabs for voice calls
  */
 export class ElevenLabsCallHandler implements ICallHandler {
     private readonly twilioStream: TwilioWsService;
@@ -40,7 +40,7 @@ export class ElevenLabsCallHandler implements ICallHandler {
         ws: WebSocket,
         callType: CallType,
         twilioClient: twilio.Twilio,
-        contextService: OpenAIContextService,
+        contextService: ContextService,
         transcriptService: CallTranscriptService,
         sessionManagerService?: any,
         agentId?: string,
@@ -85,7 +85,8 @@ export class ElevenLabsCallHandler implements ICallHandler {
         );
 
         this.setupEventHandlers();
-        this.initializeElevenLabs();
+        // Don't connect to ElevenLabs yet - wait until we have the system prompt
+        // This allows us to include the prompt in the init message for lower latency
     }
 
     public async endCall(): Promise<void> {
@@ -117,7 +118,7 @@ export class ElevenLabsCallHandler implements ICallHandler {
             callSid: callSid,
             conversationHistory: fullConversationHistory,
             twilioEvents: this.callState.twilioEvents,
-            openaiEvents: this.callState.openaiEvents, // Reused for ElevenLabs events
+            openaiEvents: [],
             endedAt: endTime,
             duration: duration,
             status: 'completed'
@@ -174,7 +175,7 @@ export class ElevenLabsCallHandler implements ICallHandler {
                 this.elevenLabsEventProcessor.handleClose();
             },
             onReady: async () => {
-                console.log('[ElevenLabs Handler] ElevenLabs WebSocket ready');
+                console.log('[ElevenLabs Handler] ElevenLabs session ready');
 
                 // Set audio format on event processor based on agent metadata
                 const outputFormat = this.elevenLabsService.getAgentOutputFormat();
@@ -186,18 +187,14 @@ export class ElevenLabsCallHandler implements ICallHandler {
                     return;
                 }
 
-                // If initialization was attempted but ElevenLabs wasn't ready, retry now
-                if (this.needsInitialization && this.callState.callSid) {
-                    console.log('[ElevenLabs Handler] ElevenLabs connected - retrying initialization that was deferred');
-                    this.doStartSession();
+                // Session is ready with prompt included in init - finish setup
+                if (this.needsInitialization) {
+                    this.onElevenLabsSessionReady();
 
                     // If this was a resume scenario, restore conversation
                     if (this.callState.conversationHistory && this.callState.conversationHistory.length > 0) {
-                        console.log('[ElevenLabs Handler] Restoring conversation after deferred initialization');
-                        // Note: ElevenLabs handles conversation differently - context can be injected
+                        console.log('[ElevenLabs Handler] Restoring conversation after initialization');
                     }
-                } else {
-                    console.log('[ElevenLabs Handler] Waiting for Twilio start event to trigger initialization');
                 }
             }
         });
@@ -219,29 +216,41 @@ export class ElevenLabsCallHandler implements ICallHandler {
     }
 
     /**
-     * Actually perform the session initialization
+     * Actually perform the session initialization.
+     * Connects to ElevenLabs with the system prompt ready so it can be
+     * included in the conversation_config_override for lowest latency.
      */
     private doStartSession(): void {
-        // Verify ElevenLabs is actually connected before trying to initialize
-        if (!this.elevenLabsService.isConnected()) {
-            console.log('[ElevenLabs Handler] Cannot start session yet - ElevenLabs WebSocket not connected. Will retry when connected.');
-            this.needsInitialization = true;
-            return;
-        }
-
         const isIncoming = this.callState.callType === CallType.INBOUND;
         console.log('[ElevenLabs Handler] Starting ElevenLabs session with context:', this.callState.callContext.substring(0, 100) + '...');
         console.log('[ElevenLabs Handler] Call type:', this.callState.callType, '(incoming:', isIncoming, ')');
 
-        // Initialize conversation with the system prompt as override
+        // Queue the system prompt on the ElevenLabs service BEFORE connecting
+        // This way it will be included in conversation_config_override on init
         this.elevenLabsService.initializeConversation(this.callState.callContext, {
             call_type: isIncoming ? 'incoming' : 'outgoing',
             from_number: this.callState.fromNumber,
             to_number: this.callState.toNumber
-        });
+        }, this.callState.elevenLabsVoiceId);
 
+        if (!this.elevenLabsService.isConnected()) {
+            // Connect now - the prompt will be sent with the init message
+            console.log('[ElevenLabs Handler] Connecting to ElevenLabs with prompt ready');
+            this.needsInitialization = true;
+            this.initializeElevenLabs();
+            return;
+        }
+
+        // Already connected (shouldn't happen in normal flow)
+        this.onElevenLabsSessionReady();
+    }
+
+    /**
+     * Called when ElevenLabs session is ready (after connection + init)
+     */
+    private onElevenLabsSessionReady(): void {
         // Mark ElevenLabs as ready and flush any buffered audio
-        console.log('[ElevenLabs Handler] ElevenLabs session initialized, flushing', this.audioBuffer.length, 'buffered audio packets');
+        console.log('[ElevenLabs Handler] ElevenLabs session ready, flushing', this.audioBuffer.length, 'buffered audio packets');
         this.elevenLabsReady = true;
         this.needsInitialization = false;
         this.flushAudioBuffer();
@@ -369,7 +378,6 @@ export class ElevenLabsCallHandler implements ICallHandler {
                             fromNumber: this.callState.fromNumber,
                             toNumber: this.callState.toNumber,
                             callType: this.callState.callType,
-                            voice: this.callState.voice,
                             voiceProvider: 'elevenlabs',
                             elevenLabsAgentId: this.callState.elevenLabsAgentId,
                             elevenLabsVoiceId: this.callState.elevenLabsVoiceId,

@@ -12,7 +12,7 @@ import { SessionManagerService } from '../../services/session-manager.service.js
 export const callToolsDefinitions: MCPToolDefinition[] = [
     {
         name: 'phony_create_call',
-        description: 'Create an outbound phone call with AI voice assistant. Supports OpenAI (default) or ElevenLabs voice providers.',
+        description: 'Create an outbound phone call with ElevenLabs AI voice assistant.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -28,23 +28,13 @@ export const callToolsDefinitions: MCPToolDefinition[] = [
                     type: 'string',
                     description: 'Specific instructions for this particular call'
                 },
-                provider: {
-                    type: 'string',
-                    description: 'Voice provider to use: openai (default) or elevenlabs',
-                    enum: ['openai', 'elevenlabs']
-                },
-                voice: {
-                    type: 'string',
-                    description: 'OpenAI voice to use: alloy, echo, fable, onyx, nova, or shimmer (only for openai provider)',
-                    enum: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
-                },
                 elevenLabsAgentId: {
                     type: 'string',
-                    description: 'ElevenLabs agent ID (uses default if not specified, only for elevenlabs provider)'
+                    description: 'ElevenLabs agent ID (uses default if not specified)'
                 },
                 elevenLabsVoiceId: {
                     type: 'string',
-                    description: 'ElevenLabs voice ID (uses agent default if not specified, only for elevenlabs provider)'
+                    description: 'ElevenLabs voice ID to override the agent default voice. Female: Rachel (21m00Tcm4TlvDq8ikWAM), Sarah (EXAVITQu4vr4xnSDxMaL), Charlotte (XB0fDUnXU5powFXDhCwa), Matilda (XrExE9yKIg1WjnnlVkGX), Lily (pFZP5JQG7iQjIQuC4Bku). Male: Adam (pNInz6obpgDQGcFmaJgB), Antoni (ErXwobaYiN019PkySvjV), Arnold (VR6AewLTigWG4xSOukaG), Sam (yoZ06aMxZJJ28mfd3POQ), Josh (TxGEqnHWrfWFTfGW9XjX).'
                 }
             },
             required: ['toNumber', 'systemInstructions', 'callInstructions']
@@ -222,17 +212,13 @@ export function createCallToolHandlers(
                 validateArgs(args, ['toNumber', 'systemInstructions', 'callInstructions']);
 
                 const toNumber = sanitizePhoneNumber(args.toNumber);
-                const provider = args.provider || 'openai';
-                const voice = args.voice || 'alloy';
                 const fromNumber = process.env.TWILIO_NUMBER || '';
 
-                // Create call via Twilio with provider selection
+                // Create call via Twilio (ElevenLabs provider)
                 const result = await twilioService.makeOutboundCall(
                     toNumber,
                     args.systemInstructions,
                     args.callInstructions,
-                    voice,
-                    provider,
                     args.elevenLabsAgentId,
                     args.elevenLabsVoiceId
                 );
@@ -245,8 +231,7 @@ export function createCallToolHandlers(
                     toNumber: toNumber,
                     fromNumber: fromNumber,
                     callType: 'outgoing',
-                    voiceProvider: provider,
-                    voice: voice,
+                    voiceProvider: 'elevenlabs',
                     elevenLabsAgentId: args.elevenLabsAgentId,
                     elevenLabsVoiceId: args.elevenLabsVoiceId,
                     status: 'initiated',
@@ -260,8 +245,8 @@ export function createCallToolHandlers(
                 return createToolResponse({
                     callSid: result.sid,
                     status: result.status,
-                    provider: provider,
-                    message: `Call initiated to ${toNumber} using ${provider} voice provider`
+                    provider: 'elevenlabs',
+                    message: `Call initiated to ${toNumber} using ElevenLabs voice provider`
                 });
             } catch (error: any) {
                 return createToolError('Failed to create call', { message: error.message });
@@ -288,7 +273,6 @@ export function createCallToolHandlers(
                         toNumber: call.toNumber,
                         callType: call.callType,
                         status: call.status,
-                        voice: call.voice,
                         startedAt: call.startedAt,
                         endedAt: call.endedAt,
                         duration: call.duration
@@ -316,11 +300,9 @@ export function createCallToolHandlers(
                         fromNumber: call.fromNumber,
                         toNumber: call.toNumber,
                         callType: call.callType,
-                        voice: call.voice,
                         status: call.status,
                         conversationHistory: call.conversationHistory,
                         twilioEvents: call.twilioEvents,
-                        openaiEvents: call.openaiEvents,
                         systemInstructions: call.systemInstructions,
                         callInstructions: call.callInstructions,
                         startedAt: call.startedAt,
@@ -346,9 +328,7 @@ export function createCallToolHandlers(
                     return createToolError(`Call not found: ${args.callSid}`);
                 }
 
-                // Use the call's voice for the hold message
-                const voice = callState.voice || 'sage';
-                await twilioService.holdCall(args.callSid, voice);
+                await twilioService.holdCall(args.callSid);
 
                 // Update call state
                 callStateService.updateCallStatus(args.callSid, 'on_hold');
@@ -356,8 +336,7 @@ export function createCallToolHandlers(
                 return createToolResponse({
                     success: true,
                     status: 'on_hold',
-                    voice: voice,
-                    message: `Call ${args.callSid} is now on hold with voice: ${voice}`
+                    message: `Call ${args.callSid} is now on hold`
                 });
             } catch (error: any) {
                 return createToolError('Failed to hold call', { message: error.message });
@@ -445,8 +424,7 @@ export function createCallToolHandlers(
                 }
 
                 // Put the call on hold first
-                const voice = call.voice || 'sage';
-                await twilioService.holdCall(args.callSid, voice);
+                await twilioService.holdCall(args.callSid);
 
                 // Update call status to on_hold
                 callStateService.updateCallStatus(args.callSid, 'on_hold');

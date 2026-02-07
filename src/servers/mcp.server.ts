@@ -168,25 +168,23 @@ export class VoiceCallMcpServer {
 
         this.server.tool(
             'get-call-events',
-            'Get detailed event logs (Twilio and OpenAI events) for a specific call',
+            'Get detailed Twilio event logs for a specific call',
             {
                 callSid: z.string().describe('The Twilio call SID to retrieve events for'),
-                eventSource: z.enum(['twilio', 'openai', 'both']).optional().describe('Which event source to retrieve (default: both)'),
+                eventSource: z.enum(['twilio', 'all']).optional().describe('Which event source to retrieve (default: all)'),
                 eventType: z.string().optional().describe('Filter by specific event type (e.g., "connected", "speech.started")')
             },
-            async ({ callSid, eventSource = 'both', eventType }) => {
+            async ({ callSid, eventSource = 'all', eventType }) => {
                 try {
                     const response = await axios.get(`${this.apiBaseUrl}/api/calls/${callSid}`);
                     const call = response.data;
 
                     // Extract events based on source filter
-                    let twilioEvents = eventSource === 'both' || eventSource === 'twilio' ? call.twilioEvents || [] : [];
-                    let openaiEvents = eventSource === 'both' || eventSource === 'openai' ? call.openaiEvents || [] : [];
+                    let twilioEvents = call.twilioEvents || [];
 
                     // Apply event type filter if specified
                     if (eventType) {
                         twilioEvents = twilioEvents.filter((e: any) => e.type === eventType);
-                        openaiEvents = openaiEvents.filter((e: any) => e.type === eventType);
                     }
 
                     return {
@@ -199,10 +197,6 @@ export class VoiceCallMcpServer {
                                 twilioEvents: {
                                     count: twilioEvents.length,
                                     events: twilioEvents
-                                },
-                                openaiEvents: {
-                                    count: openaiEvents.length,
-                                    events: openaiEvents
                                 }
                             }, null, 2)
                         }]
