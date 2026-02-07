@@ -4,11 +4,6 @@ export enum CallType {
     INBOUND = 'INBOUND',
 }
 
-/**
- * Voice provider enum
- */
-export type VoiceProvider = 'openai' | 'elevenlabs';
-
 export enum SmsDirection {
     INBOUND = 'inbound',
     OUTBOUND = 'outbound',
@@ -36,12 +31,6 @@ export interface TwilioEventLog {
     data: any;
 }
 
-export interface OpenAIEventLog {
-    type: string;
-    timestamp: Date;
-    data: any;
-}
-
 export class CallState {
     // Call identification
     streamSid = '';
@@ -49,9 +38,6 @@ export class CallState {
 
     // Call type and direction
     callType: CallType = CallType.OUTBOUND;
-
-    // Voice provider
-    voiceProvider: VoiceProvider = 'openai';
 
     // Phone numbers
     fromNumber = '';
@@ -61,7 +47,6 @@ export class CallState {
     callContext = '';
     initialMessage = '';
     conversationHistory: ConversationMessage[] = [];
-    voice = 'sage'; // Default voice for OpenAI
     elevenLabsAgentId?: string; // ElevenLabs agent ID
     elevenLabsVoiceId?: string; // ElevenLabs voice ID
     systemInstructions = '';
@@ -69,7 +54,6 @@ export class CallState {
 
     // Event logging for debugging
     twilioEvents: TwilioEventLog[] = [];
-    openaiEvents: OpenAIEventLog[] = [];
 
     // Speech state
     speaking = false;
@@ -99,28 +83,10 @@ export class CallState {
         });
     }
 
-    logOpenAIEvent(type: string, data: any): void {
-        this.openaiEvents.push({
-            type,
-            timestamp: new Date(),
-            data: JSON.parse(JSON.stringify(data)) // Deep clone to avoid reference issues
-        });
-    }
-
     // Helper method for adding messages to conversation history
     addToConversation(message: ConversationMessage): void {
         this.conversationHistory.push(message);
     }
-}
-
-/**
- * Configuration for the OpenAI WebSocket connection
- */
-export interface OpenAIConfig {
-    apiKey: string;
-    websocketUrl: string;
-    voice: string;
-    temperature: number;
 }
 
 /**

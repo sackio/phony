@@ -5,31 +5,30 @@ dotenv.config();
 
 export const LOG_EVENT_TYPES = [
     'error',
-    'session.created',
-    'response.audio.delta',
-    'response.audio_transcript.done',
-    'conversation.item.input_audio_transcription.completed',
-    'input_audio_buffer.speech_started',
-    'input_audio_buffer.speech_stopped',
-    'input_audio_buffer.committed',
 ];
 
 // Use fixed secret from env for testing, or generate random one for security
 export const DYNAMIC_API_SECRET = process.env.API_SECRET || Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 export const SHOW_TIMING_MATH = true;
-export const VOICE = 'sage';
 export const RECORD_CALLS = process.env.RECORD === 'true';
 // More specific goodbye phrases to avoid false positives
 // Only match clear, unambiguous farewell statements
 export const GOODBYE_PHRASES = [
-    'goodbye now',
+    'goodbye',
     'bye bye',
+    'bye now',
     'talk to you later',
     'gotta go',
     'have to go now',
     'need to go',
     'end the call',
-    'hang up now'
+    'hang up now',
+    'have a great day',
+    'have a good day',
+    'have a nice day',
+    'take care',
+    'thanks for calling',
+    'thank you for calling',
 ];
 
 // Production Safety Controls - ALWAYS ENFORCED
@@ -50,7 +49,7 @@ export const MAX_OUTGOING_CALL_DURATION = parseInt(process.env.MAX_OUTGOING_CALL
 // Maximum duration for incoming calls in seconds (auto-hangup after this)
 export const MAX_INCOMING_CALL_DURATION = parseInt(process.env.MAX_INCOMING_CALL_DURATION || '1800'); // 30 minutes default
 
-// Test receiver endpoint (optional for internal testing without OpenAI costs)
+// Test receiver endpoint (optional for internal testing)
 export const ENABLE_TEST_RECEIVER = process.env.ENABLE_TEST_RECEIVER === 'true';
 
 // SMS Configuration - Whitelist of numbers that can send SMS
@@ -78,6 +77,3 @@ export const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '';
 export const ELEVENLABS_DEFAULT_AGENT_ID = process.env.ELEVENLABS_DEFAULT_AGENT_ID || '';
 export const ELEVENLABS_DEFAULT_VOICE_ID = process.env.ELEVENLABS_DEFAULT_VOICE_ID || '';
 
-// Default voice provider for new calls
-// Can be 'openai' or 'elevenlabs'
-export const DEFAULT_VOICE_PROVIDER = (process.env.DEFAULT_VOICE_PROVIDER || 'openai') as 'openai' | 'elevenlabs';

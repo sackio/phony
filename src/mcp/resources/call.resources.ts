@@ -25,17 +25,12 @@ export const callResourceDefinitions: MCPResourceDefinition[] = [
     {
         uri: 'call://{callSid}/events',
         name: 'Get all call events',
-        description: 'Get both Twilio and OpenAI events from a call'
+        description: 'Get Twilio events from a call'
     },
     {
         uri: 'call://{callSid}/events/twilio',
         name: 'Get Twilio events',
         description: 'Get Twilio WebSocket events from a call'
-    },
-    {
-        uri: 'call://{callSid}/events/openai',
-        name: 'Get OpenAI events',
-        description: 'Get OpenAI API events from a call'
     },
     {
         uri: 'call://{callSid}/instructions',
@@ -119,11 +114,9 @@ export function createCallResourceHandler(
                     fromNumber: call.fromNumber,
                     toNumber: call.toNumber,
                     callType: call.callType,
-                    voice: call.voice,
                     status: call.status,
                     conversationHistory: call.conversationHistory,
                     twilioEvents: call.twilioEvents,
-                    openaiEvents: call.openaiEvents,
                     systemInstructions: call.systemInstructions,
                     callInstructions: call.callInstructions,
                     startedAt: call.startedAt,
@@ -149,11 +142,7 @@ export function createCallResourceHandler(
             return createResourceResponse(uri, {
                 callSid: call.callSid,
                 twilioEvents: call.twilioEvents || [],
-                openaiEvents: call.openaiEvents || [],
-                eventCounts: {
-                    twilio: (call.twilioEvents || []).length,
-                    openai: (call.openaiEvents || []).length
-                }
+                eventCount: (call.twilioEvents || []).length
             });
         }
 
@@ -166,23 +155,13 @@ export function createCallResourceHandler(
             });
         }
 
-        // Handle call://{callSid}/events/openai
-        if (subResource === 'events/openai') {
-            return createResourceResponse(uri, {
-                callSid: call.callSid,
-                openaiEvents: call.openaiEvents || [],
-                eventCount: (call.openaiEvents || []).length
-            });
-        }
-
         // Handle call://{callSid}/instructions
         if (subResource === 'instructions') {
             return createResourceResponse(uri, {
                 callSid: call.callSid,
                 systemInstructions: call.systemInstructions || null,
                 callInstructions: call.callInstructions || null,
-                callContext: call.callContext || null,
-                voice: call.voice
+                callContext: call.callContext || null
             });
         }
 

@@ -1,7 +1,4 @@
 import twilio from 'twilio';
-import OpenAI from 'openai';
-import fs from 'fs';
-import path from 'path';
 import { DYNAMIC_API_SECRET, RECORD_CALLS } from '../../config/constants.js';
 
 /**
@@ -9,7 +6,6 @@ import { DYNAMIC_API_SECRET, RECORD_CALLS } from '../../config/constants.js';
  */
 export class TwilioCallService {
     private readonly twilioClient: twilio.Twilio;
-    private readonly openaiClient: OpenAI;
 
     // Deduplication: track recent call attempts to prevent double-dial
     private recentCallAttempts: Map<string, number> = new Map();
@@ -102,9 +98,7 @@ export class TwilioCallService {
         toNumber: string,
         systemInstructions: string,
         callInstructions: string,
-        voice = 'sage',
         fromNumber?: string,
-        provider: 'openai' | 'elevenlabs' = 'openai',
         elevenLabsAgentId?: string,
         elevenLabsVoiceId?: string
     ): Promise<string> {
@@ -136,17 +130,14 @@ export class TwilioCallService {
             // Use provided fromNumber or fall back to default TWILIO_NUMBER
             const callerNumber = fromNumber || process.env.TWILIO_NUMBER || '';
 
-            // Build URL with provider information
-            let url = `${twilioCallbackUrl}/call/outgoing?apiSecret=${DYNAMIC_API_SECRET}&callType=outgoing&systemInstructions=${systemInstructionsEncoded}&callInstructions=${callInstructionsEncoded}&voice=${voice}&provider=${provider}`;
+            // Build URL for ElevenLabs call
+            let url = `${twilioCallbackUrl}/call/outgoing?apiSecret=${DYNAMIC_API_SECRET}&callType=outgoing&systemInstructions=${systemInstructionsEncoded}&callInstructions=${callInstructionsEncoded}`;
 
-            // Add ElevenLabs-specific parameters if using elevenlabs provider
-            if (provider === 'elevenlabs') {
-                if (elevenLabsAgentId) {
-                    url += `&elevenLabsAgentId=${encodeURIComponent(elevenLabsAgentId)}`;
-                }
-                if (elevenLabsVoiceId) {
-                    url += `&elevenLabsVoiceId=${encodeURIComponent(elevenLabsVoiceId)}`;
-                }
+            if (elevenLabsAgentId) {
+                url += `&elevenLabsAgentId=${encodeURIComponent(elevenLabsAgentId)}`;
+            }
+            if (elevenLabsVoiceId) {
+                url += `&elevenLabsVoiceId=${encodeURIComponent(elevenLabsVoiceId)}`;
             }
 
             const call = await twilioClient.calls.create({
@@ -169,8 +160,6 @@ export class TwilioCallService {
         toNumber: string,
         systemInstructions: string,
         callInstructions: string,
-        voice: string = 'alloy',
-        provider: 'openai' | 'elevenlabs' = 'openai',
         elevenLabsAgentId?: string,
         elevenLabsVoiceId?: string,
         fromNumber?: string
@@ -182,9 +171,7 @@ export class TwilioCallService {
             toNumber,
             systemInstructions,
             callInstructions,
-            voice,
             fromNumber,
-            provider,
             elevenLabsAgentId,
             elevenLabsVoiceId
         );
@@ -224,48 +211,26 @@ export class TwilioCallService {
     }
 
     /**
-     * Put a call on hold with a hold message using the agent's voice
+     * Put a call on hold with hold music
      * @param twilioCallSid The Twilio call SID
-     * @param voice The voice to use for the hold message (from call state)
      */
-    public async holdCall(twilioCallSid: string, voice: string = 'sage'): Promise<void> {
+    public async holdCall(twilioCallSid: string): Promise<void> {
         if (!twilioCallSid) {
             throw new Error('Call SID is required');
         }
 
         try {
-            // Create TwiML to play hold message with the agent's voice
             const VoiceResponse = (await import('twilio/lib/twiml/VoiceResponse.js')).default;
             const twiml = new VoiceResponse();
 
-            // Map OpenAI Realtime API voice names to pre-generated hold message files
-            // Available voices: alloy, echo, fable, onyx, nova, shimmer
-            const voiceMapping: Record<string, string> = {
-                'alloy': 'alloy',
-                'echo': 'echo',
-                'fable': 'fable',
-                'onyx': 'onyx',
-                'nova': 'nova',
-                'shimmer': 'shimmer',
-                // Map sage (deprecated voice) to alloy as fallback
-                'sage': 'alloy'
-            };
-
-            const mappedVoice = voiceMapping[voice] || 'alloy';
-            const holdMessageUrl = `${process.env.PUBLIC_URL}/audio/hold/hold-${mappedVoice}.mp3`;
-
-            // Play pre-generated hold message in the agent's voice
-            twiml.play(holdMessageUrl);
-
-            // Play hold music continuously
+            twiml.say({ voice: 'Polly.Matthew' }, 'One moment please.');
             twiml.play({ loop: 0 }, 'http://com.twilio.sounds.music.s3.amazonaws.com/MARKOVICHAMP-Borghestral.mp3');
 
-            // Update the call with new TwiML
             await this.twilioClient.calls(twilioCallSid).update({
                 twiml: twiml.toString()
             });
 
-            console.log(`[Twilio Service] Put call ${twilioCallSid} on hold with voice: ${voice} (using pre-generated message: hold-${mappedVoice}.mp3)`);
+            console.log(`[Twilio Service] Put call ${twilioCallSid} on hold`);
         } catch (error) {
             console.error(`[Twilio Service] Error holding call ${twilioCallSid}:`, error);
             throw error;
