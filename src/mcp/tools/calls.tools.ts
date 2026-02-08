@@ -12,7 +12,7 @@ import { SessionManagerService } from '../../services/session-manager.service.js
 export const callToolsDefinitions: MCPToolDefinition[] = [
     {
         name: 'phony_create_call',
-        description: 'Create an outbound phone call with ElevenLabs AI voice assistant.',
+        description: 'Create an outbound phone call with ElevenLabs AI voice assistant. The AI agent can navigate IVR menus and press phone buttons automatically using its built-in send_dtmf tool - just include instructions like "press 1 for English" or "navigate the phone menu" in the systemInstructions.',
         inputSchema: {
             type: 'object',
             properties: {

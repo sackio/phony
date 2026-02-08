@@ -6,9 +6,9 @@
 
 This is a Model Context Protocol (MCP) server that enables Claude and other AI assistants to initiate and manage real-time voice calls and SMS messaging using:
 - **Twilio** for telephony and SMS infrastructure
-- **OpenAI GPT-4o Realtime API** for AI-powered voice conversations
+- **ElevenLabs Conversational AI** for AI-powered voice conversations (with per-call voice selection and DTMF support)
 - **MongoDB** for persistent storage of call transcripts and SMS messages
-- **Ngrok** for public webhook access
+- **Nginx** for public webhook access
 
 ## Architecture
 
@@ -114,20 +114,6 @@ This is a Model Context Protocol (MCP) server that enables Claude and other AI a
 
 ## Audio Flow
 
-### OpenAI Provider (Default)
-```
-Phone Caller → Twilio → WebSocket → TwilioWsService
-                                           ↓
-                                    OpenAIWsService
-                                           ↓
-                                    GPT-4o Realtime API
-                                           ↓
-                                    OpenAIEventService
-                                           ↓
-                                    TwilioWsService → Twilio → Phone
-```
-
-### ElevenLabs Provider
 ```
 Phone Caller → Twilio → WebSocket → TwilioWsService
                                            ↓
@@ -142,26 +128,32 @@ Phone Caller → Twilio → WebSocket → TwilioWsService
                                     TwilioWsService → Twilio → Phone
 ```
 
+### DTMF Flow (In-Band)
+```
+ElevenLabs agent calls send_dtmf tool
+        ↓
+ElevenLabsCallHandler.onToolCall()
+        ↓
+generateDtmfSequence() → µ-law audio tones
+        ↓
+TwilioWsService.sendAudio() → injected into media stream
+        ↓
+Phone hears DTMF tones (call stays connected)
+```
+
 **Audio Format**: µ-law (g711_ulaw) 8kHz
 - Twilio uses µ-law natively
-- OpenAI: sends/receives µ-law directly
-- ElevenLabs: Converts µ-law → PCM 16kHz for input, requests ulaw_8000 output
-**Voice**: "sage" (default, configurable in `src/config/constants.ts`)
-**Temperature**: 0.6
+- ElevenLabs: Converts µ-law → PCM 16kHz for input, agent outputs PCM 16kHz → converted to µ-law
+- DTMF: Generated as in-band µ-law audio tones via `audio.service.ts`
 
 ## Key Components
 
 ### Services
 
-**OpenAI Services** (`src/services/openai/`)
-- `ws.service.ts` - WebSocket connection to OpenAI Realtime API
-- `event.service.ts` - Processes OpenAI events (transcriptions, audio deltas)
-- `context.service.ts` - Manages conversation context
-
 **ElevenLabs Services** (`src/services/elevenlabs/`)
 - `ws.service.ts` - WebSocket connection to ElevenLabs Conversational AI
 - `event.service.ts` - Processes ElevenLabs events (transcripts, audio, interruptions)
-- `audio.service.ts` - Audio format conversion (µ-law ↔ PCM)
+- `audio.service.ts` - Audio format conversion (µ-law ↔ PCM) and in-band DTMF tone generation
 
 **Twilio Services** (`src/services/twilio/`)
 - `call.service.ts` - Twilio API operations (makeCall, startRecording, endCall)
@@ -173,11 +165,11 @@ Phone Caller → Twilio → WebSocket → TwilioWsService
 - `storage.service.ts` - MongoDB operations for SMS messages (saveSms, getSms, listSms, getConversation, updateSmsStatus)
 
 **Session Management**
-- `src/handlers/call.handler.ts` - ICallHandler interface for provider abstraction
-- `src/handlers/openai.handler.ts` - OpenAICallHandler for OpenAI voice provider
-- `src/handlers/elevenlabs.handler.ts` - ElevenLabsCallHandler for ElevenLabs voice provider
-- `src/services/session-manager.service.ts` - Manages concurrent call sessions, routes by provider
-- Each call gets isolated CallState instance with provider-specific settings
+- `src/handlers/call.handler.ts` - ICallHandler interface
+- `src/handlers/elevenlabs.handler.ts` - ElevenLabsCallHandler (handles voice, DTMF client tools, context injection)
+- `src/services/session-manager.service.ts` - Manages concurrent call sessions
+- `src/services/context.service.ts` - Provider-agnostic call context setup
+- Each call gets isolated CallState instance
 
 **Public URL Configuration**
 - Server uses PUBLIC_URL environment variable instead of ngrok
@@ -360,7 +352,7 @@ location /call/ {
 - ✅ Interrupt handling (user can interrupt AI)
 - ✅ Goodbye detection (automatic call termination)
 - ✅ Multiple concurrent call sessions
-- ✅ DTMF tone sending (navigate IVR menus)
+- ✅ DTMF tone sending (AI agent can autonomously navigate IVR menus via send_dtmf client tool)
 - ✅ Context injection mid-call (both providers)
 
 ### SMS Messaging
