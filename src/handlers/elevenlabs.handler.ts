@@ -181,12 +181,18 @@ export class ElevenLabsCallHandler implements ICallHandler {
                     if (!digits) {
                         return { result: 'No digits provided', isError: true };
                     }
-                    if (!this.callState.callSid) {
-                        return { result: 'No active call to send DTMF to', isError: true };
-                    }
                     try {
-                        await this.twilioCallService.sendDTMF(this.callState.callSid, digits);
-                        console.log(`[ElevenLabs Handler] DTMF sent: ${digits}`);
+                        // Send DTMF tones in-band through the Twilio media stream
+                        const { generateDtmfSequence } = await import('../services/elevenlabs/audio.service.js');
+                        const chunks = generateDtmfSequence(digits);
+                        console.log(`[ElevenLabs Handler] Sending ${chunks.length} DTMF audio chunks for: ${digits}`);
+
+                        // Send each chunk through the Twilio stream with small delays
+                        for (const chunk of chunks) {
+                            this.twilioStream.sendAudio(chunk);
+                        }
+
+                        console.log(`[ElevenLabs Handler] DTMF sent in-band: ${digits}`);
                         return { result: `Successfully sent DTMF tones: ${digits}` };
                     } catch (error: any) {
                         console.error(`[ElevenLabs Handler] DTMF error:`, error);

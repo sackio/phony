@@ -139,6 +139,96 @@ export function convertTwilioToElevenLabs(twilioBase64: string): string {
 }
 
 /**
+ * DTMF frequency pairs for standard telephone keypad
+ * Each key maps to [lowFreq, highFreq] in Hz
+ */
+const DTMF_FREQUENCIES: Record<string, [number, number]> = {
+    '1': [697, 1209], '2': [697, 1336], '3': [697, 1477],
+    '4': [770, 1209], '5': [770, 1336], '6': [770, 1477],
+    '7': [852, 1209], '8': [852, 1336], '9': [852, 1477],
+    '*': [941, 1209], '0': [941, 1336], '#': [941, 1477],
+    'A': [697, 1633], 'B': [770, 1633], 'C': [852, 1633], 'D': [941, 1633]
+};
+
+/**
+ * Generate a single DTMF tone as µ-law 8kHz audio
+ * @param digit The DTMF digit (0-9, *, #, A-D)
+ * @param durationMs Duration of the tone in milliseconds (default: 200ms)
+ * @returns Base64-encoded µ-law audio
+ */
+export function generateDtmfTone(digit: string, durationMs: number = 200): string | null {
+    const freqs = DTMF_FREQUENCIES[digit.toUpperCase()];
+    if (!freqs) return null;
+
+    const sampleRate = 8000;
+    const numSamples = Math.floor(sampleRate * durationMs / 1000);
+    const [f1, f2] = freqs;
+    const amplitude = 8000; // ~25% of max to avoid clipping
+
+    // Generate PCM 16-bit samples at 8kHz
+    const pcmBuffer = Buffer.alloc(numSamples * 2);
+    for (let i = 0; i < numSamples; i++) {
+        const t = i / sampleRate;
+        const sample = Math.round(
+            amplitude * (Math.sin(2 * Math.PI * f1 * t) + Math.sin(2 * Math.PI * f2 * t))
+        );
+        // Clamp to int16 range
+        const clamped = Math.max(-32768, Math.min(32767, sample));
+        pcmBuffer.writeInt16LE(clamped, i * 2);
+    }
+
+    // Convert PCM to µ-law (already at 8kHz, no downsampling needed)
+    const ulawBuffer = pcmToUlaw(pcmBuffer, 8000);
+    return ulawBuffer.toString('base64');
+}
+
+/**
+ * Generate silence as µ-law 8kHz audio
+ * @param durationMs Duration of silence in milliseconds
+ * @returns Base64-encoded µ-law silence
+ */
+export function generateSilence(durationMs: number): string {
+    const numSamples = Math.floor(8000 * durationMs / 1000);
+    // µ-law silence byte is 0xFF (or 0x7F)
+    const silenceBuffer = Buffer.alloc(numSamples, 0xFF);
+    return silenceBuffer.toString('base64');
+}
+
+/**
+ * Generate a sequence of DTMF tones with pauses between them
+ * @param digits String of DTMF digits. 'w' = 0.5s pause, 'W' = 1s pause
+ * @param toneDurationMs Duration of each tone (default: 200ms)
+ * @param pauseDurationMs Pause between tones (default: 100ms)
+ * @returns Array of base64-encoded µ-law audio chunks to send sequentially
+ */
+export function generateDtmfSequence(
+    digits: string,
+    toneDurationMs: number = 200,
+    pauseDurationMs: number = 100
+): string[] {
+    const chunks: string[] = [];
+    const pause = generateSilence(pauseDurationMs);
+
+    for (const char of digits) {
+        if (char === 'w') {
+            chunks.push(generateSilence(500));
+        } else if (char === 'W') {
+            chunks.push(generateSilence(1000));
+        } else if (char === ' ') {
+            continue;
+        } else {
+            const tone = generateDtmfTone(char, toneDurationMs);
+            if (tone) {
+                chunks.push(tone);
+                chunks.push(pause);
+            }
+        }
+    }
+
+    return chunks;
+}
+
+/**
  * Audio format constants
  */
 export const TWILIO_AUDIO_FORMAT = {
