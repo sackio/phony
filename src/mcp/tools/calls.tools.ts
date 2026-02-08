@@ -34,7 +34,7 @@ export const callToolsDefinitions: MCPToolDefinition[] = [
                 },
                 elevenLabsVoiceId: {
                     type: 'string',
-                    description: 'ElevenLabs voice ID to override the agent default voice. Female: Rachel (21m00Tcm4TlvDq8ikWAM), Sarah (EXAVITQu4vr4xnSDxMaL), Charlotte (XB0fDUnXU5powFXDhCwa), Matilda (XrExE9yKIg1WjnnlVkGX), Lily (pFZP5JQG7iQjIQuC4Bku). Male: Adam (pNInz6obpgDQGcFmaJgB), Antoni (ErXwobaYiN019PkySvjV), Arnold (VR6AewLTigWG4xSOukaG), Sam (yoZ06aMxZJJ28mfd3POQ), Josh (TxGEqnHWrfWFTfGW9XjX).'
+                    description: 'ElevenLabs voice ID. Choose natural, conversational voices - avoid dramatic/performative ones. RECOMMENDED Natural Female: Sarah (EXAVITQu4vr4xnSDxMaL, professional), Alice (Xb7hH8MSUJpSbSDYk0k2, professional), Rachel (21m00Tcm4TlvDq8ikWAM, warm narrative), Nicole (piTKgcLEGmPE4e6mEKli, natural). RECOMMENDED Natural Male: Chris (iP95p4xoKVk53GoZ742B, conversational), Charlie (IKne3meq5aSn9XLyUdCD, conversational), Dave (CYw3kZ02Hs0563khs1Fj, casual), Daniel (onwK4e9ZLuTAKqWW03F9, professional), James (ZQe5CZNOzWyzPSCn5a3c, authoritative). Other options - Female: Matilda (XrExE9yKIg1WjnnlVkGX), Lily (pFZP5JQG7iQjIQuC4Bku), Grace (oWAxZDx7w5VEj9dCyTzz), Freya (jsCqWAovK2LkecY7zXl4). Male: Brian (nPczCjzI2devNBz1zQrb), Bill (pqHfZKP75CvOlQylNhV4), Adam (pNInz6obpgDQGcFmaJgB), Drew (29vD33N1CtxCmqQRPOHJ). AVOID dramatic voices: Charlotte, Arnold, Callum, Clyde, Fin, Gigi, Glinda, Harry, Jessie, Mimi, Patrick.'
                 }
             },
             required: ['toNumber', 'systemInstructions', 'callInstructions']

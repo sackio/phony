@@ -21,6 +21,7 @@ export interface ElevenLabsCallbacks {
     onError: (error: Error) => void;
     onClose: () => void;
     onReady: () => void;
+    onToolCall?: (toolName: string, toolCallId: string, parameters: Record<string, any>) => Promise<{ result: string; isError?: boolean }>;
 }
 
 /**
@@ -145,15 +146,33 @@ export class ElevenLabsWsService {
                     this.sendPong(message.ping_event?.event_id);
                     break;
 
-                case 'client_tool_call':
-                    // Agent is calling a client tool (e.g., end_call)
+                case 'client_tool_call': {
+                    // Agent is calling a client tool (e.g., end_call, send_dtmf)
                     const toolName = message.client_tool_call?.tool_name;
-                    console.log('[ElevenLabs WS] Tool call:', toolName);
+                    const toolCallId = message.client_tool_call?.tool_call_id;
+                    const toolParams = message.client_tool_call?.parameters || {};
+                    console.log('[ElevenLabs WS] Tool call:', toolName, 'params:', JSON.stringify(toolParams));
+
                     if (toolName === 'end_call') {
                         console.log('[ElevenLabs WS] Agent requested end_call');
+                        this.sendToolResult(toolCallId, 'Call ended');
                         this.callbacks?.onClose();
+                    } else if (this.callbacks?.onToolCall) {
+                        // Delegate to handler for tools like send_dtmf
+                        this.callbacks.onToolCall(toolName, toolCallId, toolParams)
+                            .then(({ result, isError }) => {
+                                this.sendToolResult(toolCallId, result, isError);
+                            })
+                            .catch((err) => {
+                                console.error('[ElevenLabs WS] Tool call error:', err);
+                                this.sendToolResult(toolCallId, `Error: ${err.message}`, true);
+                            });
+                    } else {
+                        console.log('[ElevenLabs WS] Unhandled tool call:', toolName);
+                        this.sendToolResult(toolCallId, `Tool ${toolName} not implemented`, true);
                     }
                     break;
+                }
 
                 case 'internal_vad':
                     // Voice Activity Detection event - ignore
@@ -287,6 +306,25 @@ export class ElevenLabsWsService {
 
         console.log('[ElevenLabs WS] Injecting context:', contextText.substring(0, 100) + '...');
         this.webSocket.send(JSON.stringify(contextMessage));
+    }
+
+    /**
+     * Send a client tool result back to ElevenLabs
+     */
+    private sendToolResult(toolCallId: string, result: string, isError?: boolean): void {
+        if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        const resultMessage = {
+            type: 'client_tool_result',
+            tool_call_id: toolCallId,
+            result: result,
+            is_error: isError || false
+        };
+
+        console.log('[ElevenLabs WS] Sending tool result:', JSON.stringify(resultMessage));
+        this.webSocket.send(JSON.stringify(resultMessage));
     }
 
     /**
