@@ -52,7 +52,7 @@ export const incomingToolsDefinitions: MCPToolDefinition[] = [
                 },
                 elevenLabsVoiceId: {
                     type: 'string',
-                    description: 'ElevenLabs voice ID. Female: Rachel (21m00Tcm4TlvDq8ikWAM), Sarah (EXAVITQu4vr4xnSDxMaL), Charlotte (XB0fDUnXU5powFXDhCwa), Matilda (XrExE9yKIg1WjnnlVkGX), Lily (pFZP5JQG7iQjIQuC4Bku). Male: Adam (pNInz6obpgDQGcFmaJgB), Antoni (ErXwobaYiN019PkySvjV), Arnold (VR6AewLTigWG4xSOukaG), Sam (yoZ06aMxZJJ28mfd3POQ), Josh (TxGEqnHWrfWFTfGW9XjX).'
+                    description: 'ElevenLabs voice ID. Choose natural, conversational voices. RECOMMENDED Female: Sarah (EXAVITQu4vr4xnSDxMaL), Alice (Xb7hH8MSUJpSbSDYk0k2), Rachel (21m00Tcm4TlvDq8ikWAM), Nicole (piTKgcLEGmPE4e6mEKli). RECOMMENDED Male: Chris (iP95p4xoKVk53GoZ742B), Charlie (IKne3meq5aSn9XLyUdCD), Dave (CYw3kZ02Hs0563khs1Fj), Daniel (onwK4e9ZLuTAKqWW03F9), James (ZQe5CZNOzWyzPSCn5a3c).'
                 },
                 enabled: {
                     type: 'boolean',

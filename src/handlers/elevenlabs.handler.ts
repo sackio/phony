@@ -174,6 +174,27 @@ export class ElevenLabsCallHandler implements ICallHandler {
             onClose: () => {
                 this.elevenLabsEventProcessor.handleClose();
             },
+            onToolCall: async (toolName, toolCallId, parameters) => {
+                console.log(`[ElevenLabs Handler] Tool call: ${toolName}`, parameters);
+                if (toolName === 'send_dtmf') {
+                    const digits = parameters.digits;
+                    if (!digits) {
+                        return { result: 'No digits provided', isError: true };
+                    }
+                    if (!this.callState.callSid) {
+                        return { result: 'No active call to send DTMF to', isError: true };
+                    }
+                    try {
+                        await this.twilioCallService.sendDTMF(this.callState.callSid, digits);
+                        console.log(`[ElevenLabs Handler] DTMF sent: ${digits}`);
+                        return { result: `Successfully sent DTMF tones: ${digits}` };
+                    } catch (error: any) {
+                        console.error(`[ElevenLabs Handler] DTMF error:`, error);
+                        return { result: `Failed to send DTMF: ${error.message}`, isError: true };
+                    }
+                }
+                return { result: `Unknown tool: ${toolName}`, isError: true };
+            },
             onReady: async () => {
                 console.log('[ElevenLabs Handler] ElevenLabs session ready');
 
