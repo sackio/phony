@@ -188,6 +188,87 @@ export const callToolsDefinitions: MCPToolDefinition[] = [
         }
     },
     {
+        name: 'phony_delete_call',
+        description: 'Delete a call record from the database by its call SID',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                callSid: {
+                    type: 'string',
+                    description: 'Twilio call SID (e.g., CA1234567890abcdef)'
+                }
+            },
+            required: ['callSid']
+        }
+    },
+    {
+        name: 'phony_delete_calls',
+        description: 'Delete multiple call records from the database matching the given filters. At least one filter is required.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                callType: {
+                    type: 'string',
+                    description: 'Filter by call type',
+                    enum: ['inbound', 'outbound']
+                },
+                status: {
+                    type: 'string',
+                    description: 'Filter by call status',
+                    enum: ['initiated', 'in-progress', 'completed', 'failed']
+                },
+                startDate: {
+                    type: 'string',
+                    description: 'Delete calls started after this date (ISO format, e.g., 2024-01-15)'
+                },
+                endDate: {
+                    type: 'string',
+                    description: 'Delete calls started before this date (ISO format, e.g., 2024-01-20)'
+                }
+            }
+        }
+    },
+    {
+        name: 'phony_search_calls',
+        description: 'Search call records by text content. Searches call context, system instructions, and conversation transcripts.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                query: {
+                    type: 'string',
+                    description: 'Search query text to find in call context, instructions, or transcripts'
+                },
+                callType: {
+                    type: 'string',
+                    description: 'Filter by call type',
+                    enum: ['inbound', 'outbound']
+                },
+                phoneNumber: {
+                    type: 'string',
+                    description: 'Filter by phone number (matches either caller or recipient)'
+                },
+                status: {
+                    type: 'string',
+                    description: 'Filter by call status',
+                    enum: ['initiated', 'in-progress', 'completed', 'failed']
+                },
+                startDate: {
+                    type: 'string',
+                    description: 'Filter calls after this date (ISO format, e.g., 2024-01-15)'
+                },
+                endDate: {
+                    type: 'string',
+                    description: 'Filter calls before this date (ISO format, e.g., 2024-01-20)'
+                },
+                limit: {
+                    type: 'number',
+                    description: 'Maximum number of calls to return (default: 50, max: 100)'
+                }
+            },
+            required: ['query']
+        }
+    },
+    {
         name: 'phony_emergency_shutdown',
         description: 'EMERGENCY: Terminate ALL active calls immediately. Use this as a safety measure if calls are running uncontrolled or consuming excessive credits.',
         inputSchema: {
@@ -495,6 +576,88 @@ export function createCallToolHandlers(
                 });
             } catch (error: any) {
                 return createToolError('Failed to get transcript', { message: error.message });
+            }
+        },
+
+        phony_delete_call: async (args) => {
+            try {
+                validateArgs(args, ['callSid']);
+
+                const success = await transcriptService.deleteCall(args.callSid);
+
+                if (!success) {
+                    return createToolError(`Call not found: ${args.callSid}`);
+                }
+
+                return createToolResponse({
+                    success: true,
+                    message: `Call record ${args.callSid} deleted`
+                });
+            } catch (error: any) {
+                return createToolError('Failed to delete call', { message: error.message });
+            }
+        },
+
+        phony_delete_calls: async (args) => {
+            try {
+                const options: any = {};
+
+                if (args.callType) options.callType = args.callType;
+                if (args.status) options.status = args.status;
+                if (args.startDate) options.startDate = new Date(args.startDate);
+                if (args.endDate) options.endDate = new Date(args.endDate);
+
+                const hasFilters = args.callType || args.status || args.startDate || args.endDate;
+                if (!hasFilters) {
+                    return createToolError('At least one filter is required to prevent accidental deletion of all call records');
+                }
+
+                const deletedCount = await transcriptService.deleteManyCalls(options);
+
+                return createToolResponse({
+                    success: true,
+                    message: `Deleted ${deletedCount} call record(s)`,
+                    data: { deletedCount }
+                });
+            } catch (error: any) {
+                return createToolError('Failed to delete calls', { message: error.message });
+            }
+        },
+
+        phony_search_calls: async (args) => {
+            try {
+                validateArgs(args, ['query']);
+
+                const options: any = { query: args.query.trim() };
+
+                if (args.callType) options.callType = args.callType;
+                if (args.status) options.status = args.status;
+                if (args.phoneNumber) options.phoneNumber = sanitizePhoneNumber(args.phoneNumber);
+                if (args.startDate) options.startDate = new Date(args.startDate);
+                if (args.endDate) options.endDate = new Date(args.endDate);
+                if (args.limit) options.limit = Math.min(args.limit, 100);
+
+                const calls = await transcriptService.searchCalls(options);
+
+                return createToolResponse({
+                    query: args.query,
+                    calls: calls.map(call => ({
+                        callSid: call.callSid,
+                        fromNumber: call.fromNumber,
+                        toNumber: call.toNumber,
+                        callType: call.callType,
+                        status: call.status,
+                        callContext: call.callContext,
+                        systemInstructions: call.systemInstructions,
+                        startedAt: call.startedAt,
+                        endedAt: call.endedAt,
+                        duration: call.duration,
+                        tags: call.tags
+                    })),
+                    count: calls.length
+                });
+            } catch (error: any) {
+                return createToolError('Failed to search calls', { message: error.message });
             }
         },
 

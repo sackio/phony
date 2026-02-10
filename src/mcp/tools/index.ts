@@ -11,6 +11,7 @@ import { contextsToolsDefinitions, createContextsToolHandlers } from './contexts
 import { debugToolsDefinitions, createDebugToolHandlers } from './debug.tools.js';
 import { smsToolsDefinitions, createSmsToolHandlers } from './sms.tools.js';
 import { voicemailToolsDefinitions, createVoicemailToolHandlers } from './voicemail.tools.js';
+import { tagsToolsDefinitions, createTagsToolHandlers } from './tags.tools.js';
 
 /**
  * Tool Registry
@@ -35,7 +36,8 @@ export class ToolRegistry {
             ...contextsToolsDefinitions,
             ...debugToolsDefinitions,
             ...smsToolsDefinitions,
-            ...voicemailToolsDefinitions
+            ...voicemailToolsDefinitions,
+            ...tagsToolsDefinitions
         ];
 
         // Create all tool handlers
@@ -45,6 +47,7 @@ export class ToolRegistry {
         const debugHandlers = createDebugToolHandlers(transcriptService, incomingConfigService, contextService);
         const smsHandlers = createSmsToolHandlers();
         const voicemailHandlers = createVoicemailToolHandlers();
+        const tagsHandlers = createTagsToolHandlers();
 
         // Combine into map
         this.handlers = new Map([
@@ -53,7 +56,8 @@ export class ToolRegistry {
             ...Object.entries(contextsHandlers),
             ...Object.entries(debugHandlers),
             ...Object.entries(smsHandlers),
-            ...Object.entries(voicemailHandlers)
+            ...Object.entries(voicemailHandlers),
+            ...Object.entries(tagsHandlers)
         ]);
     }
 

@@ -18,6 +18,7 @@ export interface IVoicemail extends Document {
     transcriptionSid?: string; // Twilio transcription SID
     status: VoicemailStatus;
     isRead: boolean; // Whether the voicemail has been read/listened to
+    tags: string[];
     errorMessage?: string;
     createdAt: Date;
     updatedAt: Date;
@@ -75,6 +76,10 @@ const VoicemailSchema = new Schema<IVoicemail>({
     errorMessage: {
         type: String,
         required: false
+    },
+    tags: {
+        type: [String],
+        default: []
     }
 }, {
     timestamps: true
@@ -88,5 +93,6 @@ VoicemailSchema.index({ status: 1, createdAt: -1 });
 
 // Text index for searching transcriptions
 VoicemailSchema.index({ transcription: 'text' });
+VoicemailSchema.index({ tags: 1 });
 
 export const VoicemailModel = mongoose.model<IVoicemail>('Voicemail', VoicemailSchema);

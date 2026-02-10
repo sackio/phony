@@ -176,6 +176,147 @@ export class CallTranscriptService {
     }
 
     /**
+     * Delete a call record by callSid
+     */
+    public async deleteCall(callSid: string): Promise<boolean> {
+        if (!this.mongoService.getIsConnected()) {
+            throw new Error('MongoDB not connected');
+        }
+
+        try {
+            const result = await CallModel.deleteOne({ callSid });
+            console.log(`[CallTranscript] Deleted call ${callSid}`);
+            return result.deletedCount > 0;
+        } catch (error) {
+            console.error(`[CallTranscript] Error deleting call:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Delete multiple call records matching filters
+     */
+    public async deleteManyCalls(options: {
+        callType?: string;
+        status?: string;
+        startDate?: Date;
+        endDate?: Date;
+    }): Promise<number> {
+        if (!this.mongoService.getIsConnected()) {
+            throw new Error('MongoDB not connected');
+        }
+
+        try {
+            const query: any = {};
+
+            if (options.callType) query.callType = options.callType;
+            if (options.status) query.status = options.status;
+
+            if (options.startDate || options.endDate) {
+                query.startedAt = {};
+                if (options.startDate) query.startedAt.$gte = options.startDate;
+                if (options.endDate) query.startedAt.$lte = options.endDate;
+            }
+
+            // Require at least one filter to prevent accidental deletion of everything
+            if (Object.keys(query).length === 0) {
+                throw new Error('At least one filter is required for bulk delete');
+            }
+
+            const result = await CallModel.deleteMany(query);
+            console.log(`[CallTranscript] Deleted ${result.deletedCount} call records`);
+            return result.deletedCount;
+        } catch (error) {
+            console.error(`[CallTranscript] Error deleting call records:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Search calls by text content
+     * Uses $text on callContext/systemInstructions and $regex on conversationHistory.content
+     */
+    public async searchCalls(options: {
+        query: string;
+        callType?: string;
+        phoneNumber?: string;
+        status?: string;
+        startDate?: Date;
+        endDate?: Date;
+        limit?: number;
+    }): Promise<ICall[]> {
+        if (!this.mongoService.getIsConnected()) {
+            return [];
+        }
+
+        try {
+            const limit = options.limit || 50;
+
+            // First: text index search on callContext + systemInstructions
+            const textFilter: any = {
+                $text: { $search: options.query }
+            };
+
+            if (options.callType) textFilter.callType = options.callType;
+            if (options.status) textFilter.status = options.status;
+            if (options.phoneNumber) {
+                textFilter.$or = [
+                    { fromNumber: options.phoneNumber },
+                    { toNumber: options.phoneNumber }
+                ];
+            }
+            if (options.startDate || options.endDate) {
+                textFilter.startedAt = {};
+                if (options.startDate) textFilter.startedAt.$gte = options.startDate;
+                if (options.endDate) textFilter.startedAt.$lte = options.endDate;
+            }
+
+            const textResults = await CallModel.find(textFilter, { score: { $meta: 'textScore' } })
+                .sort({ score: { $meta: 'textScore' } })
+                .limit(limit);
+
+            // Second: regex search on conversationHistory.content for transcript matches
+            const regexFilter: any = {
+                'conversationHistory.content': { $regex: options.query, $options: 'i' }
+            };
+
+            if (options.callType) regexFilter.callType = options.callType;
+            if (options.status) regexFilter.status = options.status;
+            if (options.phoneNumber) {
+                regexFilter.$or = [
+                    { fromNumber: options.phoneNumber },
+                    { toNumber: options.phoneNumber }
+                ];
+            }
+            if (options.startDate || options.endDate) {
+                regexFilter.startedAt = {};
+                if (options.startDate) regexFilter.startedAt.$gte = options.startDate;
+                if (options.endDate) regexFilter.startedAt.$lte = options.endDate;
+            }
+
+            const regexResults = await CallModel.find(regexFilter)
+                .sort({ startedAt: -1 })
+                .limit(limit);
+
+            // Merge results, dedup by callSid, text matches first
+            const seen = new Set<string>();
+            const merged: ICall[] = [];
+
+            for (const call of [...textResults, ...regexResults]) {
+                if (!seen.has(call.callSid)) {
+                    seen.add(call.callSid);
+                    merged.push(call);
+                }
+            }
+
+            return merged.slice(0, limit);
+        } catch (error) {
+            console.error(`[CallTranscript] Error searching calls:`, error);
+            return [];
+        }
+    }
+
+    /**
      * Get recent calls
      */
     public async getRecentCalls(limit: number = 50): Promise<ICall[]> {

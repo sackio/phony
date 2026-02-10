@@ -14,6 +14,7 @@ export interface ISms extends Document {
     errorCode?: string;
     numMedia?: number;
     mediaUrls?: string[];
+    tags: string[];
     createdAt: Date;
     updatedAt: Date;
 }
@@ -72,6 +73,10 @@ const SmsSchema = new Schema<ISms>({
     mediaUrls: {
         type: [String],
         default: []
+    },
+    tags: {
+        type: [String],
+        default: []
     }
 }, {
     timestamps: true
@@ -86,5 +91,6 @@ SmsSchema.index({ createdAt: -1 });
 
 // Text index for full-text search on message body
 SmsSchema.index({ body: 'text' });
+SmsSchema.index({ tags: 1 });
 
 export const SmsModel = mongoose.model<ISms>('Sms', SmsSchema);
