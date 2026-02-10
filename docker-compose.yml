@@ -46,7 +46,7 @@ services:
       ELEVENLABS_DEFAULT_VOICE_ID: ${ELEVENLABS_DEFAULT_VOICE_ID:-}
 
       # API Secret
-      API_SECRET: ${API_SECRET:-test-secret-12345}
+      API_SECRET: ${API_SECRET}
 
       # MongoDB connection
       MONGODB_URI: mongodb://${MONGODB_USERNAME}:${MONGODB_PASSWORD}@mongodb:27017/phony?authSource=admin

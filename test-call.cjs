@@ -8,7 +8,7 @@ const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const TWILIO_NUMBER = process.env.TWILIO_NUMBER;
 const PUBLIC_URL = process.env.PUBLIC_URL;
 // Use the same fixed secret as the server
-const DYNAMIC_API_SECRET = process.env.API_SECRET || 'test-secret-12345';
+const DYNAMIC_API_SECRET = process.env.API_SECRET || '';
 
 // Get phone number from command line or use test number
 const TO_NUMBER = process.argv[2] || process.env.TEST_PHONE_NUMBER;

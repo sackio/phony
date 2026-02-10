@@ -245,6 +245,48 @@ export class VoicemailService {
     }
 
     /**
+     * Delete multiple voicemails matching filters
+     */
+    public async deleteManyVoicemails(options: {
+        fromNumber?: string;
+        toNumber?: string;
+        isRead?: boolean;
+        status?: VoicemailStatus;
+        startDate?: Date;
+        endDate?: Date;
+    }): Promise<number> {
+        if (!this.mongoService.getIsConnected()) {
+            throw new Error('MongoDB not connected');
+        }
+
+        try {
+            const query: any = {};
+
+            if (options.fromNumber) query.fromNumber = options.fromNumber;
+            if (options.toNumber) query.toNumber = options.toNumber;
+            if (options.isRead !== undefined) query.isRead = options.isRead;
+            if (options.status) query.status = options.status;
+
+            if (options.startDate || options.endDate) {
+                query.createdAt = {};
+                if (options.startDate) query.createdAt.$gte = options.startDate;
+                if (options.endDate) query.createdAt.$lte = options.endDate;
+            }
+
+            if (Object.keys(query).length === 0) {
+                throw new Error('At least one filter is required for bulk delete');
+            }
+
+            const result = await VoicemailModel.deleteMany(query);
+            console.log(`[Voicemail] Deleted ${result.deletedCount} voicemails`);
+            return result.deletedCount;
+        } catch (error) {
+            console.error('[Voicemail] Error deleting voicemails:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Get unread voicemail count for a phone number
      */
     public async getUnreadCount(toNumber: string): Promise<number> {

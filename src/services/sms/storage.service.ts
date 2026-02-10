@@ -202,6 +202,67 @@ export class SmsStorageService {
     }
 
     /**
+     * Delete an SMS message by messageSid
+     */
+    public async deleteSms(messageSid: string): Promise<boolean> {
+        if (!this.mongoService.getIsConnected()) {
+            throw new Error('MongoDB not connected');
+        }
+
+        try {
+            const result = await SmsModel.deleteOne({ messageSid });
+            console.log(`[SmsStorage] Deleted SMS ${messageSid}`);
+            return result.deletedCount > 0;
+        } catch (error) {
+            console.error('[SmsStorage] Error deleting SMS:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Delete multiple SMS messages matching filters
+     */
+    public async deleteManySms(options: {
+        direction?: SmsDirection;
+        fromNumber?: string;
+        toNumber?: string;
+        status?: SmsStatus;
+        startDate?: Date;
+        endDate?: Date;
+    }): Promise<number> {
+        if (!this.mongoService.getIsConnected()) {
+            throw new Error('MongoDB not connected');
+        }
+
+        try {
+            const query: any = {};
+
+            if (options.direction) query.direction = options.direction;
+            if (options.fromNumber) query.fromNumber = options.fromNumber;
+            if (options.toNumber) query.toNumber = options.toNumber;
+            if (options.status) query.status = options.status;
+
+            if (options.startDate || options.endDate) {
+                query.createdAt = {};
+                if (options.startDate) query.createdAt.$gte = options.startDate;
+                if (options.endDate) query.createdAt.$lte = options.endDate;
+            }
+
+            // Require at least one filter to prevent accidental deletion of everything
+            if (Object.keys(query).length === 0) {
+                throw new Error('At least one filter is required for bulk delete');
+            }
+
+            const result = await SmsModel.deleteMany(query);
+            console.log(`[SmsStorage] Deleted ${result.deletedCount} SMS messages`);
+            return result.deletedCount;
+        } catch (error) {
+            console.error('[SmsStorage] Error deleting SMS messages:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Search SMS messages by text content using MongoDB full-text search
      */
     public async searchSms(options: {

@@ -39,6 +39,7 @@ export interface ICall extends Document {
     endedAt?: Date;
     duration?: number; // in seconds
     status: 'initiated' | 'in-progress' | 'completed' | 'failed';
+    tags: string[];
     errorMessage?: string;
 }
 
@@ -172,6 +173,10 @@ const CallSchema = new Schema<ICall>({
     },
     errorMessage: {
         type: String
+    },
+    tags: {
+        type: [String],
+        default: []
     }
 }, {
     timestamps: true
@@ -180,5 +185,7 @@ const CallSchema = new Schema<ICall>({
 // Create indexes for common queries
 CallSchema.index({ startedAt: -1 });
 CallSchema.index({ status: 1, startedAt: -1 });
+CallSchema.index({ tags: 1 });
+CallSchema.index({ callContext: 'text', systemInstructions: 'text' });
 
 export const CallModel = mongoose.model<ICall>('Call', CallSchema);

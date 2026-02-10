@@ -289,6 +289,55 @@ export const smsToolsDefinitions: MCPToolDefinition[] = [
         }
     },
     {
+        name: 'phony_delete_message',
+        description: 'Delete a single SMS message from the database by its message SID',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                messageSid: {
+                    type: 'string',
+                    description: 'Twilio message SID (e.g., SM1234567890abcdef)'
+                }
+            },
+            required: ['messageSid']
+        }
+    },
+    {
+        name: 'phony_delete_messages',
+        description: 'Delete multiple SMS messages from the database matching the given filters. At least one filter is required.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                direction: {
+                    type: 'string',
+                    description: 'Filter by message direction',
+                    enum: ['inbound', 'outbound']
+                },
+                fromNumber: {
+                    type: 'string',
+                    description: 'Filter by sender phone number in E.164 format'
+                },
+                toNumber: {
+                    type: 'string',
+                    description: 'Filter by recipient phone number in E.164 format'
+                },
+                status: {
+                    type: 'string',
+                    description: 'Filter by message status',
+                    enum: ['queued', 'sending', 'sent', 'delivered', 'undelivered', 'failed', 'received']
+                },
+                startDate: {
+                    type: 'string',
+                    description: 'Delete messages after this date (ISO format, e.g., 2024-01-15)'
+                },
+                endDate: {
+                    type: 'string',
+                    description: 'Delete messages before this date (ISO format, e.g., 2024-01-20)'
+                }
+            }
+        }
+    },
+    {
         name: 'phony_send_group_sms',
         description: 'Send an SMS/MMS message to all participants in a group conversation',
         inputSchema: {
@@ -849,6 +898,71 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
             } catch (error: any) {
                 console.error('[MCP SMS] Error updating group name:', error);
                 return createToolError(`Failed to update group name: ${error.message}`);
+            }
+        },
+
+        phony_delete_message: async (args: any) => {
+            try {
+                const messageSid = args.messageSid;
+
+                if (!messageSid) {
+                    return createToolError('Message SID is required');
+                }
+
+                const success = await storageService.deleteSms(messageSid);
+
+                if (!success) {
+                    return createToolError(`Message not found: ${messageSid}`);
+                }
+
+                return createToolResponse({
+                    status: 'success',
+                    message: `Message ${messageSid} deleted`
+                });
+            } catch (error: any) {
+                console.error('[MCP SMS] Error deleting message:', error);
+                return createToolError(`Failed to delete message: ${error.message}`);
+            }
+        },
+
+        phony_delete_messages: async (args: any) => {
+            try {
+                const options: any = {};
+
+                if (args.direction) {
+                    options.direction = args.direction as SmsDirection;
+                }
+                if (args.fromNumber) {
+                    options.fromNumber = sanitizePhoneNumber(args.fromNumber);
+                }
+                if (args.toNumber) {
+                    options.toNumber = sanitizePhoneNumber(args.toNumber);
+                }
+                if (args.status) {
+                    options.status = args.status as SmsStatus;
+                }
+                if (args.startDate) {
+                    options.startDate = new Date(args.startDate);
+                }
+                if (args.endDate) {
+                    options.endDate = new Date(args.endDate);
+                }
+
+                const hasFilters = args.direction || args.fromNumber || args.toNumber || args.status || args.startDate || args.endDate;
+                if (!hasFilters) {
+                    return createToolError('At least one filter is required to prevent accidental deletion of all messages');
+                }
+
+                const deletedCount = await storageService.deleteManySms(options);
+
+                return createToolResponse({
+                    status: 'success',
+                    message: `Deleted ${deletedCount} message(s)`,
+                    data: { deletedCount }
+                });
+            } catch (error: any) {
+                console.error('[MCP SMS] Error deleting messages:', error);
+                return createToolError(`Failed to delete messages: ${error.message}`);
             }
         },
 

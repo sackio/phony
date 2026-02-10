@@ -103,6 +103,40 @@ export const voicemailToolsDefinitions: MCPToolDefinition[] = [
         }
     },
     {
+        name: 'phony_delete_voicemails',
+        description: 'Delete multiple voicemail messages from the database matching the given filters. At least one filter is required.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                fromNumber: {
+                    type: 'string',
+                    description: 'Filter by caller phone number in E.164 format'
+                },
+                toNumber: {
+                    type: 'string',
+                    description: 'Filter by recipient phone number in E.164 format'
+                },
+                isRead: {
+                    type: 'boolean',
+                    description: 'Filter by read status (true for read, false for unread)'
+                },
+                status: {
+                    type: 'string',
+                    description: 'Filter by voicemail status',
+                    enum: ['recording', 'transcribing', 'completed', 'failed']
+                },
+                startDate: {
+                    type: 'string',
+                    description: 'Delete voicemails after this date (ISO format, e.g., 2024-01-15)'
+                },
+                endDate: {
+                    type: 'string',
+                    description: 'Delete voicemails before this date (ISO format, e.g., 2024-01-20)'
+                }
+            }
+        }
+    },
+    {
         name: 'phony_get_unread_voicemail_count',
         description: 'Get the count of unread voicemails for a phone number',
         inputSchema: {
@@ -289,6 +323,34 @@ export function createVoicemailToolHandlers(): Record<string, MCPToolHandler> {
                 });
             } catch (error: any) {
                 return createToolError('Failed to delete voicemail', { message: error.message });
+            }
+        },
+
+        phony_delete_voicemails: async (args) => {
+            try {
+                const options: any = {};
+
+                if (args.fromNumber) options.fromNumber = sanitizePhoneNumber(args.fromNumber);
+                if (args.toNumber) options.toNumber = sanitizePhoneNumber(args.toNumber);
+                if (args.isRead !== undefined) options.isRead = args.isRead;
+                if (args.status) options.status = args.status as VoicemailStatus;
+                if (args.startDate) options.startDate = new Date(args.startDate);
+                if (args.endDate) options.endDate = new Date(args.endDate);
+
+                const hasFilters = args.fromNumber || args.toNumber || args.isRead !== undefined || args.status || args.startDate || args.endDate;
+                if (!hasFilters) {
+                    return createToolError('At least one filter is required to prevent accidental deletion of all voicemails');
+                }
+
+                const deletedCount = await voicemailService.deleteManyVoicemails(options);
+
+                return createToolResponse({
+                    success: true,
+                    message: `Deleted ${deletedCount} voicemail(s)`,
+                    data: { deletedCount }
+                });
+            } catch (error: any) {
+                return createToolError('Failed to delete voicemails', { message: error.message });
             }
         },
 
