@@ -51,8 +51,15 @@ services:
       # MongoDB connection
       MONGODB_URI: mongodb://${MONGODB_USERNAME}:${MONGODB_PASSWORD}@mongodb:27017/phony?authSource=admin
 
+      # SMS whitelist
+      SMS_ENABLED_NUMBERS: ${SMS_ENABLED_NUMBERS:-+18575550111}
+
       # Optional settings
       RECORD_CALLS: ${RECORD_CALLS:-false}
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 127.0.0.11
     depends_on:
       mongodb:
         condition: service_healthy

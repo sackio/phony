@@ -27,8 +27,6 @@ export const GOODBYE_PHRASES = [
     'have a good day',
     'have a nice day',
     'take care',
-    'thanks for calling',
-    'thank you for calling',
 ];
 
 // Production Safety Controls - ALWAYS ENFORCED

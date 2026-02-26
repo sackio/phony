@@ -7,7 +7,7 @@ import path from 'path';
 import twilio from 'twilio';
 import { Server as HTTPServer } from 'http';
 import { CallType } from '../types.js';
-import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER, DEFAULT_INCOMING_CALL_MESSAGE, DEFAULT_INCOMING_CALL_VOICE } from '../config/constants.js';
+import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER, DEFAULT_INCOMING_CALL_MESSAGE, DEFAULT_INCOMING_CALL_VOICE, SMS_PROXY_TARGET_NUMBER } from '../config/constants.js';
 import { CreateSessionOptions, CallSessionManager } from '../services/session-manager.service.js';
 import { TwilioCallService } from '../services/twilio/call.service.js';
 import { TwilioSmsService } from '../services/twilio/sms.service.js';
@@ -20,6 +20,7 @@ import { CallTranscriptService } from '../services/database/call-transcript.serv
 import { SessionManagerService } from '../services/session-manager.service.js';
 import { createMCPRouter } from '../mcp/router.js';
 import { VoicemailService } from '../services/voicemail/voicemail.service.js';
+import { TempMediaService } from '../services/temp-media.service.js';
 dotenv.config();
 
 export class VoiceServer {
@@ -37,6 +38,7 @@ export class VoiceServer {
     private contextService: ContextService;
     private transcriptService: CallTranscriptService;
     private voicemailService: VoicemailService;
+    private tempMediaService: TempMediaService;
 
     constructor(callbackUrl: string, sessionManager: CallSessionManager, transcriptService: CallTranscriptService) {
         this.callbackUrl = callbackUrl;
@@ -59,6 +61,8 @@ export class VoiceServer {
         this.incomingConfigService = new IncomingConfigService();
         this.contextService = new ContextService();
         this.voicemailService = new VoicemailService();
+        this.tempMediaService = new TempMediaService();
+        this.tempMediaService.startCleanup();
 
         this.configureMiddleware();
         this.setupRoutes();
@@ -72,6 +76,9 @@ export class VoiceServer {
         const publicPath = path.join(process.cwd(), 'public');
         console.log('[Voice Server] Serving public files from:', publicPath);
         this.app.use('/audio', express.static(path.join(publicPath, 'audio')));
+
+        // Serve temp media files (for base64 → public URL MMS support)
+        this.app.use('/media/temp', express.static('/tmp/phony-media'));
 
         // Serve frontend static files
         const frontendPath = path.join(process.cwd(), 'frontend/dist');
@@ -1663,6 +1670,16 @@ export class VoiceServer {
                 recordingUrl: RecordingUrl
             });
 
+            // Send SMS notification for new voicemail
+            try {
+                const duration = parseInt(RecordingDuration) || 0;
+                const notifBody = `New voicemail from ${fromNumber} on ${toNumber} (${duration}s). Transcription pending...`;
+                await this.twilioSmsService.sendSms(SMS_PROXY_TARGET_NUMBER, notifBody, process.env.TWILIO_NUMBER);
+                console.log(`[Voice Server] Voicemail notification sent to ${SMS_PROXY_TARGET_NUMBER}`);
+            } catch (notifError) {
+                console.error('[Voice Server] Failed to send voicemail notification SMS:', notifError);
+            }
+
             res.status(200).send('OK');
         } catch (error) {
             console.error('[Voice Server] Error handling voicemail recording:', error);
@@ -1705,6 +1722,18 @@ export class VoiceServer {
                     TranscriptionSid
                 );
                 console.log(`[Voice Server] Voicemail transcription saved for ${RecordingSid}`);
+
+                // Send transcription via SMS
+                try {
+                    const voicemail = await this.voicemailService.getVoicemail(RecordingSid);
+                    const from = voicemail?.fromNumber || 'unknown';
+                    const to = voicemail?.toNumber || process.env.TWILIO_NUMBER || '';
+                    const preview = TranscriptionText.length > 1400 ? TranscriptionText.substring(0, 1400) + '...' : TranscriptionText;
+                    await this.twilioSmsService.sendSms(SMS_PROXY_TARGET_NUMBER, `Voicemail from ${from}: "${preview}"`, process.env.TWILIO_NUMBER);
+                    console.log(`[Voice Server] Voicemail transcription SMS sent to ${SMS_PROXY_TARGET_NUMBER}`);
+                } catch (notifError) {
+                    console.error('[Voice Server] Failed to send transcription notification SMS:', notifError);
+                }
             } else if (TranscriptionStatus === 'failed') {
                 // Mark transcription as failed
                 await this.voicemailService.markTranscriptionFailed(
@@ -1712,6 +1741,16 @@ export class VoiceServer {
                     'Twilio transcription failed'
                 );
                 console.log(`[Voice Server] Voicemail transcription failed for ${RecordingSid}`);
+
+                // Notify about failed transcription
+                try {
+                    const voicemail = await this.voicemailService.getVoicemail(RecordingSid);
+                    const from = voicemail?.fromNumber || 'unknown';
+                    const to = voicemail?.toNumber || process.env.TWILIO_NUMBER || '';
+                    await this.twilioSmsService.sendSms(SMS_PROXY_TARGET_NUMBER, `Voicemail from ${from} (transcription failed - check recording)`, process.env.TWILIO_NUMBER);
+                } catch (notifError) {
+                    console.error('[Voice Server] Failed to send transcription failure SMS:', notifError);
+                }
             }
 
             res.status(200).send('OK');

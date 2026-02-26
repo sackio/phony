@@ -3,6 +3,7 @@ import { createToolResponse, createToolError, sanitizePhoneNumber } from '../uti
 import { TwilioSmsService } from '../../services/twilio/sms.service.js';
 import { SmsStorageService } from '../../services/sms/storage.service.js';
 import { ConversationService } from '../../services/sms/conversation.service.js';
+import { TempMediaService } from '../../services/temp-media.service.js';
 import twilio from 'twilio';
 import { SmsDirection, SmsStatus } from '../../types.js';
 
@@ -81,6 +82,19 @@ export const smsToolsDefinitions: MCPToolDefinition[] = [
                     type: 'array',
                     items: { type: 'string' },
                     description: 'Optional array of publicly accessible URLs for media files (images, PDFs, etc.). Max 10 URLs. Supported formats: jpg, gif, png, pdf, and more. URLs must be publicly accessible.'
+                },
+                mediaFiles: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            filename: { type: 'string', description: 'File name with extension (e.g., "photo.jpg")' },
+                            mimeType: { type: 'string', description: 'MIME type (e.g., "image/jpeg")' },
+                            data: { type: 'string', description: 'Base64-encoded file content' }
+                        },
+                        required: ['filename', 'mimeType', 'data']
+                    },
+                    description: 'Optional array of base64-encoded files to attach. The server will temporarily host them for Twilio to fetch. Max 10 files. Use this when you have file content but no public URL.'
                 }
             },
             required: ['toNumber']
@@ -371,6 +385,7 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
     const smsService = new TwilioSmsService(twilioClient);
     const storageService = new SmsStorageService();
     const conversationService = new ConversationService();
+    const tempMediaService = new TempMediaService();
 
     return {
         phony_list_numbers: async (args: any) => {
@@ -469,21 +484,38 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
 
         phony_send_sms: async (args: any) => {
             try {
-                const toNumber = sanitizePhoneNumber(args.toNumber);
-                const body = args.body || '';
-                const fromNumber = args.fromNumber ? sanitizePhoneNumber(args.fromNumber) : undefined;
-                const mediaUrls = args.mediaUrls as string[] | undefined;
+                console.log('[MCP SMS] phony_send_sms called with args:', JSON.stringify(args));
+                const toNumber = sanitizePhoneNumber(args.toNumber || args.to);
+                const body = args.body || args.message || '';
+                const fromNumber = (args.fromNumber || args.from) ? sanitizePhoneNumber(args.fromNumber || args.from) : undefined;
+                const mediaUrls = args.mediaUrls ? [...(args.mediaUrls as string[])] : [];
+                const mediaFiles = args.mediaFiles as Array<{ filename: string; mimeType: string; data: string }> | undefined;
 
                 if (!toNumber) {
                     return createToolError('Invalid recipient phone number');
                 }
 
+                // Convert base64 mediaFiles to hosted URLs
+                if (mediaFiles && Array.isArray(mediaFiles) && mediaFiles.length > 0) {
+                    for (const file of mediaFiles) {
+                        if (!file.filename || !file.mimeType || !file.data) {
+                            return createToolError('Each mediaFile must have filename, mimeType, and data');
+                        }
+                        try {
+                            const url = tempMediaService.saveBase64File(file.filename, file.mimeType, file.data);
+                            mediaUrls.push(url);
+                        } catch (err: any) {
+                            return createToolError(`Failed to process media file "${file.filename}": ${err.message}`);
+                        }
+                    }
+                }
+
                 // Require either body or media
                 const hasBody = body && typeof body === 'string' && body.trim().length > 0;
-                const hasMedia = mediaUrls && Array.isArray(mediaUrls) && mediaUrls.length > 0;
+                const hasMedia = mediaUrls.length > 0;
 
                 if (!hasBody && !hasMedia) {
-                    return createToolError('Either message body or media URLs are required');
+                    return createToolError('Either message body, media URLs, or media files are required');
                 }
 
                 // Validate media URLs if provided
@@ -494,11 +526,12 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
                         }
                     }
                     if (mediaUrls.length > 10) {
-                        return createToolError('Maximum 10 media URLs allowed per message');
+                        return createToolError('Maximum 10 media URLs/files allowed per message');
                     }
                 }
 
-                const result = await smsService.sendSms(toNumber, body, fromNumber, mediaUrls);
+                const finalMediaUrls = hasMedia ? mediaUrls : undefined;
+                const result = await smsService.sendSms(toNumber, body, fromNumber, finalMediaUrls);
 
                 const messageType = hasMedia ? (hasBody ? 'MMS' : 'MMS (media only)') : 'SMS';
 
@@ -511,8 +544,8 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
                         toNumber: toNumber,
                         fromNumber: fromNumber || process.env.TWILIO_NUMBER,
                         body: body.trim(),
-                        mediaUrls: mediaUrls,
-                        mediaCount: mediaUrls?.length || 0,
+                        mediaUrls: finalMediaUrls,
+                        mediaCount: finalMediaUrls?.length || 0,
                         sentAt: new Date().toISOString()
                     }
                 });
