@@ -54,6 +54,9 @@ services:
       # SMS whitelist
       SMS_ENABLED_NUMBERS: ${SMS_ENABLED_NUMBERS:-+18575550111}
 
+      # Twilio Messaging Service (optional - auto-created if not set)
+      TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}
+
       # Optional settings
       RECORD_CALLS: ${RECORD_CALLS:-false}
     dns:

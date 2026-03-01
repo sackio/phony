@@ -1,6 +1,7 @@
 import { MCPToolDefinition, MCPToolHandler } from '../types.js';
 import { createToolResponse, createToolError, sanitizePhoneNumber } from '../utils.js';
 import { TwilioSmsService } from '../../services/twilio/sms.service.js';
+import { TwilioConversationsService } from '../../services/twilio/conversations.service.js';
 import { SmsStorageService } from '../../services/sms/storage.service.js';
 import { ConversationService } from '../../services/sms/conversation.service.js';
 import { TempMediaService } from '../../services/temp-media.service.js';
@@ -382,7 +383,8 @@ export const smsToolsDefinitions: MCPToolDefinition[] = [
 
 export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
     const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-    const smsService = new TwilioSmsService(twilioClient);
+    const conversationsService = new TwilioConversationsService(twilioClient);
+    const smsService = new TwilioSmsService(twilioClient, conversationsService);
     const storageService = new SmsStorageService();
     const conversationService = new ConversationService();
     const tempMediaService = new TempMediaService();

@@ -7,6 +7,7 @@ export interface IConversation extends Document {
     type: ConversationType; // '1-to-1' or 'group'
     participants: string[]; // Array of phone numbers (E.164 format)
     name?: string; // Optional name for group conversations
+    twilioConversationSid?: string; // Twilio Conversations API resource SID
     createdBy: string; // Phone number of creator
     createdAt: Date;
     updatedAt: Date;
@@ -40,6 +41,11 @@ const ConversationSchema = new Schema<IConversation>({
     name: {
         type: String,
         required: false
+    },
+    twilioConversationSid: {
+        type: String,
+        required: false,
+        index: true
     },
     createdBy: {
         type: String,

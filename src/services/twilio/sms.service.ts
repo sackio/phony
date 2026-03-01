@@ -1,7 +1,8 @@
 import twilio from 'twilio';
 import { SmsDirection, SmsStatus } from '../../types.js';
 import { SmsStorageService } from '../sms/storage.service.js';
-import { SMS_ENABLED_NUMBERS, SMS_PROXY_TARGET_NUMBERS, SMS_PROXY_ENABLED } from '../../config/constants.js';
+import { SMS_ENABLED_NUMBERS, SMS_PROXY_ENABLED } from '../../config/constants.js';
+import { TwilioConversationsService } from './conversations.service.js';
 
 /**
  * Service for handling Twilio SMS operations
@@ -9,75 +10,17 @@ import { SMS_ENABLED_NUMBERS, SMS_PROXY_TARGET_NUMBERS, SMS_PROXY_ENABLED } from
 export class TwilioSmsService {
     private readonly twilioClient: twilio.Twilio;
     private readonly storageService: SmsStorageService;
-
-    // SMS Proxy conversation tracking using last 4 digits of phone number
-    // Maps: twilioNumber -> (last4digits -> fullSenderNumber)
-    private static codeToSender: Map<string, Map<string, string>> = new Map();
+    private readonly conversationsService: TwilioConversationsService;
 
     /**
      * Create a new Twilio SMS service
      * @param twilioClient The Twilio client
+     * @param conversationsService The Twilio Conversations service for group MMS
      */
-    constructor(twilioClient: twilio.Twilio) {
+    constructor(twilioClient: twilio.Twilio, conversationsService: TwilioConversationsService) {
         this.twilioClient = twilioClient;
         this.storageService = new SmsStorageService();
-    }
-
-    /**
-     * Extract last 4 digits from phone number as code
-     */
-    private static getCodeFromNumber(phoneNumber: string): string {
-        // Remove non-digits and get last 4
-        const digits = phoneNumber.replace(/\D/g, '');
-        return digits.slice(-4);
-    }
-
-    /**
-     * Register a sender and return their code (last 4 digits)
-     */
-    private static registerSender(twilioNumber: string, senderNumber: string): string {
-        if (!this.codeToSender.has(twilioNumber)) {
-            this.codeToSender.set(twilioNumber, new Map());
-        }
-
-        const codeMap = this.codeToSender.get(twilioNumber)!;
-        const code = this.getCodeFromNumber(senderNumber);
-
-        // Check if this code is already used by a different number
-        const existing = codeMap.get(code);
-        if (existing && existing !== senderNumber) {
-            console.log(`[TwilioSMS Proxy] Code collision: ${code} already mapped to ${existing}, now also ${senderNumber}`);
-            // In case of collision, the most recent sender wins
-        }
-
-        codeMap.set(code, senderNumber);
-        console.log(`[TwilioSMS Proxy] Registered [${code}] -> ${senderNumber} on ${twilioNumber}`);
-        return code;
-    }
-
-    /**
-     * Look up sender by code (last 4 digits) for a Twilio number
-     */
-    private static getSenderByCode(twilioNumber: string, code: string): string | undefined {
-        const codeMap = this.codeToSender.get(twilioNumber);
-        return codeMap?.get(code);
-    }
-
-    /**
-     * Parse reply to extract code prefix (e.g., "1234: message" or "1234 message")
-     * Returns { code, message } or null if no code prefix found
-     */
-    private static parseReplyCode(body: string): { code: string; message: string } | null {
-        // Match 4-digit code at start followed by : . or space
-        const match = body.match(/^(\d{4})[:.\s]\s*([\s\S]*)$/);
-        if (match) {
-            const code = match[1];
-            const message = match[2].trim();
-            if (message.length > 0) {
-                return { code, message };
-            }
-        }
-        return null;
+        this.conversationsService = conversationsService;
     }
 
     /**
@@ -250,9 +193,9 @@ export class TwilioSmsService {
 
             console.log(`[TwilioSMS] Received SMS ${data.MessageSid} from ${data.From} to ${data.To}`);
 
-            // SMS Proxy Logic
+            // SMS Proxy via Twilio Conversations API (group MMS)
             if (SMS_PROXY_ENABLED) {
-                await this.handleSmsProxy(data.From, data.To, data.Body || '', mediaUrls);
+                await this.handleSmsProxy(data.From, data.To, data.Body || '');
             }
         } catch (error) {
             console.error(`[TwilioSMS] Error handling incoming SMS:`, error);
@@ -260,124 +203,25 @@ export class TwilioSmsService {
     }
 
     /**
-     * Handle SMS proxy forwarding with short code routing
-     * - If from external sender: forward to all proxy targets with short code
-     * - If from a proxy target: parse code prefix and route to correct sender
+     * Handle SMS proxy using Twilio Conversations API for native group MMS.
+     * Finds or creates a Conversation with [sender, Ben, Laura] and posts the message.
+     * The sender won't receive a duplicate since they're the author.
+     * Replies from any participant are auto-routed by Twilio.
      */
-    private async handleSmsProxy(from: string, to: string, body: string, mediaUrls: string[]): Promise<void> {
-        const isFromProxyTarget = SMS_PROXY_TARGET_NUMBERS.includes(from);
+    private async handleSmsProxy(from: string, to: string, body: string): Promise<void> {
+        try {
+            console.log(`[TwilioSMS Proxy] Routing message from ${from} via Conversations API`);
 
-        if (isFromProxyTarget) {
-            // This is a reply from a proxy target member - parse code and route
-            const parsed = TwilioSmsService.parseReplyCode(body);
+            const conversationSid = await this.conversationsService.findOrCreateConversation(from, to);
 
-            if (!parsed) {
-                console.log(`[TwilioSMS Proxy] No code prefix found in reply from ${from} - cannot route`);
-                try {
-                    await this.sendSmsInternal(
-                        from,
-                        `[System] Reply format: <last4digits>: <message>\nExample: 1234: Yes, I can help`,
-                        to
-                    );
-                } catch (e) {
-                    console.error('[TwilioSMS Proxy] Failed to send format help:', e);
-                }
-                return;
-            }
+            // Post the message to the conversation with the sender as author
+            // The author won't receive a duplicate
+            await this.conversationsService.sendMessage(conversationSid, body, from);
 
-            const { code, message } = parsed;
-            const recipient = TwilioSmsService.getSenderByCode(to, code);
-
-            if (!recipient) {
-                console.log(`[TwilioSMS Proxy] No sender found for code [${code}] on ${to}`);
-                try {
-                    await this.sendSmsInternal(
-                        from,
-                        `[System] No conversation with code [${code}] on ${to}`,
-                        to
-                    );
-                } catch (e) {
-                    console.error('[TwilioSMS Proxy] Failed to send invalid code notification:', e);
-                }
-                return;
-            }
-
-            console.log(`[TwilioSMS Proxy] Routing reply [${code}] from ${from} to ${recipient} via ${to}`);
-
-            // Forward the reply to the original sender
-            try {
-                await this.sendSmsInternal(recipient, message, to);
-                console.log(`[TwilioSMS Proxy] ✓ Reply forwarded to ${recipient}`);
-            } catch (error) {
-                console.error(`[TwilioSMS Proxy] Failed to forward reply:`, error);
-            }
-
-            // Notify other proxy targets so they see the reply
-            const others = SMS_PROXY_TARGET_NUMBERS.filter(n => n !== from);
-            if (others.length > 0) {
-                const notifyBody = `[${code}] Sent by ${from}:\n${message}`;
-                for (const other of others) {
-                    try {
-                        await this.sendSmsInternal(other, notifyBody, to);
-                        console.log(`[TwilioSMS Proxy] ✓ Reply CC'd to ${other}`);
-                    } catch (error) {
-                        console.error(`[TwilioSMS Proxy] Failed to CC reply to ${other}:`, error);
-                    }
-                }
-            }
-        } else {
-            // This is from an external sender - register with last 4 digits as code
-            const code = TwilioSmsService.registerSender(to, from);
-            console.log(`[TwilioSMS Proxy] Forwarding message from ${from} [${code}] to ${SMS_PROXY_TARGET_NUMBERS.length} proxy targets`);
-
-            // Format: [code] sender → twilioNumber\nmessage\nreply hint
-            const forwardedBody = `[${code}] ${from} → ${to}\n${body}\n\nReply with ${code}: your message to respond`;
-
-            for (const target of SMS_PROXY_TARGET_NUMBERS) {
-                try {
-                    await this.sendSmsInternal(target, forwardedBody, to);
-                    console.log(`[TwilioSMS Proxy] ✓ Message forwarded to ${target} with code [${code}]`);
-                } catch (error) {
-                    console.error(`[TwilioSMS Proxy] Failed to forward message to ${target}:`, error);
-                }
-            }
+            console.log(`[TwilioSMS Proxy] ✓ Message posted to conversation ${conversationSid}`);
+        } catch (error) {
+            console.error(`[TwilioSMS Proxy] Failed to route message via Conversations API:`, error);
         }
-    }
-
-    /**
-     * Internal SMS send that bypasses whitelist check (for proxy forwarding)
-     */
-    private async sendSmsInternal(
-        toNumber: string,
-        body: string,
-        fromNumber: string
-    ): Promise<{ messageSid: string; status: string }> {
-        const publicUrl = process.env.PUBLIC_URL;
-        const statusCallbackUrl = publicUrl ? `${publicUrl}/sms/status` : undefined;
-
-        const message = await this.twilioClient.messages.create({
-            from: fromNumber,
-            to: toNumber,
-            body: body,
-            ...(statusCallbackUrl && { statusCallback: statusCallbackUrl })
-        });
-
-        // Save forwarded message to MongoDB
-        await this.storageService.saveSms({
-            messageSid: message.sid,
-            fromNumber: fromNumber,
-            toNumber: toNumber,
-            direction: SmsDirection.OUTBOUND,
-            body: body,
-            status: this.mapTwilioStatus(message.status),
-            twilioStatus: message.status,
-            numMedia: 0
-        });
-
-        return {
-            messageSid: message.sid,
-            status: message.status
-        };
     }
 
     /**

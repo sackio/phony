@@ -6,11 +6,12 @@ import { WebSocket } from 'ws';
 import path from 'path';
 import twilio from 'twilio';
 import { Server as HTTPServer } from 'http';
-import { CallType } from '../types.js';
-import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER, DEFAULT_INCOMING_CALL_MESSAGE, DEFAULT_INCOMING_CALL_VOICE, SMS_PROXY_TARGET_NUMBERS } from '../config/constants.js';
+import { CallType, SmsDirection, SmsStatus } from '../types.js';
+import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER, DEFAULT_INCOMING_CALL_MESSAGE, DEFAULT_INCOMING_CALL_VOICE, SMS_PROXY_TARGET_NUMBERS, SMS_PROXY_ENABLED } from '../config/constants.js';
 import { CreateSessionOptions, CallSessionManager } from '../services/session-manager.service.js';
 import { TwilioCallService } from '../services/twilio/call.service.js';
 import { TwilioSmsService } from '../services/twilio/sms.service.js';
+import { TwilioConversationsService } from '../services/twilio/conversations.service.js';
 import { ConversationService } from '../services/sms/conversation.service.js';
 import { SocketService } from '../services/socket.service.js';
 import { CallStateService } from '../services/call-state.service.js';
@@ -30,6 +31,7 @@ export class VoiceServer {
     private callbackUrl: string;
     private twilioCallService: TwilioCallService;
     private twilioSmsService: TwilioSmsService;
+    private twilioConversationsService: TwilioConversationsService;
     private conversationService: ConversationService;
     private httpServer: HTTPServer | null = null;
     private socketService: SocketService;
@@ -50,7 +52,8 @@ export class VoiceServer {
         // Initialize Twilio services
         const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
         this.twilioCallService = new TwilioCallService(twilioClient);
-        this.twilioSmsService = new TwilioSmsService(twilioClient);
+        this.twilioConversationsService = new TwilioConversationsService(twilioClient);
+        this.twilioSmsService = new TwilioSmsService(twilioClient, this.twilioConversationsService);
 
         // Initialize SMS and conversation services
         this.conversationService = new ConversationService();
@@ -178,6 +181,9 @@ export class VoiceServer {
         // Voicemail webhook routes
         this.app.post('/voicemail/recording', this.handleVoicemailRecording.bind(this));
         this.app.post('/voicemail/transcription', this.handleVoicemailTranscription.bind(this));
+
+        // Twilio Conversations webhook (for saving group MMS messages to MongoDB)
+        this.app.post('/conversations/webhook', this.handleConversationsWebhook.bind(this));
 
         // Serve frontend for all other routes (SPA fallback)
         this.app.get('*', (req, res) => {
@@ -1670,15 +1676,24 @@ export class VoiceServer {
                 recordingUrl: RecordingUrl
             });
 
-            // Send SMS notification for new voicemail to all proxy targets
+            // Send voicemail notification via group MMS (Conversations API)
             const duration = parseInt(RecordingDuration) || 0;
             const notifBody = `New voicemail from ${fromNumber} on ${toNumber} (${duration}s). Transcription pending...`;
-            for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            if (SMS_PROXY_ENABLED && fromNumber) {
                 try {
-                    await this.twilioSmsService.sendSms(target, notifBody, process.env.TWILIO_NUMBER);
-                    console.log(`[Voice Server] Voicemail notification sent to ${target}`);
+                    const conversationSid = await this.twilioConversationsService.findOrCreateConversation(fromNumber, toNumber || process.env.TWILIO_NUMBER || '');
+                    await this.twilioConversationsService.sendMessage(conversationSid, notifBody);
+                    console.log(`[Voice Server] Voicemail notification posted to conversation ${conversationSid}`);
                 } catch (notifError) {
-                    console.error(`[Voice Server] Failed to send voicemail notification SMS to ${target}:`, notifError);
+                    console.error(`[Voice Server] Failed to send voicemail notification via Conversations:`, notifError);
+                    // Fallback: send individual SMS to proxy targets
+                    for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                        try {
+                            await this.twilioSmsService.sendSms(target, notifBody, process.env.TWILIO_NUMBER);
+                        } catch (fallbackError) {
+                            console.error(`[Voice Server] Fallback SMS to ${target} also failed:`, fallbackError);
+                        }
+                    }
                 }
             }
 
@@ -1725,17 +1740,27 @@ export class VoiceServer {
                 );
                 console.log(`[Voice Server] Voicemail transcription saved for ${RecordingSid}`);
 
-                // Send transcription via SMS to all proxy targets
+                // Send transcription via group MMS (Conversations API)
                 const voicemail = await this.voicemailService.getVoicemail(RecordingSid);
                 const vmFrom = voicemail?.fromNumber || 'unknown';
+                const vmTo = voicemail?.toNumber || process.env.TWILIO_NUMBER || '';
                 const preview = TranscriptionText.length > 1400 ? TranscriptionText.substring(0, 1400) + '...' : TranscriptionText;
                 const transcriptBody = `Voicemail from ${vmFrom}: "${preview}"`;
-                for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                if (SMS_PROXY_ENABLED && vmFrom !== 'unknown') {
                     try {
-                        await this.twilioSmsService.sendSms(target, transcriptBody, process.env.TWILIO_NUMBER);
-                        console.log(`[Voice Server] Voicemail transcription SMS sent to ${target}`);
+                        const conversationSid = await this.twilioConversationsService.findOrCreateConversation(vmFrom, vmTo);
+                        await this.twilioConversationsService.sendMessage(conversationSid, transcriptBody);
+                        console.log(`[Voice Server] Voicemail transcription posted to conversation ${conversationSid}`);
                     } catch (notifError) {
-                        console.error(`[Voice Server] Failed to send transcription SMS to ${target}:`, notifError);
+                        console.error(`[Voice Server] Failed to post transcription via Conversations:`, notifError);
+                        // Fallback: send individual SMS
+                        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                            try {
+                                await this.twilioSmsService.sendSms(target, transcriptBody, process.env.TWILIO_NUMBER);
+                            } catch (fallbackError) {
+                                console.error(`[Voice Server] Fallback transcription SMS to ${target} also failed:`, fallbackError);
+                            }
+                        }
                     }
                 }
             } else if (TranscriptionStatus === 'failed') {
@@ -1746,15 +1771,26 @@ export class VoiceServer {
                 );
                 console.log(`[Voice Server] Voicemail transcription failed for ${RecordingSid}`);
 
-                // Notify about failed transcription to all proxy targets
+                // Notify about failed transcription via group MMS
                 const failedVm = await this.voicemailService.getVoicemail(RecordingSid);
                 const failedFrom = failedVm?.fromNumber || 'unknown';
+                const failedTo = failedVm?.toNumber || process.env.TWILIO_NUMBER || '';
                 const failBody = `Voicemail from ${failedFrom} (transcription failed - check recording)`;
-                for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                if (SMS_PROXY_ENABLED && failedFrom !== 'unknown') {
                     try {
-                        await this.twilioSmsService.sendSms(target, failBody, process.env.TWILIO_NUMBER);
+                        const conversationSid = await this.twilioConversationsService.findOrCreateConversation(failedFrom, failedTo);
+                        await this.twilioConversationsService.sendMessage(conversationSid, failBody);
+                        console.log(`[Voice Server] Transcription failure posted to conversation ${conversationSid}`);
                     } catch (notifError) {
-                        console.error(`[Voice Server] Failed to send transcription failure SMS to ${target}:`, notifError);
+                        console.error(`[Voice Server] Failed to post failure via Conversations:`, notifError);
+                        // Fallback: send individual SMS
+                        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                            try {
+                                await this.twilioSmsService.sendSms(target, failBody, process.env.TWILIO_NUMBER);
+                            } catch (fallbackError) {
+                                console.error(`[Voice Server] Fallback failure SMS to ${target} also failed:`, fallbackError);
+                            }
+                        }
                     }
                 }
             }
@@ -1762,6 +1798,49 @@ export class VoiceServer {
             res.status(200).send('OK');
         } catch (error) {
             console.error('[Voice Server] Error handling voicemail transcription:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Handle Twilio Conversations webhook (onMessageAdded)
+     * Saves group MMS messages to MongoDB that bypass the /sms/incoming webhook
+     */
+    private async handleConversationsWebhook(req: express.Request, res: Response): Promise<void> {
+        console.log('[Voice Server] Conversations webhook received');
+
+        try {
+            const {
+                EventType,
+                ConversationSid,
+                MessageSid,
+                Author,
+                Body,
+                ParticipantSid
+            } = req.body;
+
+            if (EventType === 'onMessageAdded' && Body) {
+                console.log(`[Voice Server] Conversations message: ${MessageSid} from ${Author} in ${ConversationSid}`);
+
+                // Save to MongoDB
+                const storageService = new (await import('../services/sms/storage.service.js')).SmsStorageService();
+                await storageService.saveSms({
+                    messageSid: MessageSid || `conv_${Date.now()}`,
+                    fromNumber: Author || 'unknown',
+                    toNumber: ConversationSid,
+                    direction: SmsDirection.INBOUND,
+                    body: Body,
+                    status: SmsStatus.RECEIVED,
+                    twilioStatus: 'received',
+                    numMedia: 0
+                });
+
+                console.log(`[Voice Server] Saved conversations message ${MessageSid} to MongoDB`);
+            }
+
+            res.status(200).send('OK');
+        } catch (error) {
+            console.error('[Voice Server] Error handling conversations webhook:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     }
