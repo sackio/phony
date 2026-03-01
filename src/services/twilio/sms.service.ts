@@ -304,11 +304,26 @@ export class TwilioSmsService {
 
             console.log(`[TwilioSMS Proxy] Routing reply [${code}] from ${from} to ${recipient} via ${to}`);
 
+            // Forward the reply to the original sender
             try {
                 await this.sendSmsInternal(recipient, message, to);
                 console.log(`[TwilioSMS Proxy] ✓ Reply forwarded to ${recipient}`);
             } catch (error) {
                 console.error(`[TwilioSMS Proxy] Failed to forward reply:`, error);
+            }
+
+            // Notify other proxy targets so they see the reply
+            const others = SMS_PROXY_TARGET_NUMBERS.filter(n => n !== from);
+            if (others.length > 0) {
+                const notifyBody = `[${code}] Sent by ${from}:\n${message}`;
+                for (const other of others) {
+                    try {
+                        await this.sendSmsInternal(other, notifyBody, to);
+                        console.log(`[TwilioSMS Proxy] ✓ Reply CC'd to ${other}`);
+                    } catch (error) {
+                        console.error(`[TwilioSMS Proxy] Failed to CC reply to ${other}:`, error);
+                    }
+                }
             }
         } else {
             // This is from an external sender - register with last 4 digits as code
