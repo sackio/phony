@@ -7,7 +7,7 @@ import path from 'path';
 import twilio from 'twilio';
 import { Server as HTTPServer } from 'http';
 import { CallType } from '../types.js';
-import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER, DEFAULT_INCOMING_CALL_MESSAGE, DEFAULT_INCOMING_CALL_VOICE, SMS_PROXY_TARGET_NUMBER } from '../config/constants.js';
+import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER, DEFAULT_INCOMING_CALL_MESSAGE, DEFAULT_INCOMING_CALL_VOICE, SMS_PROXY_TARGET_NUMBERS } from '../config/constants.js';
 import { CreateSessionOptions, CallSessionManager } from '../services/session-manager.service.js';
 import { TwilioCallService } from '../services/twilio/call.service.js';
 import { TwilioSmsService } from '../services/twilio/sms.service.js';
@@ -1670,14 +1670,16 @@ export class VoiceServer {
                 recordingUrl: RecordingUrl
             });
 
-            // Send SMS notification for new voicemail
-            try {
-                const duration = parseInt(RecordingDuration) || 0;
-                const notifBody = `New voicemail from ${fromNumber} on ${toNumber} (${duration}s). Transcription pending...`;
-                await this.twilioSmsService.sendSms(SMS_PROXY_TARGET_NUMBER, notifBody, process.env.TWILIO_NUMBER);
-                console.log(`[Voice Server] Voicemail notification sent to ${SMS_PROXY_TARGET_NUMBER}`);
-            } catch (notifError) {
-                console.error('[Voice Server] Failed to send voicemail notification SMS:', notifError);
+            // Send SMS notification for new voicemail to all proxy targets
+            const duration = parseInt(RecordingDuration) || 0;
+            const notifBody = `New voicemail from ${fromNumber} on ${toNumber} (${duration}s). Transcription pending...`;
+            for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                try {
+                    await this.twilioSmsService.sendSms(target, notifBody, process.env.TWILIO_NUMBER);
+                    console.log(`[Voice Server] Voicemail notification sent to ${target}`);
+                } catch (notifError) {
+                    console.error(`[Voice Server] Failed to send voicemail notification SMS to ${target}:`, notifError);
+                }
             }
 
             res.status(200).send('OK');
@@ -1723,16 +1725,18 @@ export class VoiceServer {
                 );
                 console.log(`[Voice Server] Voicemail transcription saved for ${RecordingSid}`);
 
-                // Send transcription via SMS
-                try {
-                    const voicemail = await this.voicemailService.getVoicemail(RecordingSid);
-                    const from = voicemail?.fromNumber || 'unknown';
-                    const to = voicemail?.toNumber || process.env.TWILIO_NUMBER || '';
-                    const preview = TranscriptionText.length > 1400 ? TranscriptionText.substring(0, 1400) + '...' : TranscriptionText;
-                    await this.twilioSmsService.sendSms(SMS_PROXY_TARGET_NUMBER, `Voicemail from ${from}: "${preview}"`, process.env.TWILIO_NUMBER);
-                    console.log(`[Voice Server] Voicemail transcription SMS sent to ${SMS_PROXY_TARGET_NUMBER}`);
-                } catch (notifError) {
-                    console.error('[Voice Server] Failed to send transcription notification SMS:', notifError);
+                // Send transcription via SMS to all proxy targets
+                const voicemail = await this.voicemailService.getVoicemail(RecordingSid);
+                const vmFrom = voicemail?.fromNumber || 'unknown';
+                const preview = TranscriptionText.length > 1400 ? TranscriptionText.substring(0, 1400) + '...' : TranscriptionText;
+                const transcriptBody = `Voicemail from ${vmFrom}: "${preview}"`;
+                for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                    try {
+                        await this.twilioSmsService.sendSms(target, transcriptBody, process.env.TWILIO_NUMBER);
+                        console.log(`[Voice Server] Voicemail transcription SMS sent to ${target}`);
+                    } catch (notifError) {
+                        console.error(`[Voice Server] Failed to send transcription SMS to ${target}:`, notifError);
+                    }
                 }
             } else if (TranscriptionStatus === 'failed') {
                 // Mark transcription as failed
@@ -1742,14 +1746,16 @@ export class VoiceServer {
                 );
                 console.log(`[Voice Server] Voicemail transcription failed for ${RecordingSid}`);
 
-                // Notify about failed transcription
-                try {
-                    const voicemail = await this.voicemailService.getVoicemail(RecordingSid);
-                    const from = voicemail?.fromNumber || 'unknown';
-                    const to = voicemail?.toNumber || process.env.TWILIO_NUMBER || '';
-                    await this.twilioSmsService.sendSms(SMS_PROXY_TARGET_NUMBER, `Voicemail from ${from} (transcription failed - check recording)`, process.env.TWILIO_NUMBER);
-                } catch (notifError) {
-                    console.error('[Voice Server] Failed to send transcription failure SMS:', notifError);
+                // Notify about failed transcription to all proxy targets
+                const failedVm = await this.voicemailService.getVoicemail(RecordingSid);
+                const failedFrom = failedVm?.fromNumber || 'unknown';
+                const failBody = `Voicemail from ${failedFrom} (transcription failed - check recording)`;
+                for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                    try {
+                        await this.twilioSmsService.sendSms(target, failBody, process.env.TWILIO_NUMBER);
+                    } catch (notifError) {
+                        console.error(`[Voice Server] Failed to send transcription failure SMS to ${target}:`, notifError);
+                    }
                 }
             }
 

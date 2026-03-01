@@ -65,9 +65,11 @@ export const DEFAULT_INCOMING_CALL_MESSAGE = process.env.DEFAULT_INCOMING_CALL_M
 export const DEFAULT_INCOMING_CALL_VOICE = process.env.DEFAULT_INCOMING_CALL_VOICE || 'Polly.Matthew';
 
 // SMS Proxy Configuration
-// When enabled, incoming SMS messages are forwarded to this number
-// Replies from this number are routed back to the original sender
-export const SMS_PROXY_TARGET_NUMBER = process.env.SMS_PROXY_TARGET_NUMBER || '+13015550101';
+// When enabled, incoming SMS and voicemail notifications are forwarded to these numbers
+// Replies from any of these numbers (with code prefix) are routed back to the original sender
+export const SMS_PROXY_TARGET_NUMBERS: string[] = process.env.SMS_PROXY_TARGET_NUMBERS
+    ? process.env.SMS_PROXY_TARGET_NUMBERS.split(',').map(n => n.trim())
+    : ['+13015550101', '+13015550102'];
 export const SMS_PROXY_ENABLED = process.env.SMS_PROXY_ENABLED !== 'false'; // Enabled by default
 
 // ElevenLabs Configuration

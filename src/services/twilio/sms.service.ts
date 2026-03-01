@@ -1,7 +1,7 @@
 import twilio from 'twilio';
 import { SmsDirection, SmsStatus } from '../../types.js';
 import { SmsStorageService } from '../sms/storage.service.js';
-import { SMS_ENABLED_NUMBERS, SMS_PROXY_TARGET_NUMBER, SMS_PROXY_ENABLED } from '../../config/constants.js';
+import { SMS_ENABLED_NUMBERS, SMS_PROXY_TARGET_NUMBERS, SMS_PROXY_ENABLED } from '../../config/constants.js';
 
 /**
  * Service for handling Twilio SMS operations
@@ -261,21 +261,21 @@ export class TwilioSmsService {
 
     /**
      * Handle SMS proxy forwarding with short code routing
-     * - If from external sender: forward to proxy target with short code
-     * - If from proxy target: parse code prefix and route to correct sender
+     * - If from external sender: forward to all proxy targets with short code
+     * - If from a proxy target: parse code prefix and route to correct sender
      */
     private async handleSmsProxy(from: string, to: string, body: string, mediaUrls: string[]): Promise<void> {
-        const isFromProxyTarget = from === SMS_PROXY_TARGET_NUMBER;
+        const isFromProxyTarget = SMS_PROXY_TARGET_NUMBERS.includes(from);
 
         if (isFromProxyTarget) {
-            // This is a reply from the proxy target - parse code and route
+            // This is a reply from a proxy target member - parse code and route
             const parsed = TwilioSmsService.parseReplyCode(body);
 
             if (!parsed) {
-                console.log(`[TwilioSMS Proxy] No code prefix found in reply - cannot route`);
+                console.log(`[TwilioSMS Proxy] No code prefix found in reply from ${from} - cannot route`);
                 try {
                     await this.sendSmsInternal(
-                        SMS_PROXY_TARGET_NUMBER,
+                        from,
                         `[System] Reply format: <last4digits>: <message>\nExample: 1234: Yes, I can help`,
                         to
                     );
@@ -292,7 +292,7 @@ export class TwilioSmsService {
                 console.log(`[TwilioSMS Proxy] No sender found for code [${code}] on ${to}`);
                 try {
                     await this.sendSmsInternal(
-                        SMS_PROXY_TARGET_NUMBER,
+                        from,
                         `[System] No conversation with code [${code}] on ${to}`,
                         to
                     );
@@ -302,7 +302,7 @@ export class TwilioSmsService {
                 return;
             }
 
-            console.log(`[TwilioSMS Proxy] Routing reply [${code}] to ${recipient} via ${to}`);
+            console.log(`[TwilioSMS Proxy] Routing reply [${code}] from ${from} to ${recipient} via ${to}`);
 
             try {
                 await this.sendSmsInternal(recipient, message, to);
@@ -313,16 +313,18 @@ export class TwilioSmsService {
         } else {
             // This is from an external sender - register with last 4 digits as code
             const code = TwilioSmsService.registerSender(to, from);
-            console.log(`[TwilioSMS Proxy] Forwarding message from ${from} [${code}] to proxy target`);
+            console.log(`[TwilioSMS Proxy] Forwarding message from ${from} [${code}] to ${SMS_PROXY_TARGET_NUMBERS.length} proxy targets`);
 
-            // Format: [code] sender → twilioNumber\nmessage
-            const forwardedBody = `[${code}] ${from} → ${to}\n${body}`;
+            // Format: [code] sender → twilioNumber\nmessage\nreply hint
+            const forwardedBody = `[${code}] ${from} → ${to}\n${body}\n\nReply with ${code}: your message to respond`;
 
-            try {
-                await this.sendSmsInternal(SMS_PROXY_TARGET_NUMBER, forwardedBody, to);
-                console.log(`[TwilioSMS Proxy] ✓ Message forwarded to proxy target with code [${code}]`);
-            } catch (error) {
-                console.error(`[TwilioSMS Proxy] Failed to forward message:`, error);
+            for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                try {
+                    await this.sendSmsInternal(target, forwardedBody, to);
+                    console.log(`[TwilioSMS Proxy] ✓ Message forwarded to ${target} with code [${code}]`);
+                } catch (error) {
+                    console.error(`[TwilioSMS Proxy] Failed to forward message to ${target}:`, error);
+                }
             }
         }
     }
