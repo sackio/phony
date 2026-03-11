@@ -858,8 +858,49 @@ export class TwilioSmsService {
                 data.ErrorCode
             );
             console.log(`[TwilioSMS] Updated SMS ${data.MessageSid} status to ${data.MessageStatus}`);
+
+            // Notify proxy targets on delivery failure
+            const status = data.MessageStatus?.toLowerCase();
+            if (SMS_PROXY_ENABLED && (status === 'failed' || status === 'undelivered')) {
+                await this.notifyFailure(data.MessageSid, data.MessageStatus, data.ErrorCode, data.ErrorMessage);
+            }
         } catch (error) {
             console.error(`[TwilioSMS] Error handling status callback:`, error);
+        }
+    }
+
+    /**
+     * Notify proxy targets when an outbound SMS fails or is undelivered.
+     * Called from handleStatusCallback on failed/undelivered Twilio status.
+     *
+     * Skips: inbound messages (origin 'received'), notifications sent to
+     * proxy targets themselves (loop prevention), and cases where the
+     * original message isn't in SmsModel (can't build a preview).
+     */
+    private async notifyFailure(messageSid: string, status: string, errorCode?: string, errorMessage?: string): Promise<void> {
+        try {
+            const original = await this.storageService.getSms(messageSid);
+            if (!original) {
+                console.log(`[TwilioSMS] Cannot notify failure - message ${messageSid} not found in DB`);
+                return;
+            }
+            if (original.direction !== SmsDirection.OUTBOUND) return;
+            if (SMS_PROXY_TARGET_NUMBERS.includes(original.toNumber)) return; // loop guard
+
+            const preview = original.body && original.body.length > 100 ? original.body.substring(0, 100) + '...' : (original.body || '(no text)');
+            const errorInfo = errorCode ? ` (${errorCode}: ${errorMessage || 'unknown'})` : '';
+            const failBody = `⚠️ SMS to ${original.toNumber} ${status}${errorInfo}\nFrom: ${original.fromNumber}\nMsg: ${preview}`;
+
+            for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                try {
+                    await this.sendSms(target, failBody, original.fromNumber, undefined, { skipNotification: true });
+                    console.log(`[TwilioSMS] Failure notification sent to ${target}`);
+                } catch (notifError) {
+                    console.error(`[TwilioSMS] Failed to send failure notification to ${target}:`, notifError);
+                }
+            }
+        } catch (error) {
+            console.error(`[TwilioSMS] Error sending failure notification:`, error);
         }
     }
 
