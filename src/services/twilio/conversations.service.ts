@@ -206,6 +206,39 @@ export class TwilioConversationsService {
     }
 
     /**
+     * Add the configured SMS proxy targets (Ben, Laura) to a conversation.
+     * Used by the conversations webhook when Twilio auto-creates a conversation
+     * from an inbound SMS — we attach our proxy targets so they see the thread.
+     * The proxy address is inferred from the existing participant binding.
+     */
+    public async addProxyTargets(conversationSid: string): Promise<void> {
+        await this.ensureInitialized();
+
+        // Find the existing participant to discover the proxy address
+        const participants = await this.twilioClient.conversations.v1
+            .conversations(conversationSid)
+            .participants
+            .list({ limit: 10 });
+
+        const existing = participants.find(p => p.messagingBinding?.proxy_address);
+        if (!existing) {
+            console.warn(`[Conversations] No existing participant with proxy in ${conversationSid}, cannot infer proxy address`);
+            return;
+        }
+
+        const proxyAddress = existing.messagingBinding!.proxy_address as string;
+        const existingAddresses = new Set(participants.map(p => p.messagingBinding?.address).filter(Boolean));
+
+        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            if (existingAddresses.has(target)) {
+                console.log(`[Conversations] Proxy target ${target} already in ${conversationSid}`);
+                continue;
+            }
+            await this.addParticipant(conversationSid, target, proxyAddress);
+        }
+    }
+
+    /**
      * Add an SMS participant to a conversation
      */
     private async addParticipant(conversationSid: string, phoneNumber: string, proxyNumber: string): Promise<void> {

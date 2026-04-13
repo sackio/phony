@@ -1807,22 +1807,18 @@ export class VoiceServer {
      * Saves group MMS messages to MongoDB that bypass the /sms/incoming webhook
      */
     private async handleConversationsWebhook(req: express.Request, res: Response): Promise<void> {
-        console.log('[Voice Server] Conversations webhook received');
+        const { EventType, ConversationSid, MessageSid, Author, Body } = req.body;
+        console.log(`[Conv Webhook] ${EventType} conv=${ConversationSid} author=${Author || '-'}`);
 
         try {
-            const {
-                EventType,
-                ConversationSid,
-                MessageSid,
-                Author,
-                Body,
-                ParticipantSid
-            } = req.body;
+            if (EventType === 'onConversationAdded' && ConversationSid) {
+                // Twilio auto-created a conversation from inbound SMS — attach Ben & Laura
+                this.twilioConversationsService.addProxyTargets(ConversationSid).catch(err =>
+                    console.error(`[Conv Webhook] addProxyTargets failed for ${ConversationSid}:`, err)
+                );
+            }
 
-            if (EventType === 'onMessageAdded' && Body) {
-                console.log(`[Voice Server] Conversations message: ${MessageSid} from ${Author} in ${ConversationSid}`);
-
-                // Save to MongoDB
+            if (EventType === 'onMessageAdded' && Body && ConversationSid) {
                 const storageService = new (await import('../services/sms/storage.service.js')).SmsStorageService();
                 await storageService.saveSms({
                     messageSid: MessageSid || `conv_${Date.now()}`,
@@ -1834,13 +1830,11 @@ export class VoiceServer {
                     twilioStatus: 'received',
                     numMedia: 0
                 });
-
-                console.log(`[Voice Server] Saved conversations message ${MessageSid} to MongoDB`);
             }
 
             res.status(200).send('OK');
         } catch (error) {
-            console.error('[Voice Server] Error handling conversations webhook:', error);
+            console.error('[Conv Webhook] Error:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     }
