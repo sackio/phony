@@ -7,6 +7,7 @@ import twilio from 'twilio';
 import { CallSessionManager } from './services/session-manager.service.js';
 import { MongoDBService } from './services/database/mongodb.service.js';
 import { CallTranscriptService } from './services/database/call-transcript.service.js';
+import { SmsReconciliationService } from './services/sms/reconciliation.service.js';
 
 // Load environment variables
 dotenv.config();
@@ -125,6 +126,13 @@ async function main(): Promise<void> {
 
         const mcpServer = new VoiceCallMcpServer(twilioCallService, twilioCallbackUrl);
         await mcpServer.start();
+
+        // Start SMS reconciliation service (checks Twilio for missed inbound messages)
+        const reconciliationService = SmsReconciliationService.getInstance({
+            intervalMs: parseInt(process.env.SMS_RECONCILIATION_INTERVAL_MS || '300000'),   // 5 minutes
+            lookbackMs: parseInt(process.env.SMS_RECONCILIATION_LOOKBACK_MS || '1800000'),  // 30 minutes
+        });
+        reconciliationService.start();
 
         // Set up graceful shutdown
         setupShutdownHandlers();

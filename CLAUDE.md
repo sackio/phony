@@ -1,5 +1,18 @@
 # Phony - Claude Context
 
+## Memo — Background Context
+
+When unclear about infrastructure, network, cluster state, server details, house/property, contacts, or any shared context — **search memo before asking the user**:
+
+```
+/recall <topic>           # targeted search
+/recall-context <topic>   # broader context block
+```
+
+Especially useful for: network topology, router/VyOS config, K8s barn cluster, iDRAC/IPMI, server hardware, 120 Reedy Meadow renovation, contractor contacts, credentials format, recent infrastructure changes.
+
+---
+
 ## Project Overview
 
 **Location**: `/mnt/nas/data/code/forks/phony`

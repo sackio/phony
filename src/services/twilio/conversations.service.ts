@@ -210,13 +210,16 @@ export class TwilioConversationsService {
      */
     private async addParticipant(conversationSid: string, phoneNumber: string, proxyNumber: string): Promise<void> {
         try {
-            await this.twilioClient.conversations.v1
-                .conversations(conversationSid)
-                .participants
-                .create({
-                    'messagingBinding.address': phoneNumber,
-                    'messagingBinding.proxyAddress': proxyNumber
-                });
+            await this.withRetry(
+                () => this.twilioClient.conversations.v1
+                    .conversations(conversationSid)
+                    .participants
+                    .create({
+                        'messagingBinding.address': phoneNumber,
+                        'messagingBinding.proxyAddress': proxyNumber
+                    }),
+                `addParticipant ${phoneNumber}`
+            );
             console.log(`[Conversations] Added participant ${phoneNumber} to ${conversationSid}`);
         } catch (error: any) {
             // 50433 = participant already exists
@@ -240,14 +243,17 @@ export class TwilioConversationsService {
     public async sendMessage(conversationSid: string, body: string, authorAddress?: string): Promise<string> {
         await this.ensureInitialized();
 
-        const message = await this.twilioClient.conversations.v1
-            .conversations(conversationSid)
-            .messages
-            .create({
-                body,
-                author: authorAddress || 'system',
-                xTwilioWebhookEnabled: 'true'
-            });
+        const message = await this.withRetry(
+            () => this.twilioClient.conversations.v1
+                .conversations(conversationSid)
+                .messages
+                .create({
+                    body,
+                    author: authorAddress || 'system',
+                    xTwilioWebhookEnabled: 'true'
+                }),
+            `sendMessage to ${conversationSid}`
+        );
 
         console.log(`[Conversations] Sent message ${message.sid} to conversation ${conversationSid}`);
         return message.sid;
@@ -267,5 +273,28 @@ export class TwilioConversationsService {
         if (!this.initialized) {
             await this.initialize();
         }
+    }
+
+    /**
+     * Retry a function with exponential backoff for transient errors (DNS, network).
+     */
+    private async withRetry<T>(fn: () => Promise<T>, label: string, maxRetries = 3): Promise<T> {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                return await fn();
+            } catch (error: any) {
+                const isTransient = error.code === 'EAI_AGAIN' || error.code === 'ENOTFOUND' ||
+                    error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET' ||
+                    error.message?.includes('EAI_AGAIN') || error.message?.includes('getaddrinfo');
+                if (isTransient && attempt < maxRetries) {
+                    const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+                    console.warn(`[Conversations] ${label} attempt ${attempt}/${maxRetries} failed (${error.code || 'network error'}), retrying in ${delay}ms...`);
+                    await new Promise(r => setTimeout(r, delay));
+                } else {
+                    throw error;
+                }
+            }
+        }
+        throw new Error('Unreachable');
     }
 }

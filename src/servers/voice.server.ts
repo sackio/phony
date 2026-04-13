@@ -1689,7 +1689,7 @@ export class VoiceServer {
                     // Fallback: send individual SMS to proxy targets
                     for (const target of SMS_PROXY_TARGET_NUMBERS) {
                         try {
-                            await this.twilioSmsService.sendSms(target, notifBody, process.env.TWILIO_NUMBER);
+                            await this.twilioSmsService.sendSms(target, notifBody, process.env.TWILIO_NUMBER, undefined, { skipNotification: true });
                         } catch (fallbackError) {
                             console.error(`[Voice Server] Fallback SMS to ${target} also failed:`, fallbackError);
                         }
@@ -1756,7 +1756,7 @@ export class VoiceServer {
                         // Fallback: send individual SMS
                         for (const target of SMS_PROXY_TARGET_NUMBERS) {
                             try {
-                                await this.twilioSmsService.sendSms(target, transcriptBody, process.env.TWILIO_NUMBER);
+                                await this.twilioSmsService.sendSms(target, transcriptBody, process.env.TWILIO_NUMBER, undefined, { skipNotification: true });
                             } catch (fallbackError) {
                                 console.error(`[Voice Server] Fallback transcription SMS to ${target} also failed:`, fallbackError);
                             }
@@ -1786,7 +1786,7 @@ export class VoiceServer {
                         // Fallback: send individual SMS
                         for (const target of SMS_PROXY_TARGET_NUMBERS) {
                             try {
-                                await this.twilioSmsService.sendSms(target, failBody, process.env.TWILIO_NUMBER);
+                                await this.twilioSmsService.sendSms(target, failBody, process.env.TWILIO_NUMBER, undefined, { skipNotification: true });
                             } catch (fallbackError) {
                                 console.error(`[Voice Server] Fallback failure SMS to ${target} also failed:`, fallbackError);
                             }
@@ -1848,6 +1848,11 @@ export class VoiceServer {
     public start(): void {
         this.httpServer = this.app.listen(this.port);
         this.socketService.initialize(this.httpServer);
+
+        // Load SMS proxy state (codes + slugs) from DB after server starts
+        this.twilioSmsService.loadProxyState().catch(err =>
+            console.error('[Voice Server] Failed to load SMS proxy state:', err)
+        );
     }
 
     public getHttpServer(): HTTPServer | null {

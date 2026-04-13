@@ -59,10 +59,11 @@ services:
 
       # Optional settings
       RECORD_CALLS: ${RECORD_CALLS:-false}
+    tty: true
     dns:
+      - 1.1.1.1
       - 8.8.8.8
       - 8.8.4.4
-      - 127.0.0.11
     depends_on:
       mongodb:
         condition: service_healthy
