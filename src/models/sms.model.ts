@@ -49,7 +49,7 @@ const SmsSchema = new Schema<ISms>({
     },
     body: {
         type: String,
-        required: true
+        default: ''
     },
     status: {
         type: String,

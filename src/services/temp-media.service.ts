@@ -19,6 +19,34 @@ export class TempMediaService {
     }
 
     /**
+     * Copy a file at the given absolute path into temp media and return its public URL.
+     * Path must be under /mnt/nas/ or /tmp/ to prevent arbitrary filesystem reads.
+     */
+    savePathFile(filename: string, mimeType: string, srcPath: string): string {
+        if (!path.isAbsolute(srcPath)) {
+            throw new Error(`Path must be absolute: ${srcPath}`);
+        }
+        const normalized = path.normalize(srcPath);
+        if (!normalized.startsWith('/mnt/nas/') && !normalized.startsWith('/tmp/')) {
+            throw new Error(`Path must be under /mnt/nas/ or /tmp/: ${srcPath}`);
+        }
+        if (!fs.existsSync(normalized)) {
+            throw new Error(`File not found: ${srcPath}`);
+        }
+
+        const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const diskName = `${randomUUID()}-${safeFilename}`;
+        const filePath = path.join(TEMP_DIR, diskName);
+        fs.copyFileSync(normalized, filePath);
+
+        const publicUrl = process.env.PUBLIC_URL;
+        if (!publicUrl) {
+            throw new Error('PUBLIC_URL environment variable is required for temp media hosting');
+        }
+        return `${publicUrl}/media/temp/${diskName}`;
+    }
+
+    /**
      * Save base64-encoded file content to disk and return its public URL.
      */
     saveBase64File(filename: string, mimeType: string, base64Data: string): string {

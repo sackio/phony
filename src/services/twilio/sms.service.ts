@@ -391,7 +391,7 @@ export class TwilioSmsService {
             if (isFromProxyTarget) {
                 await this.handleProxyReply(data.From, data.To, data.Body || '');
             } else {
-                await this.handleExternalIncoming(data.From, data.To, data.Body || '');
+                await this.handleExternalIncoming(data.From, data.To, data.Body || '', mediaUrls);
             }
         } catch (error) {
             console.error(`[TwilioSMS] Error handling incoming SMS:`, error);
@@ -402,17 +402,18 @@ export class TwilioSmsService {
      * External sender texted a Twilio number.
      * Register their code and notify all proxy targets.
      */
-    private async handleExternalIncoming(from: string, to: string, body: string): Promise<void> {
+    private async handleExternalIncoming(from: string, to: string, body: string, mediaUrls: string[] = []): Promise<void> {
         const code = TwilioSmsService.registerSender(to, from);
         const label = TwilioSmsService.getDisplayLabel(from);
 
         const cheatsheet = TwilioSmsService.getCheatsheet(from);
-        const notification = `📥 ${label} ${from} → ${to}:\n${body}${cheatsheet}`;
+        const mediaNote = mediaUrls.length > 0 ? `\n[📎 ${mediaUrls.length} attachment${mediaUrls.length > 1 ? 's' : ''}]` : '';
+        const notification = `📥 ${label} ${from} → ${to}:\n${body || '(no text)'}${mediaNote}${cheatsheet}`;
 
         for (const target of SMS_PROXY_TARGET_NUMBERS) {
             try {
-                await this.sendSms(target, notification, to, undefined, { skipNotification: true });
-                console.log(`[TwilioSMS Proxy] Incoming notification sent to ${target} ${label}`);
+                await this.sendSms(target, notification, to, mediaUrls.length > 0 ? mediaUrls : undefined, { skipNotification: true });
+                console.log(`[TwilioSMS Proxy] Incoming notification sent to ${target} ${label}${mediaUrls.length ? ` (+${mediaUrls.length} media)` : ''}`);
             } catch (err) {
                 console.error(`[TwilioSMS Proxy] Failed to notify ${target}:`, err);
             }

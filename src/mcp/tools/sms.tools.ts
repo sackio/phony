@@ -91,11 +91,12 @@ export const smsToolsDefinitions: MCPToolDefinition[] = [
                         properties: {
                             filename: { type: 'string', description: 'File name with extension (e.g., "photo.jpg")' },
                             mimeType: { type: 'string', description: 'MIME type (e.g., "image/jpeg")' },
-                            data: { type: 'string', description: 'Base64-encoded file content' }
+                            data: { type: 'string', description: 'Base64-encoded file content (use this OR path)' },
+                            path: { type: 'string', description: 'Absolute path to a file readable by the server (under /mnt/nas/ or /tmp/). Preferred over data when the file is on a shared disk — avoids blowing up caller context with base64.' }
                         },
-                        required: ['filename', 'mimeType', 'data']
+                        required: ['filename', 'mimeType']
                     },
-                    description: 'Optional array of base64-encoded files to attach. The server will temporarily host them for Twilio to fetch. Max 10 files. Use this when you have file content but no public URL.'
+                    description: 'Optional array of files to attach. Supply either "data" (base64) or "path" (absolute path on /mnt/nas/ or /tmp/) per item. The server hosts them temporarily for Twilio to fetch. Max 10 files.'
                 }
             },
             required: ['toNumber']
@@ -491,20 +492,25 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
                 const body = args.body || args.message || '';
                 const fromNumber = (args.fromNumber || args.from) ? sanitizePhoneNumber(args.fromNumber || args.from) : undefined;
                 const mediaUrls = args.mediaUrls ? [...(args.mediaUrls as string[])] : [];
-                const mediaFiles = args.mediaFiles as Array<{ filename: string; mimeType: string; data: string }> | undefined;
+                const mediaFiles = args.mediaFiles as Array<{ filename: string; mimeType: string; data?: string; path?: string }> | undefined;
 
                 if (!toNumber) {
                     return createToolError('Invalid recipient phone number');
                 }
 
-                // Convert base64 mediaFiles to hosted URLs
+                // Convert mediaFiles (either data or path) to hosted URLs
                 if (mediaFiles && Array.isArray(mediaFiles) && mediaFiles.length > 0) {
                     for (const file of mediaFiles) {
-                        if (!file.filename || !file.mimeType || !file.data) {
-                            return createToolError('Each mediaFile must have filename, mimeType, and data');
+                        if (!file.filename || !file.mimeType) {
+                            return createToolError('Each mediaFile must have filename and mimeType');
+                        }
+                        if (!file.data && !file.path) {
+                            return createToolError(`mediaFile "${file.filename}" must have either "data" (base64) or "path" (absolute filesystem path)`);
                         }
                         try {
-                            const url = tempMediaService.saveBase64File(file.filename, file.mimeType, file.data);
+                            const url = file.path
+                                ? tempMediaService.savePathFile(file.filename, file.mimeType, file.path)
+                                : tempMediaService.saveBase64File(file.filename, file.mimeType, file.data!);
                             mediaUrls.push(url);
                         } catch (err: any) {
                             return createToolError(`Failed to process media file "${file.filename}": ${err.message}`);
