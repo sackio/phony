@@ -274,17 +274,19 @@ export class TwilioSmsService {
             console.log(`[TwilioSMS] SMS rejected - sender not in whitelist: ${sender}`);
             throw new Error(`SMS sending is not enabled for number ${sender}. Only whitelisted numbers can send SMS.`);
         }
-        if (!body || body.trim().length === 0) throw new Error('SMS body cannot be empty');
-        if (body.length > 1600) throw new Error(`SMS body too long (${body.length} chars). Max 1600.`);
+        const hasMedia = !!(mediaUrls && mediaUrls.length > 0);
+        if ((!body || body.trim().length === 0) && !hasMedia) throw new Error('SMS body cannot be empty (unless sending media)');
+        if (body && body.length > 1600) throw new Error(`SMS body too long (${body.length} chars). Max 1600.`);
 
         try {
             const publicUrl = process.env.PUBLIC_URL;
             const statusCallbackUrl = publicUrl ? `${publicUrl}/sms/status` : undefined;
 
+            const trimmedBody = (body || '').trim();
             const messageOptions: any = {
                 from: sender,
                 to: toNumber,
-                body: body.trim(),
+                ...(trimmedBody && { body: trimmedBody }),
                 ...(statusCallbackUrl && { statusCallback: statusCallbackUrl })
             };
             if (mediaUrls && mediaUrls.length > 0) {
@@ -301,7 +303,7 @@ export class TwilioSmsService {
                 fromNumber: sender,
                 toNumber: toNumber,
                 direction: SmsDirection.OUTBOUND,
-                body: body.trim(),
+                body: trimmedBody,
                 status: this.mapTwilioStatus(message.status),
                 twilioStatus: message.status,
                 numMedia: mediaUrls ? mediaUrls.length : 0,
@@ -311,11 +313,8 @@ export class TwilioSmsService {
             console.log(`[TwilioSMS] Sent SMS ${message.sid} from ${sender} to ${toNumber}`);
 
             if (SMS_PROXY_ENABLED && !options?.skipNotification) {
-                // Register the recipient under the sender's Twilio number so that
-                // proxy targets can reply by code (e.g. "1055: hi") and label them
-                // even before the contact has texted us back.
                 TwilioSmsService.registerSender(sender, toNumber);
-                this.notifyOutboundSms(sender, toNumber, body.trim()).catch(err =>
+                this.notifyOutboundSms(sender, toNumber, trimmedBody, mediaUrls).catch(err =>
                     console.error(`[TwilioSMS] Error sending outbound notification:`, err)
                 );
             }
@@ -329,17 +328,17 @@ export class TwilioSmsService {
 
     // --- Outbound notification ---
 
-    private async notifyOutboundSms(fromNumber: string, toNumber: string, body: string): Promise<void> {
+    private async notifyOutboundSms(fromNumber: string, toNumber: string, body: string, mediaUrls?: string[]): Promise<void> {
         const label = TwilioSmsService.getDisplayLabel(toNumber);
         const cheatsheet = TwilioSmsService.getCheatsheet(toNumber);
-        const notification = `📤 ${label} Sent to ${toNumber}:\n${body}${cheatsheet}`;
+        const mediaNote = mediaUrls && mediaUrls.length ? `\n[📎 ${mediaUrls.length} attachment${mediaUrls.length > 1 ? 's' : ''}]` : '';
+        const notification = `📤 ${label} Sent to ${toNumber}:\n${body || '(no text)'}${mediaNote}${cheatsheet}`;
 
         for (const target of SMS_PROXY_TARGET_NUMBERS) {
-            // Don't notify the recipient — they already got the actual message
             if (target === toNumber) continue;
             try {
-                await this.sendSms(target, notification, fromNumber, undefined, { skipNotification: true });
-                console.log(`[TwilioSMS] Outbound notification sent to ${target}`);
+                await this.sendSms(target, notification, fromNumber, mediaUrls && mediaUrls.length ? mediaUrls : undefined, { skipNotification: true });
+                console.log(`[TwilioSMS] Outbound notification sent to ${target}${mediaUrls && mediaUrls.length ? ` (+${mediaUrls.length} media)` : ''}`);
             } catch (err) {
                 console.error(`[TwilioSMS] Failed to notify ${target} about outbound SMS:`, err);
             }
