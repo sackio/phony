@@ -129,7 +129,10 @@ export class SmsReconciliationService {
                     const messages = await this.twilioClient.messages.list({
                         to: twilioNumber,
                         dateSentAfter,
-                        // Only inbound (received) messages
+                        // Hard cap — with a 24h window this prevents a runaway
+                        // scan if an upstream issue inflates counts. At steady
+                        // volume (~50/day), real pages stay well under this.
+                        limit: 500,
                     });
 
                     // Filter to only inbound/received messages (Twilio list can include
@@ -247,9 +250,10 @@ export class SmsReconciliationService {
         let conversations: Array<{ sid: string; dateUpdated: Date | null }> = [];
         try {
             // Twilio Conversations API doesn't support server-side date
-            // filtering on list(); we pull recent pages and filter locally.
-            // Default ordering is newest-first by dateUpdated.
-            const raw = await this.twilioClient.conversations.v1.conversations.list({ limit: 100 });
+            // filtering on list(); pull recent pages newest-first and stop
+            // once we see ones older than the window (default ordering is
+            // by dateUpdated desc).
+            const raw = await this.twilioClient.conversations.v1.conversations.list({ limit: 200 });
             conversations = raw
                 .map(c => ({ sid: c.sid, dateUpdated: c.dateUpdated }))
                 .filter(c => !c.dateUpdated || c.dateUpdated >= dateSentAfter);

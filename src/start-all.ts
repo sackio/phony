@@ -127,10 +127,12 @@ async function main(): Promise<void> {
         const mcpServer = new VoiceCallMcpServer(twilioCallService, twilioCallbackUrl);
         await mcpServer.start();
 
-        // Start SMS reconciliation service (checks Twilio for missed inbound messages)
+        // SMS + Conversations reconciliation: runs every 5 min, scans the
+        // prior 24 hours. Idempotent (messageSid unique) so a wider window
+        // just catches more misses without costing much on steady state.
         const reconciliationService = SmsReconciliationService.getInstance({
             intervalMs: parseInt(process.env.SMS_RECONCILIATION_INTERVAL_MS || '300000'),   // 5 minutes
-            lookbackMs: parseInt(process.env.SMS_RECONCILIATION_LOOKBACK_MS || '1800000'),  // 30 minutes
+            lookbackMs: parseInt(process.env.SMS_RECONCILIATION_LOOKBACK_MS || '86400000'), // 24 hours
         });
         reconciliationService.start();
 
