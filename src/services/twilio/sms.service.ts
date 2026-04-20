@@ -386,20 +386,27 @@ export class TwilioSmsService {
                 }
             }
 
-            // Dedup against active group Conversations: if this inbound
-            // MessageSid is (or corresponds to) a message Twilio already
-            // routed into a group Conversation, the /conversations/webhook
-            // path owns it. Don't re-save or re-proxy.
+            // Dedup against active group Conversations: when the sender
+            // is a current external participant in a group on this Twilio
+            // number, the /conversations/webhook already handled the real
+            // message. The 1-on-1 inbound Twilio ALSO delivers is a
+            // duplicate of the group content.
+            //
+            // Exception: if the sender is one of our proxy targets
+            // (Ben/Laura) AND the message parses as a reply command
+            // ({slug}: msg | 1234: msg | label N slug), we still process
+            // it — that's their channel for posting into groups or
+            // routing to individual contacts. Only true duplicate group
+            // content gets skipped.
             const isFromProxyTarget = SMS_PROXY_TARGET_NUMBERS.includes(data.From);
-            if (!isFromProxyTarget) {
-                const inGroup = await GroupConversationModel.findOne({
-                    twilioNumber: data.To,
-                    externalParticipants: data.From,
-                }).lean();
-                if (inGroup) {
-                    console.log(`[TwilioSMS] ${data.MessageSid} from ${data.From} is a group participant in ${inGroup.conversationSid} — Conversations webhook owns this, skipping 1-on-1 path`);
-                    return;
-                }
+            const parsedReply = isFromProxyTarget ? TwilioSmsService.parseIncoming(data.Body || '') : null;
+            const inGroup = await GroupConversationModel.findOne({
+                twilioNumber: data.To,
+                externalParticipants: data.From,
+            }).lean();
+            if (inGroup && !parsedReply) {
+                console.log(`[TwilioSMS] ${data.MessageSid} from ${data.From} is a group participant in ${inGroup.conversationSid} and doesn't parse as a reply command — Conversations webhook owns this, skipping 1-on-1 path`);
+                return;
             }
 
             await this.storageService.saveSms({
