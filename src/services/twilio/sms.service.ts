@@ -386,6 +386,22 @@ export class TwilioSmsService {
                 }
             }
 
+            // Dedup against active group Conversations: if this inbound
+            // MessageSid is (or corresponds to) a message Twilio already
+            // routed into a group Conversation, the /conversations/webhook
+            // path owns it. Don't re-save or re-proxy.
+            const isFromProxyTarget = SMS_PROXY_TARGET_NUMBERS.includes(data.From);
+            if (!isFromProxyTarget) {
+                const inGroup = await GroupConversationModel.findOne({
+                    twilioNumber: data.To,
+                    externalParticipants: data.From,
+                }).lean();
+                if (inGroup) {
+                    console.log(`[TwilioSMS] ${data.MessageSid} from ${data.From} is a group participant in ${inGroup.conversationSid} — Conversations webhook owns this, skipping 1-on-1 path`);
+                    return;
+                }
+            }
+
             await this.storageService.saveSms({
                 messageSid: data.MessageSid,
                 fromNumber: data.From,
@@ -401,8 +417,6 @@ export class TwilioSmsService {
             console.log(`[TwilioSMS] Received SMS ${data.MessageSid} from ${data.From} to ${data.To}`);
 
             if (!SMS_PROXY_ENABLED) return;
-
-            const isFromProxyTarget = SMS_PROXY_TARGET_NUMBERS.includes(data.From);
 
             if (isFromProxyTarget) {
                 await this.handleProxyReply(data.From, data.To, data.Body || '');
@@ -653,6 +667,72 @@ export class TwilioSmsService {
             { conversationSid },
             { $set: { externalParticipants: externals, lastActivityAt: new Date() } }
         ).catch(err => console.error(`[TwilioSMS Proxy] updateGroupExternals failed:`, err));
+    }
+
+    /**
+     * Full inbound-pipeline for a Conversation message: idempotent persist
+     * into SmsModel + register group if unknown + fan out proxy notifications.
+     * Safe to call from both the live webhook and the periodic reconciler.
+     *
+     * Returns `true` if the message was processed this call, `false` if it
+     * was already in SmsModel (deduped).
+     */
+    public async processInboundGroupMessage(
+        conversationSid: string,
+        messageSid: string | undefined,
+        author: string,
+        body: string,
+        mediaUrls: string[],
+        messageDate?: Date,
+        options?: { skipNotify?: boolean }
+    ): Promise<boolean> {
+        const systemIdentity = this.conversationsService.getSystemIdentity();
+        if (!author || author === systemIdentity) return false;
+        if (!body && mediaUrls.length === 0) return false;
+
+        // Idempotency: if we've already stored this messageSid, this is a
+        // retry (webhook duplicate or reconciler replay) — skip.
+        if (messageSid) {
+            const existing = await SmsModel.findOne({ messageSid }).lean();
+            if (existing) return false;
+        }
+
+        // Ensure the group is registered (covers webhook-missed onConversationAdded)
+        if (!TwilioSmsService.getGroupSlug(conversationSid)) {
+            const twilioNumber = process.env.TWILIO_NUMBER!;
+            const externals = await this.conversationsService
+                .getExternalAddresses(conversationSid)
+                .catch(() => [] as string[]);
+            await this.registerGroup(conversationSid, twilioNumber, externals);
+        }
+
+        // Persist to SmsModel tagged with the Conversation SID for audit
+        if (messageSid) {
+            try {
+                await this.storageService.saveSms({
+                    messageSid,
+                    fromNumber: author,
+                    toNumber: process.env.TWILIO_NUMBER!,
+                    direction: SmsDirection.INBOUND,
+                    body,
+                    status: SmsStatus.RECEIVED,
+                    twilioStatus: 'received',
+                    numMedia: mediaUrls.length,
+                    mediaUrls,
+                    conversationSid,
+                });
+            } catch (err: any) {
+                // Duplicate-key (E11000) means we lost the idempotency race
+                // with another caller; treat as already processed.
+                if (err.code === 11000) return false;
+                throw err;
+            }
+        }
+
+        if (!options?.skipNotify) {
+            await this.notifyGroupMessage(conversationSid, author, body, mediaUrls);
+        }
+        return true;
     }
 
     /**

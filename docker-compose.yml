@@ -7,6 +7,11 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD}
       MONGO_INITDB_DATABASE: ${MONGODB_DATABASE:-phony}
+    ports:
+      # Bind to loopback only so host-side scripts (reconciliation, backfills,
+      # mongosh) can reach this DB without going through the container. Port
+      # 27018 avoids any conflict with a default mongo on the host.
+      - "127.0.0.1:27018:27017"
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
@@ -49,8 +54,10 @@ services:
       # API Secret
       API_SECRET: ${API_SECRET}
 
-      # MongoDB connection
-      MONGODB_URI: mongodb://${MONGODB_USERNAME}:${MONGODB_PASSWORD}@mongodb:27017/phony?authSource=admin
+      # MongoDB connection (uses phony DB where existing data lives; legacy
+      # MONGODB_DATABASE in .env may say voice-calls but the actual data is
+      # in the phony database).
+      MONGODB_URI: mongodb://${MONGODB_USERNAME}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE:-phony}?authSource=admin
 
       # SMS whitelist
       SMS_ENABLED_NUMBERS: ${SMS_ENABLED_NUMBERS:-+18575550111}

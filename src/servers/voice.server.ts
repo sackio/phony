@@ -1933,28 +1933,19 @@ export class VoiceServer {
 
     private async onGroupMessageAdded(
         conversationSid: string,
-        _messageSid: string | undefined,
+        messageSid: string | undefined,
         author: string | undefined,
         body: string | undefined,
         mediaUrls: string[]
     ): Promise<void> {
-        // author may be an E.164 address (inbound from a phone) or our
-        // system identity (outbound posted by Phony). Identity echoes must
-        // not be re-proxied — Ben/Laura already got CC'd when they sent the
-        // reply in handleGroupReply.
-        const systemIdentity = this.twilioConversationsService.getSystemIdentity();
-        if (!author || author === systemIdentity) return;
-        if (!body && mediaUrls.length === 0) return;
-
-        // Ensure the group is registered (handles the case where we missed
-        // onConversationAdded, e.g. restart during autocreate).
-        if (!TwilioSmsService.getGroupSlug(conversationSid)) {
-            const twilioNumber = process.env.TWILIO_NUMBER!;
-            const externals = await this.twilioConversationsService.getExternalAddresses(conversationSid).catch(() => [] as string[]);
-            await this.twilioSmsService.registerGroup(conversationSid, twilioNumber, externals);
-        }
-
-        await this.twilioSmsService.notifyGroupMessage(conversationSid, author, body || '', mediaUrls);
+        if (!author) return;
+        await this.twilioSmsService.processInboundGroupMessage(
+            conversationSid,
+            messageSid,
+            author,
+            body || '',
+            mediaUrls,
+        );
     }
 
     public start(): void {

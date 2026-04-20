@@ -4,6 +4,7 @@ import { SmsDirection, SmsStatus } from '../../types.js';
 import { MongoDBService } from '../database/mongodb.service.js';
 import { TwilioSmsService } from '../twilio/sms.service.js';
 import { TwilioConversationsService } from '../twilio/conversations.service.js';
+import { GroupConversationModel } from '../../models/group-conversation.model.js';
 import { SMS_ENABLED_NUMBERS } from '../../config/constants.js';
 
 /**
@@ -20,6 +21,7 @@ export class SmsReconciliationService {
 
     private readonly twilioClient: twilio.Twilio;
     private readonly twilioSmsService: TwilioSmsService;
+    private readonly conversationsService: TwilioConversationsService;
     private readonly intervalMs: number;
     private readonly lookbackMs: number;
     private intervalHandle: ReturnType<typeof setInterval> | null = null;
@@ -38,8 +40,8 @@ export class SmsReconciliationService {
         const authToken = process.env.TWILIO_AUTH_TOKEN!;
         this.twilioClient = twilio(accountSid, authToken);
 
-        const conversationsService = new TwilioConversationsService(this.twilioClient);
-        this.twilioSmsService = new TwilioSmsService(this.twilioClient, conversationsService);
+        this.conversationsService = new TwilioConversationsService(this.twilioClient);
+        this.twilioSmsService = new TwilioSmsService(this.twilioClient, this.conversationsService);
     }
 
     static getInstance(options?: { intervalMs?: number; lookbackMs?: number }): SmsReconciliationService {
@@ -204,6 +206,14 @@ export class SmsReconciliationService {
                 }
             }
 
+            // Also reconcile Conversation-sourced messages (group MMS).
+            const convResult = await this.reconcileConversations(dateSentAfter).catch(err => {
+                console.error('[SmsReconciliation] Conversations pass failed:', err);
+                return { checked: 0, reconciled: 0 };
+            });
+            checked += convResult.checked;
+            reconciled += convResult.reconciled;
+
             if (reconciled > 0) {
                 console.log(
                     `[SmsReconciliation] Completed — checked=${checked}, reconciled=${reconciled}`
@@ -217,6 +227,180 @@ export class SmsReconciliationService {
             console.error('[SmsReconciliation] Unexpected error during reconciliation:', error);
         } finally {
             this.reconciling = false;
+        }
+
+        return { checked, reconciled };
+    }
+
+    /**
+     * Reconcile Twilio Conversations: for each Conversation updated in the
+     * lookback window, compare its message list against SmsModel and replay
+     * anything missing through the same pipeline as the webhook.
+     *
+     * Catches gaps from: webhook downtime, network issues during autocreate,
+     * Twilio queueing delays, and missed onMessageAdded retries.
+     */
+    public async reconcileConversations(dateSentAfter: Date): Promise<{ checked: number; reconciled: number }> {
+        let checked = 0;
+        let reconciled = 0;
+
+        let conversations: Array<{ sid: string; dateUpdated: Date | null }> = [];
+        try {
+            // Twilio Conversations API doesn't support server-side date
+            // filtering on list(); we pull recent pages and filter locally.
+            // Default ordering is newest-first by dateUpdated.
+            const raw = await this.twilioClient.conversations.v1.conversations.list({ limit: 100 });
+            conversations = raw
+                .map(c => ({ sid: c.sid, dateUpdated: c.dateUpdated }))
+                .filter(c => !c.dateUpdated || c.dateUpdated >= dateSentAfter);
+        } catch (err) {
+            console.error('[SmsReconciliation] Failed to list Conversations:', err);
+            return { checked: 0, reconciled: 0 };
+        }
+
+        for (const conv of conversations) {
+            try {
+                const messages = await this.twilioClient.conversations.v1
+                    .conversations(conv.sid)
+                    .messages.list({ limit: 50, order: 'desc' });
+
+                for (const msg of messages) {
+                    if (msg.dateCreated && msg.dateCreated < dateSentAfter) continue;
+                    checked++;
+
+                    // processInboundGroupMessage is idempotent: it checks
+                    // SmsModel by messageSid (stored as 'IM…' for Conversation
+                    // messages) and no-ops on duplicates.
+                    const mediaUrls: string[] = [];
+                    const author = msg.author || '';
+                    const body = msg.body || '';
+
+                    const wasProcessed = await this.twilioSmsService
+                        .processInboundGroupMessage(conv.sid, msg.sid, author, body, mediaUrls, msg.dateCreated ?? undefined)
+                        .catch(err => {
+                            console.error(`[SmsReconciliation] Failed to replay ${msg.sid} in ${conv.sid}:`, err);
+                            return false;
+                        });
+                    if (wasProcessed) {
+                        reconciled++;
+                        console.log(`[SmsReconciliation] Replayed ${msg.sid} in ${conv.sid} from ${author}: "${body.substring(0, 60)}"`);
+                    }
+                }
+            } catch (err: any) {
+                // 20404 = conversation was deleted since we listed it; skip
+                if (err.status === 404 || err.code === 20404) continue;
+                console.error(`[SmsReconciliation] Failed to fetch messages for ${conv.sid}:`, err);
+            }
+        }
+
+        return { checked, reconciled };
+    }
+
+    /**
+     * Retag SmsModel rows that predate autocreate so they join the group's
+     * thread in our DB. Matches 1-on-1 SMS entries where one side is the
+     * Conversation's projectedAddress (+18575550111) and the other side is
+     * any of the Conversation's external participants, within an optional
+     * time window, and sets conversationId = convSid.
+     *
+     * Idempotent — $set is a no-op if conversationId is already correct.
+     */
+    public async retagHistoricalSmsForConversation(
+        conversationSid: string,
+        options?: { since?: Date; until?: Date }
+    ): Promise<{ matched: number; modified: number; externals: string[] }> {
+        const mongo = MongoDBService.getInstance();
+        if (!mongo.getIsConnected()) {
+            return { matched: 0, modified: 0, externals: [] };
+        }
+
+        const externals = await this.conversationsService
+            .getExternalAddresses(conversationSid)
+            .catch(() => [] as string[]);
+        if (externals.length === 0) {
+            console.log(`[SmsReconciliation] No externals for ${conversationSid}, nothing to retag`);
+            return { matched: 0, modified: 0, externals };
+        }
+
+        const projected = process.env.TWILIO_NUMBER!;
+        // Exclude proxy-notification bodies: outbound SMS we sent to
+        // SMS_PROXY_TARGET_NUMBERS copying what happened in a 1-on-1 thread.
+        // Those aren't group-conversation content, they're operational noise.
+        const proxyPrefixRe = /^(📥|📤|👥|Reply formats:|\{.*-grp\} |$)/;
+
+        const filter: any = {
+            $or: [
+                { fromNumber: projected, toNumber: { $in: externals } },
+                { fromNumber: { $in: externals }, toNumber: projected },
+            ],
+            // Don't stomp rows that already belong to a different Twilio
+            // Conversation (CH…). Rows with no conversationId or with a
+            // `conv_*` 1-on-1 pairing get retagged — the CH SID is the
+            // canonical thread from now on.
+            $and: [
+                {
+                    $or: [
+                        { conversationId: { $exists: false } },
+                        { conversationId: null },
+                        { conversationId: { $regex: '^conv_' } },
+                        { conversationId: conversationSid },
+                    ],
+                },
+            ],
+            body: { $not: proxyPrefixRe },
+        };
+        if (options?.since || options?.until) {
+            filter.createdAt = {};
+            if (options.since) filter.createdAt.$gte = options.since;
+            if (options.until) filter.createdAt.$lte = options.until;
+        }
+
+        const result = await SmsModel.updateMany(filter, { $set: { conversationId: conversationSid } });
+        console.log(`[SmsReconciliation] Retagged ${result.modifiedCount}/${result.matchedCount} historical SMS for ${conversationSid} (externals: ${externals.join(', ')})`);
+        return { matched: result.matchedCount, modified: result.modifiedCount, externals };
+    }
+
+    /**
+     * Backfill a specific Conversation's entire message history (no time
+     * window). Use once to absorb a group that started before autocreate
+     * was enabled. Idempotent — safe to re-run.
+     *
+     * Always passes `skipNotify: true` so historical messages don't spam
+     * the proxy targets.
+     */
+    public async backfillConversation(conversationSid: string): Promise<{ checked: number; reconciled: number }> {
+        let checked = 0;
+        let reconciled = 0;
+
+        try {
+            const messages = await this.twilioClient.conversations.v1
+                .conversations(conversationSid)
+                .messages.list({ limit: 1000, order: 'asc' });
+
+            for (const msg of messages) {
+                checked++;
+                const wasProcessed = await this.twilioSmsService
+                    .processInboundGroupMessage(
+                        conversationSid,
+                        msg.sid,
+                        msg.author || '',
+                        msg.body || '',
+                        [],
+                        msg.dateCreated ?? undefined,
+                        { skipNotify: true }
+                    )
+                    .catch(err => {
+                        console.error(`[SmsReconciliation] Backfill replay ${msg.sid} failed:`, err);
+                        return false;
+                    });
+                if (wasProcessed) {
+                    reconciled++;
+                    console.log(`[SmsReconciliation] Backfilled ${msg.sid} in ${conversationSid} from ${msg.author}: "${(msg.body || '').substring(0, 60)}"`);
+                }
+            }
+            console.log(`[SmsReconciliation] Backfill ${conversationSid}: checked=${checked}, reconciled=${reconciled}`);
+        } catch (err) {
+            console.error(`[SmsReconciliation] Backfill failed for ${conversationSid}:`, err);
         }
 
         return { checked, reconciled };

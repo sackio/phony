@@ -30,6 +30,7 @@ export class SmsStorageService {
         errorCode?: string;
         numMedia?: number;
         mediaUrls?: string[];
+        conversationSid?: string;
     }): Promise<void> {
         if (!this.mongoService.getIsConnected()) {
             console.log('[SmsStorage] MongoDB not connected, skipping SMS save');
@@ -48,16 +49,23 @@ export class SmsStorageService {
                 errorMessage: data.errorMessage,
                 errorCode: data.errorCode,
                 numMedia: data.numMedia || 0,
-                mediaUrls: data.mediaUrls || []
+                mediaUrls: data.mediaUrls || [],
+                // Store Twilio Conversation SID (CH…) in the existing
+                // conversationId field so Conversation-sourced inbound
+                // messages are queryable alongside the 1-on-1 stream.
+                ...(data.conversationSid && { conversationId: data.conversationSid })
             });
-            console.log(`[SmsStorage] Saved ${data.direction} SMS ${data.messageSid} from ${data.fromNumber} to ${data.toNumber}`);
+            console.log(`[SmsStorage] Saved ${data.direction} SMS ${data.messageSid} from ${data.fromNumber} to ${data.toNumber}${data.conversationSid ? ` (conv ${data.conversationSid})` : ''}`);
 
-            // Automatically link message to conversation
-            await this.conversationService.linkMessageToConversation(
-                data.messageSid,
-                data.fromNumber,
-                data.toNumber
-            );
+            // Only link to the 1-on-1 ConversationModel if this isn't already
+            // tagged with a Twilio Conversation SID (those are group threads).
+            if (!data.conversationSid) {
+                await this.conversationService.linkMessageToConversation(
+                    data.messageSid,
+                    data.fromNumber,
+                    data.toNumber
+                );
+            }
         } catch (error) {
             console.error(`[SmsStorage] Error saving SMS:`, error);
         }
