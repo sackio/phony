@@ -115,6 +115,37 @@ export class TwilioConversationsService {
     }
 
     /**
+     * Remove an external SMS participant from a Conversation. Returns true
+     * if the participant existed and was removed, false if not found.
+     */
+    public async removeExternalParticipant(conversationSid: string, phoneNumber: string): Promise<boolean> {
+        const participants = await this.listParticipants(conversationSid);
+        const match = participants.find(p => p.address === phoneNumber);
+        if (!match) return false;
+        await this.withRetry(
+            () => this.twilioClient.conversations.v1
+                .conversations(conversationSid)
+                .participants(match.sid).remove(),
+            `removeExternalParticipant ${phoneNumber}`
+        );
+        console.log(`[Conversations] Removed ${phoneNumber} from ${conversationSid}`);
+        return true;
+    }
+
+    /**
+     * Update a Conversation's friendlyName.
+     */
+    public async updateFriendlyName(conversationSid: string, friendlyName: string): Promise<void> {
+        await this.withRetry(
+            () => this.twilioClient.conversations.v1
+                .conversations(conversationSid)
+                .update({ friendlyName }),
+            `updateFriendlyName ${conversationSid}`
+        );
+        console.log(`[Conversations] Renamed ${conversationSid} → "${friendlyName}"`);
+    }
+
+    /**
      * Post a message into a Conversation as Phony. Twilio will group-MMS
      * fan-out to all external participants.
      */

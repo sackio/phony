@@ -603,6 +603,22 @@ export class TwilioSmsService {
     }
 
     /**
+     * Resolve a group reference that may be either a CH-SID or a slug
+     * (with or without braces: "{0101-grp}", "0101-grp", or "CH…").
+     */
+    public static resolveGroupSid(ref: string): string | undefined {
+        const trimmed = ref.trim().replace(/^\{|\}$/g, '');
+        if (trimmed.startsWith('CH') && trimmed.length === 34) {
+            return this.sidToGroupSlug.has(trimmed) ? trimmed : undefined;
+        }
+        return this.groupSlugToSid.get(trimmed.toLowerCase());
+    }
+
+    public getConversationsService(): TwilioConversationsService {
+        return this.conversationsService;
+    }
+
+    /**
      * Persist a new group Conversation and allocate a slug. Idempotent —
      * returns the existing record if already registered.
      */
