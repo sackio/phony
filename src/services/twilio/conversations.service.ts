@@ -1,324 +1,181 @@
 import twilio from 'twilio';
-import { SMS_PROXY_TARGET_NUMBERS, TWILIO_MESSAGING_SERVICE_SID } from '../../config/constants.js';
 
 /**
- * Service for managing Twilio Conversations API (group MMS)
- * Creates native group MMS threads where all participants see all messages
+ * Service for managing Twilio Conversations API (true group MMS).
+ *
+ * Participant pattern (verified working 2026-04-20):
+ *   - System (Phony): identity + messagingBinding.projectedAddress = TWILIO_NUMBER
+ *     — no address, no proxy_address
+ *   - External SMS: messagingBinding.address = "+1NPANXXXXXX" ONLY
+ *     — no proxy_address, no projected_address
+ *
+ * Do NOT set messagingServiceSid on conversations.create — that re-triggers
+ * the A2P / Address-Config mutex that caused the April 13 rollback. Standalone
+ * Conversations route correctly when the number is MMS-capable and the
+ * account is pre-2022-03-15.
+ *
+ * Accounts created after 2022-03-15 cannot use Group MMS (Twilio-wide
+ * lockout); callers should not create group Conversations on such accounts.
+ *
+ * Ben/Laura are NOT added as Conversation participants. They are proxied
+ * externally as 1-on-1 SMS from the Conversations webhook so the external
+ * group never sees their numbers.
  */
 export class TwilioConversationsService {
     private readonly twilioClient: twilio.Twilio;
-    private messagingServiceSid: string = '';
-    private initialized: boolean = false;
-
-    // Cache: senderNumber:twilioNumber -> conversationSid
-    private conversationCache: Map<string, string> = new Map();
+    private readonly systemIdentity: string = 'phony';
 
     constructor(twilioClient: twilio.Twilio) {
         this.twilioClient = twilioClient;
     }
 
     /**
-     * Initialize the Conversations service
-     * Ensures a Messaging Service exists (creates one if TWILIO_MESSAGING_SERVICE_SID not set)
+     * Create a new group Conversation with Phony as projectedAddress and
+     * the given external phone numbers as native SMS participants.
      */
-    public async initialize(): Promise<void> {
-        if (this.initialized) return;
+    public async createGroupConversation(
+        twilioNumber: string,
+        externalAddresses: string[],
+        options?: { friendlyName?: string; uniqueName?: string }
+    ): Promise<string> {
+        const conv = await this.withRetry(
+            () => this.twilioClient.conversations.v1.conversations.create({
+                ...(options?.friendlyName && { friendlyName: options.friendlyName }),
+                ...(options?.uniqueName && { uniqueName: options.uniqueName }),
+            }),
+            'createGroupConversation'
+        );
+        console.log(`[Conversations] Created ${conv.sid}${options?.friendlyName ? ` (${options.friendlyName})` : ''}`);
+
+        await this.ensureSystemParticipant(conv.sid, twilioNumber);
+        for (const addr of externalAddresses) {
+            await this.addExternalParticipant(conv.sid, addr);
+        }
+        return conv.sid;
+    }
+
+    /**
+     * Ensure Phony is present as the projectedAddress participant.
+     * No-op if already present.
+     */
+    public async ensureSystemParticipant(conversationSid: string, twilioNumber: string): Promise<void> {
+        const participants = await this.listParticipants(conversationSid);
+        const existing = participants.find(p => p.identity === this.systemIdentity);
+        if (existing) return;
 
         try {
-            if (TWILIO_MESSAGING_SERVICE_SID) {
-                this.messagingServiceSid = TWILIO_MESSAGING_SERVICE_SID;
-                console.log(`[Conversations] Using existing Messaging Service: ${this.messagingServiceSid}`);
-            } else {
-                // Auto-create a Messaging Service
-                this.messagingServiceSid = await this.findOrCreateMessagingService();
-            }
-            this.initialized = true;
-            console.log(`[Conversations] Initialized with Messaging Service: ${this.messagingServiceSid}`);
-        } catch (error) {
-            console.error('[Conversations] Failed to initialize:', error);
+            await this.withRetry(
+                () => this.twilioClient.conversations.v1
+                    .conversations(conversationSid)
+                    .participants.create({
+                        identity: this.systemIdentity,
+                        'messagingBinding.projectedAddress': twilioNumber,
+                    }),
+                `ensureSystemParticipant ${conversationSid}`
+            );
+            console.log(`[Conversations] Added system participant (projected=${twilioNumber}) to ${conversationSid}`);
+        } catch (error: any) {
+            if (error.code === 50433) return; // already exists — race
             throw error;
         }
     }
 
     /**
-     * Find existing or create a new Messaging Service for Phony
+     * Add a native SMS participant by their external phone number.
+     * address-only pattern — no proxy, no projected.
      */
-    private async findOrCreateMessagingService(): Promise<string> {
-        // Check for existing Phony messaging service
-        const services = await this.twilioClient.messaging.v1.services.list({ limit: 50 });
-        const existing = services.find(s => s.friendlyName === 'Phony Group SMS');
-        if (existing) {
-            console.log(`[Conversations] Found existing Messaging Service: ${existing.sid}`);
-            await this.ensureNumbersInMessagingService(existing.sid);
-            return existing.sid;
-        }
-
-        // Create new one
-        const service = await this.twilioClient.messaging.v1.services.create({
-            friendlyName: 'Phony Group SMS',
-            useInboundWebhookOnNumber: true
-        });
-        console.log(`[Conversations] Created Messaging Service: ${service.sid}`);
-
-        // Add Twilio numbers to the Messaging Service
-        await this.ensureNumbersInMessagingService(service.sid);
-
-        return service.sid;
-    }
-
-    /**
-     * Ensure our Twilio numbers are in the Messaging Service
-     */
-    private async ensureNumbersInMessagingService(serviceSid: string): Promise<void> {
-        const twilioNumber = process.env.TWILIO_NUMBER;
-        if (!twilioNumber) return;
-
-        try {
-            // List phone numbers on the account to get SIDs
-            const incomingNumbers = await this.twilioClient.incomingPhoneNumbers.list({ phoneNumber: twilioNumber });
-            if (incomingNumbers.length === 0) {
-                console.warn(`[Conversations] Twilio number ${twilioNumber} not found on account`);
-                return;
-            }
-
-            const numberSid = incomingNumbers[0].sid;
-
-            // Check if already in the service
-            try {
-                const existing = await this.twilioClient.messaging.v1
-                    .services(serviceSid)
-                    .phoneNumbers
-                    .list({ limit: 50 });
-                if (existing.some(n => n.sid === numberSid)) {
-                    console.log(`[Conversations] Number ${twilioNumber} already in Messaging Service`);
-                    return;
-                }
-            } catch {
-                // If listing fails, try to add anyway
-            }
-
-            await this.twilioClient.messaging.v1
-                .services(serviceSid)
-                .phoneNumbers
-                .create({ phoneNumberSid: numberSid });
-            console.log(`[Conversations] Added ${twilioNumber} to Messaging Service`);
-        } catch (error: any) {
-            // 21710 = number already in a messaging service
-            if (error.code === 21710) {
-                console.log(`[Conversations] Number ${twilioNumber} already associated with a Messaging Service`);
-            } else {
-                console.error(`[Conversations] Error adding number to Messaging Service:`, error.message);
-            }
-        }
-    }
-
-    /**
-     * Find or create a Twilio Conversation for a sender + Twilio number pair.
-     * Creates a group MMS thread with [sender, ...proxyTargets].
-     *
-     * @param senderNumber The external sender's phone number (E.164)
-     * @param twilioNumber The Twilio phone number that received the message (E.164)
-     * @returns The Twilio Conversation SID
-     */
-    public async findOrCreateConversation(senderNumber: string, twilioNumber: string): Promise<string> {
-        await this.ensureInitialized();
-
-        const cacheKey = `${senderNumber}:${twilioNumber}`;
-
-        // Check cache first
-        const cached = this.conversationCache.get(cacheKey);
-        if (cached) {
-            // Verify it's still active
-            try {
-                const conv = await this.twilioClient.conversations.v1.conversations(cached).fetch();
-                if (conv.state !== 'closed') {
-                    return cached;
-                }
-                // Closed — remove from cache and create new
-                this.conversationCache.delete(cacheKey);
-            } catch {
-                // Not found — remove from cache
-                this.conversationCache.delete(cacheKey);
-            }
-        }
-
-        // Search for existing active conversation with this sender
-        const existingSid = await this.findExistingConversation(senderNumber, twilioNumber);
-        if (existingSid) {
-            this.conversationCache.set(cacheKey, existingSid);
-            return existingSid;
-        }
-
-        // Create new conversation
-        const conversationSid = await this.createConversation(senderNumber, twilioNumber);
-        this.conversationCache.set(cacheKey, conversationSid);
-        return conversationSid;
-    }
-
-    /**
-     * Search for an existing active conversation that has this sender as a participant
-     */
-    private async findExistingConversation(senderNumber: string, twilioNumber: string): Promise<string | null> {
-        try {
-            // Use uniqueName convention to find conversations
-            const uniqueName = this.getUniqueName(senderNumber, twilioNumber);
-            try {
-                const conv = await this.twilioClient.conversations.v1
-                    .conversations(uniqueName)
-                    .fetch();
-                if (conv.state !== 'closed') {
-                    console.log(`[Conversations] Found existing conversation ${conv.sid} for ${senderNumber}`);
-                    return conv.sid;
-                }
-            } catch {
-                // Not found by uniqueName — that's fine, we'll create
-            }
-        } catch (error) {
-            console.error('[Conversations] Error searching for existing conversation:', error);
-        }
-        return null;
-    }
-
-    /**
-     * Create a new Twilio Conversation with sender + proxy targets
-     */
-    private async createConversation(senderNumber: string, twilioNumber: string): Promise<string> {
-        const uniqueName = this.getUniqueName(senderNumber, twilioNumber);
-
-        const conversation = await this.twilioClient.conversations.v1.conversations.create({
-            friendlyName: `SMS with ${senderNumber}`,
-            uniqueName,
-            messagingServiceSid: this.messagingServiceSid
-        });
-
-        console.log(`[Conversations] Created conversation ${conversation.sid} for ${senderNumber}`);
-
-        // Add the external sender as participant
-        await this.addParticipant(conversation.sid, senderNumber, twilioNumber);
-
-        // Add proxy target numbers (Ben, Laura, etc.)
-        for (const target of SMS_PROXY_TARGET_NUMBERS) {
-            await this.addParticipant(conversation.sid, target, twilioNumber);
-        }
-
-        console.log(`[Conversations] Added ${1 + SMS_PROXY_TARGET_NUMBERS.length} participants to ${conversation.sid}`);
-        return conversation.sid;
-    }
-
-    /**
-     * Add the configured SMS proxy targets (Ben, Laura) to a conversation.
-     * Used by the conversations webhook when Twilio auto-creates a conversation
-     * from an inbound SMS — we attach our proxy targets so they see the thread.
-     * The proxy address is inferred from the existing participant binding.
-     */
-    public async addProxyTargets(conversationSid: string): Promise<void> {
-        await this.ensureInitialized();
-
-        // Find the existing participant to discover the proxy address
-        const participants = await this.twilioClient.conversations.v1
-            .conversations(conversationSid)
-            .participants
-            .list({ limit: 10 });
-
-        const existing = participants.find(p => p.messagingBinding?.proxy_address);
-        if (!existing) {
-            console.warn(`[Conversations] No existing participant with proxy in ${conversationSid}, cannot infer proxy address`);
-            return;
-        }
-
-        const proxyAddress = existing.messagingBinding!.proxy_address as string;
-        const existingAddresses = new Set(participants.map(p => p.messagingBinding?.address).filter(Boolean));
-
-        for (const target of SMS_PROXY_TARGET_NUMBERS) {
-            if (existingAddresses.has(target)) {
-                console.log(`[Conversations] Proxy target ${target} already in ${conversationSid}`);
-                continue;
-            }
-            await this.addParticipant(conversationSid, target, proxyAddress);
-        }
-    }
-
-    /**
-     * Add an SMS participant to a conversation
-     */
-    private async addParticipant(conversationSid: string, phoneNumber: string, proxyNumber: string): Promise<void> {
+    public async addExternalParticipant(conversationSid: string, phoneNumber: string): Promise<void> {
         try {
             await this.withRetry(
                 () => this.twilioClient.conversations.v1
                     .conversations(conversationSid)
-                    .participants
-                    .create({
+                    .participants.create({
                         'messagingBinding.address': phoneNumber,
-                        'messagingBinding.proxyAddress': proxyNumber
                     }),
-                `addParticipant ${phoneNumber}`
+                `addExternalParticipant ${phoneNumber}`
             );
-            console.log(`[Conversations] Added participant ${phoneNumber} to ${conversationSid}`);
+            console.log(`[Conversations] Added external ${phoneNumber} to ${conversationSid}`);
         } catch (error: any) {
-            // 50433 = participant already exists
-            if (error.code === 50433) {
-                console.log(`[Conversations] Participant ${phoneNumber} already in ${conversationSid}`);
-            } else {
-                console.error(`[Conversations] Failed to add participant ${phoneNumber}:`, error.message);
-                throw error;
-            }
+            if (error.code === 50433) return; // already exists
+            throw error;
         }
     }
 
     /**
-     * Send a message to a Twilio Conversation
-     * The author won't receive a duplicate of the message
-     *
-     * @param conversationSid The Twilio Conversation SID
-     * @param body The message body
-     * @param authorAddress The phone number of the message author (won't receive duplicate)
+     * Post a message into a Conversation as Phony. Twilio will group-MMS
+     * fan-out to all external participants.
      */
-    public async sendMessage(conversationSid: string, body: string, authorAddress?: string): Promise<string> {
-        await this.ensureInitialized();
-
-        const message = await this.withRetry(
+    public async postMessage(
+        conversationSid: string,
+        body: string,
+        mediaSids?: string[]
+    ): Promise<string> {
+        const payload: any = {
+            author: this.systemIdentity,
+            ...(body && { body }),
+            ...(mediaSids && mediaSids.length > 0 && { mediaSid: mediaSids }),
+        };
+        const msg = await this.withRetry(
             () => this.twilioClient.conversations.v1
                 .conversations(conversationSid)
-                .messages
-                .create({
-                    body,
-                    author: authorAddress || 'system',
-                    xTwilioWebhookEnabled: 'true'
-                }),
-            `sendMessage to ${conversationSid}`
+                .messages.create(payload),
+            `postMessage to ${conversationSid}`
         );
-
-        console.log(`[Conversations] Sent message ${message.sid} to conversation ${conversationSid}`);
-        return message.sid;
+        console.log(`[Conversations] Posted ${msg.sid} to ${conversationSid}`);
+        return msg.sid;
     }
 
     /**
-     * Generate a unique name for a conversation based on sender and Twilio number
+     * Fetch all participants for a Conversation.
      */
-    private getUniqueName(senderNumber: string, twilioNumber: string): string {
-        // Remove + signs for clean unique name
-        const sender = senderNumber.replace(/\+/g, '');
-        const twilio = twilioNumber.replace(/\+/g, '');
-        return `sms_group_${sender}_${twilio}`;
-    }
-
-    private async ensureInitialized(): Promise<void> {
-        if (!this.initialized) {
-            await this.initialize();
-        }
+    public async listParticipants(conversationSid: string): Promise<Array<{
+        sid: string;
+        identity: string | null;
+        address: string | null;
+        projectedAddress: string | null;
+    }>> {
+        const list = await this.twilioClient.conversations.v1
+            .conversations(conversationSid)
+            .participants.list({ limit: 50 });
+        return list.map(p => {
+            const binding = (p.messagingBinding ?? {}) as Record<string, unknown>;
+            return {
+                sid: p.sid,
+                identity: p.identity ?? null,
+                address: typeof binding.address === 'string' ? binding.address : null,
+                projectedAddress: typeof binding.projected_address === 'string' ? binding.projected_address : null,
+            };
+        });
     }
 
     /**
-     * Retry a function with exponential backoff for transient errors (DNS, network).
+     * Extract the list of external E.164 addresses from a Conversation's
+     * participants (everyone except the Phony system identity).
      */
+    public async getExternalAddresses(conversationSid: string): Promise<string[]> {
+        const participants = await this.listParticipants(conversationSid);
+        return participants
+            .filter(p => p.identity !== this.systemIdentity && p.address)
+            .map(p => p.address!);
+    }
+
+    /**
+     * Identity used by Phony when posting into a Conversation.
+     * Messages authored by this identity should NOT be re-proxied
+     * (they're echoes of messages Phony itself sent).
+     */
+    public getSystemIdentity(): string {
+        return this.systemIdentity;
+    }
+
     private async withRetry<T>(fn: () => Promise<T>, label: string, maxRetries = 3): Promise<T> {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 return await fn();
             } catch (error: any) {
-                const isTransient = error.code === 'EAI_AGAIN' || error.code === 'ENOTFOUND' ||
-                    error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET' ||
-                    error.message?.includes('EAI_AGAIN') || error.message?.includes('getaddrinfo');
+                const isTransient = error.code === 'EAI_AGAIN' || error.code === 'ENOTFOUND'
+                    || error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET'
+                    || error.message?.includes('EAI_AGAIN') || error.message?.includes('getaddrinfo');
                 if (isTransient && attempt < maxRetries) {
                     const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
                     console.warn(`[Conversations] ${label} attempt ${attempt}/${maxRetries} failed (${error.code || 'network error'}), retrying in ${delay}ms...`);

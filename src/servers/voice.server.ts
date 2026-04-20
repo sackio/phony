@@ -1676,23 +1676,14 @@ export class VoiceServer {
                 recordingUrl: RecordingUrl
             });
 
-            // Send voicemail notification via group MMS (Conversations API)
             const duration = parseInt(RecordingDuration) || 0;
             const notifBody = `New voicemail from ${fromNumber} on ${toNumber} (${duration}s). Transcription pending...`;
             if (SMS_PROXY_ENABLED && fromNumber) {
-                try {
-                    const conversationSid = await this.twilioConversationsService.findOrCreateConversation(fromNumber, toNumber || process.env.TWILIO_NUMBER || '');
-                    await this.twilioConversationsService.sendMessage(conversationSid, notifBody);
-                    console.log(`[Voice Server] Voicemail notification posted to conversation ${conversationSid}`);
-                } catch (notifError) {
-                    console.error(`[Voice Server] Failed to send voicemail notification via Conversations:`, notifError);
-                    // Fallback: send individual SMS to proxy targets
-                    for (const target of SMS_PROXY_TARGET_NUMBERS) {
-                        try {
-                            await this.twilioSmsService.sendSms(target, notifBody, process.env.TWILIO_NUMBER, undefined, { skipNotification: true });
-                        } catch (fallbackError) {
-                            console.error(`[Voice Server] Fallback SMS to ${target} also failed:`, fallbackError);
-                        }
+                for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                    try {
+                        await this.twilioSmsService.sendSms(target, notifBody, process.env.TWILIO_NUMBER, undefined, { skipNotification: true });
+                    } catch (err) {
+                        console.error(`[Voice Server] Voicemail notification to ${target} failed:`, err);
                     }
                 }
             }
@@ -1740,26 +1731,16 @@ export class VoiceServer {
                 );
                 console.log(`[Voice Server] Voicemail transcription saved for ${RecordingSid}`);
 
-                // Send transcription via group MMS (Conversations API)
                 const voicemail = await this.voicemailService.getVoicemail(RecordingSid);
                 const vmFrom = voicemail?.fromNumber || 'unknown';
-                const vmTo = voicemail?.toNumber || process.env.TWILIO_NUMBER || '';
                 const preview = TranscriptionText.length > 1400 ? TranscriptionText.substring(0, 1400) + '...' : TranscriptionText;
                 const transcriptBody = `Voicemail from ${vmFrom}: "${preview}"`;
                 if (SMS_PROXY_ENABLED && vmFrom !== 'unknown') {
-                    try {
-                        const conversationSid = await this.twilioConversationsService.findOrCreateConversation(vmFrom, vmTo);
-                        await this.twilioConversationsService.sendMessage(conversationSid, transcriptBody);
-                        console.log(`[Voice Server] Voicemail transcription posted to conversation ${conversationSid}`);
-                    } catch (notifError) {
-                        console.error(`[Voice Server] Failed to post transcription via Conversations:`, notifError);
-                        // Fallback: send individual SMS
-                        for (const target of SMS_PROXY_TARGET_NUMBERS) {
-                            try {
-                                await this.twilioSmsService.sendSms(target, transcriptBody, process.env.TWILIO_NUMBER, undefined, { skipNotification: true });
-                            } catch (fallbackError) {
-                                console.error(`[Voice Server] Fallback transcription SMS to ${target} also failed:`, fallbackError);
-                            }
+                    for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                        try {
+                            await this.twilioSmsService.sendSms(target, transcriptBody, process.env.TWILIO_NUMBER, undefined, { skipNotification: true });
+                        } catch (err) {
+                            console.error(`[Voice Server] Transcription SMS to ${target} failed:`, err);
                         }
                     }
                 }
@@ -1771,25 +1752,15 @@ export class VoiceServer {
                 );
                 console.log(`[Voice Server] Voicemail transcription failed for ${RecordingSid}`);
 
-                // Notify about failed transcription via group MMS
                 const failedVm = await this.voicemailService.getVoicemail(RecordingSid);
                 const failedFrom = failedVm?.fromNumber || 'unknown';
-                const failedTo = failedVm?.toNumber || process.env.TWILIO_NUMBER || '';
                 const failBody = `Voicemail from ${failedFrom} (transcription failed - check recording)`;
                 if (SMS_PROXY_ENABLED && failedFrom !== 'unknown') {
-                    try {
-                        const conversationSid = await this.twilioConversationsService.findOrCreateConversation(failedFrom, failedTo);
-                        await this.twilioConversationsService.sendMessage(conversationSid, failBody);
-                        console.log(`[Voice Server] Transcription failure posted to conversation ${conversationSid}`);
-                    } catch (notifError) {
-                        console.error(`[Voice Server] Failed to post failure via Conversations:`, notifError);
-                        // Fallback: send individual SMS
-                        for (const target of SMS_PROXY_TARGET_NUMBERS) {
-                            try {
-                                await this.twilioSmsService.sendSms(target, failBody, process.env.TWILIO_NUMBER, undefined, { skipNotification: true });
-                            } catch (fallbackError) {
-                                console.error(`[Voice Server] Fallback failure SMS to ${target} also failed:`, fallbackError);
-                            }
+                    for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                        try {
+                            await this.twilioSmsService.sendSms(target, failBody, process.env.TWILIO_NUMBER, undefined, { skipNotification: true });
+                        } catch (err) {
+                            console.error(`[Voice Server] Failure SMS to ${target} failed:`, err);
                         }
                     }
                 }
@@ -1803,40 +1774,181 @@ export class VoiceServer {
     }
 
     /**
-     * Handle Twilio Conversations webhook (onMessageAdded)
-     * Saves group MMS messages to MongoDB that bypass the /sms/incoming webhook
+     * Twilio Conversations webhook.
+     *
+     *   onConversationAdded     → register group + allocate slug + notify Ben/Laura
+     *   onConversationRemoved   → drop the local GroupConversation row + free the slug
+     *   onParticipantAdded      → update externals + notify about join
+     *   onParticipantRemoved    → update externals + notify about leave
+     *   onMessageAdded          → fan out 1-on-1 SMS to proxy targets (unless
+     *                             the message was authored by Phony itself)
+     *
+     * We respond 200 OK fast and do real work async so Twilio doesn't retry.
      */
     private async handleConversationsWebhook(req: express.Request, res: Response): Promise<void> {
-        const { EventType, ConversationSid, MessageSid, Author, Body } = req.body;
-        console.log(`[Conv Webhook] ${EventType} conv=${ConversationSid} author=${Author || '-'}`);
+        const {
+            EventType,
+            ConversationSid,
+            MessageSid,
+            Author,
+            Body,
+            MediaUrls,
+            ParticipantSid,
+            FriendlyName,
+        } = req.body;
+        const bindingAddress = req.body['MessagingBinding.Address'] || req.body.MessagingBindingAddress;
+        const bindingProjected = req.body['MessagingBinding.ProjectedAddress'] || req.body.MessagingBindingProjectedAddress;
+
+        console.log(`[Conv Webhook] ${EventType} conv=${ConversationSid} author=${Author || '-'} binding=${bindingAddress || bindingProjected || '-'}`);
+        res.status(200).send('OK');
+
+        if (!ConversationSid) return;
 
         try {
-            if (EventType === 'onConversationAdded' && ConversationSid) {
-                // Twilio auto-created a conversation from inbound SMS — attach Ben & Laura
-                this.twilioConversationsService.addProxyTargets(ConversationSid).catch(err =>
-                    console.error(`[Conv Webhook] addProxyTargets failed for ${ConversationSid}:`, err)
-                );
+            if (EventType === 'onConversationAdded') {
+                await this.onGroupConversationCreated(ConversationSid, FriendlyName);
+                return;
             }
 
-            if (EventType === 'onMessageAdded' && Body && ConversationSid) {
-                const storageService = new (await import('../services/sms/storage.service.js')).SmsStorageService();
-                await storageService.saveSms({
-                    messageSid: MessageSid || `conv_${Date.now()}`,
-                    fromNumber: Author || 'unknown',
-                    toNumber: ConversationSid,
-                    direction: SmsDirection.INBOUND,
-                    body: Body,
-                    status: SmsStatus.RECEIVED,
-                    twilioStatus: 'received',
-                    numMedia: 0
-                });
+            if (EventType === 'onConversationRemoved') {
+                await this.onGroupConversationRemoved(ConversationSid);
+                return;
             }
 
-            res.status(200).send('OK');
+            if (EventType === 'onParticipantAdded') {
+                await this.onGroupParticipantAdded(ConversationSid, bindingAddress, bindingProjected);
+                return;
+            }
+
+            if (EventType === 'onParticipantRemoved') {
+                await this.onGroupParticipantRemoved(ConversationSid, bindingAddress, bindingProjected);
+                return;
+            }
+
+            if (EventType === 'onMessageAdded') {
+                const mediaUrls: string[] = [];
+                if (typeof MediaUrls === 'string') {
+                    try {
+                        const parsed = JSON.parse(MediaUrls);
+                        if (Array.isArray(parsed)) mediaUrls.push(...parsed);
+                    } catch { /* ignore malformed */ }
+                }
+                await this.onGroupMessageAdded(ConversationSid, MessageSid, Author, Body, mediaUrls);
+            }
         } catch (error) {
-            console.error('[Conv Webhook] Error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error('[Conv Webhook] Async error:', error);
         }
+    }
+
+    private async onGroupConversationCreated(conversationSid: string, friendlyName?: string): Promise<void> {
+        // Ensure Phony is a projectedAddress participant (idempotent).
+        const twilioNumber = process.env.TWILIO_NUMBER!;
+        try {
+            await this.twilioConversationsService.ensureSystemParticipant(conversationSid, twilioNumber);
+        } catch (err: any) {
+            console.error(`[Conv Webhook] ensureSystemParticipant failed:`, err.message);
+        }
+
+        let externals: string[] = [];
+        try {
+            externals = await this.twilioConversationsService.getExternalAddresses(conversationSid);
+        } catch (err) {
+            console.error(`[Conv Webhook] getExternalAddresses failed:`, err);
+        }
+
+        const { slug, isNew } = await this.twilioSmsService.registerGroup(
+            conversationSid,
+            twilioNumber,
+            externals,
+            friendlyName
+        );
+        if (!isNew) return;
+
+        const participantList = externals.length ? externals.join(', ') : '(no externals yet)';
+        const intro = `📥 New group {${slug}} — ${participantList}\n---\nReply in thread: {${slug}}: msg`;
+        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            this.twilioSmsService
+                .sendSms(target, intro, twilioNumber, undefined, { skipNotification: true })
+                .catch(err => console.error(`[Conv Webhook] Group intro to ${target} failed:`, err));
+        }
+    }
+
+    private async onGroupParticipantAdded(conversationSid: string, address?: string, projected?: string): Promise<void> {
+        if (projected) return; // the Phony system participant — not interesting
+        if (!address) return;
+
+        const twilioNumber = process.env.TWILIO_NUMBER!;
+        const externals = await this.twilioConversationsService.getExternalAddresses(conversationSid).catch(() => [] as string[]);
+        const { slug } = await this.twilioSmsService.registerGroup(conversationSid, twilioNumber, externals);
+
+        const note = `👥 {${slug}} joined: ${address}`;
+        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            if (target === address) continue;
+            this.twilioSmsService
+                .sendSms(target, note, twilioNumber, undefined, { skipNotification: true })
+                .catch(err => console.error(`[Conv Webhook] Join note to ${target} failed:`, err));
+        }
+    }
+
+    private async onGroupConversationRemoved(conversationSid: string): Promise<void> {
+        const slug = TwilioSmsService.getGroupSlug(conversationSid);
+        await this.twilioSmsService.unregisterGroup(conversationSid);
+        if (!slug) return;
+
+        const twilioNumber = process.env.TWILIO_NUMBER!;
+        const note = `🗑️ Group {${slug}} was removed.`;
+        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            this.twilioSmsService
+                .sendSms(target, note, twilioNumber, undefined, { skipNotification: true })
+                .catch(err => console.error(`[Conv Webhook] Removal note to ${target} failed:`, err));
+        }
+    }
+
+    private async onGroupParticipantRemoved(conversationSid: string, address?: string, projected?: string): Promise<void> {
+        if (projected) return; // Phony system participant leaving — shouldn't happen but not interesting
+        if (!address) return;
+
+        const twilioNumber = process.env.TWILIO_NUMBER!;
+        // Refresh the group's external list from Twilio (participant is already gone at this point)
+        const externals = await this.twilioConversationsService.getExternalAddresses(conversationSid).catch(() => [] as string[]);
+        await this.twilioSmsService.updateGroupExternals(conversationSid, externals);
+
+        const slug = TwilioSmsService.getGroupSlug(conversationSid);
+        if (!slug) return;
+
+        const note = `👥 {${slug}} left: ${address}`;
+        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            if (target === address) continue;
+            this.twilioSmsService
+                .sendSms(target, note, twilioNumber, undefined, { skipNotification: true })
+                .catch(err => console.error(`[Conv Webhook] Leave note to ${target} failed:`, err));
+        }
+    }
+
+    private async onGroupMessageAdded(
+        conversationSid: string,
+        _messageSid: string | undefined,
+        author: string | undefined,
+        body: string | undefined,
+        mediaUrls: string[]
+    ): Promise<void> {
+        // author may be an E.164 address (inbound from a phone) or our
+        // system identity (outbound posted by Phony). Identity echoes must
+        // not be re-proxied — Ben/Laura already got CC'd when they sent the
+        // reply in handleGroupReply.
+        const systemIdentity = this.twilioConversationsService.getSystemIdentity();
+        if (!author || author === systemIdentity) return;
+        if (!body && mediaUrls.length === 0) return;
+
+        // Ensure the group is registered (handles the case where we missed
+        // onConversationAdded, e.g. restart during autocreate).
+        if (!TwilioSmsService.getGroupSlug(conversationSid)) {
+            const twilioNumber = process.env.TWILIO_NUMBER!;
+            const externals = await this.twilioConversationsService.getExternalAddresses(conversationSid).catch(() => [] as string[]);
+            await this.twilioSmsService.registerGroup(conversationSid, twilioNumber, externals);
+        }
+
+        await this.twilioSmsService.notifyGroupMessage(conversationSid, author, body || '', mediaUrls);
     }
 
     public start(): void {

@@ -3,6 +3,7 @@ import { SmsDirection, SmsStatus } from '../../types.js';
 import { SmsStorageService } from '../sms/storage.service.js';
 import { SmsModel } from '../../models/sms.model.js';
 import { ContactSlugModel } from '../../models/contact-slug.model.js';
+import { GroupConversationModel } from '../../models/group-conversation.model.js';
 import { SMS_ENABLED_NUMBERS, SMS_PROXY_ENABLED, SMS_PROXY_TARGET_NUMBERS } from '../../config/constants.js';
 import { TwilioConversationsService } from './conversations.service.js';
 import { MongoDBService } from '../database/mongodb.service.js';
@@ -25,6 +26,10 @@ export class TwilioSmsService {
     // Maps: slug -> fullPhoneNumber and phoneNumber -> slug (bidirectional)
     private static slugToNumber: Map<string, string> = new Map();
     private static numberToSlug: Map<string, string> = new Map();
+
+    // Group conversation slug maps: slug -> Twilio Conversation SID and reverse
+    private static groupSlugToSid: Map<string, string> = new Map();
+    private static sidToGroupSlug: Map<string, string> = new Map();
 
     constructor(twilioClient: twilio.Twilio, conversationsService: TwilioConversationsService) {
         this.twilioClient = twilioClient;
@@ -119,6 +124,18 @@ export class TwilioSmsService {
             console.log(`[TwilioSMS Proxy] Loaded ${slugs.length} contact slugs`);
         } catch (error) {
             console.error('[TwilioSMS Proxy] Error loading slugs:', error);
+        }
+
+        // Load group conversation slugs
+        try {
+            const groups = await GroupConversationModel.find({});
+            for (const g of groups) {
+                TwilioSmsService.groupSlugToSid.set(g.slug.toLowerCase(), g.conversationSid);
+                TwilioSmsService.sidToGroupSlug.set(g.conversationSid, g.slug.toLowerCase());
+            }
+            console.log(`[TwilioSMS Proxy] Loaded ${groups.length} group conversation slugs`);
+        } catch (error) {
+            console.error('[TwilioSMS Proxy] Error loading group slugs:', error);
         }
     }
 
@@ -445,7 +462,17 @@ export class TwilioSmsService {
             return;
         }
 
-        // Resolve the recipient
+        // Group slug takes priority over contact slug (names are in the
+        // same namespace; uniqueness is enforced when slugs are allocated)
+        if (parsed.type === 'slug_reply') {
+            const groupSid = TwilioSmsService.getGroupSidBySlug(parsed.slug);
+            if (groupSid) {
+                await this.handleGroupReply(from, twilioNumber, groupSid, parsed.slug, parsed.message);
+                return;
+            }
+        }
+
+        // Resolve the recipient (1-on-1 contact path)
         let recipient: string | undefined;
         let resolvedVia: string;
 
@@ -453,7 +480,7 @@ export class TwilioSmsService {
             recipient = TwilioSmsService.slugToNumber.get(parsed.slug);
             resolvedVia = `{${parsed.slug}}`;
             if (!recipient) {
-                await this.sendSms(from, `No contact found for slug {${parsed.slug}}`, twilioNumber, undefined, { skipNotification: true }).catch(() => {});
+                await this.sendSms(from, `No contact or group found for slug {${parsed.slug}}`, twilioNumber, undefined, { skipNotification: true }).catch(() => {});
                 return;
             }
         } else {
@@ -521,6 +548,185 @@ export class TwilioSmsService {
             }
         } catch (err: any) {
             await this.sendSms(from, `Failed to set label: ${err.message}`, twilioNumber, undefined, { skipNotification: true }).catch(() => {});
+        }
+    }
+
+    // --- Group conversation slug management ---
+
+    /**
+     * Allocate a slug for a new group Conversation. Prefers the contact slug
+     * of the first external participant (e.g. "murilo-grp"); falls back to
+     * last-4 of first external ("9797-grp") and finally "g-<sidSuffix>".
+     */
+    private static generateGroupSlug(conversationSid: string, externalAddresses: string[]): string {
+        const attempts: string[] = [];
+
+        for (const addr of externalAddresses) {
+            const contactSlug = this.numberToSlug.get(addr);
+            if (contactSlug) attempts.push(`${contactSlug}-grp`);
+            attempts.push(`${this.getCodeFromNumber(addr)}-grp`);
+        }
+        attempts.push(`g-${conversationSid.slice(-6)}`);
+
+        for (let base of attempts) {
+            base = base.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+            if (!base) continue;
+            if (!this.groupSlugToSid.has(base) && !this.slugToNumber.has(base)) return base;
+            for (let n = 2; n < 20; n++) {
+                const candidate = `${base}-${n}`;
+                if (!this.groupSlugToSid.has(candidate) && !this.slugToNumber.has(candidate)) return candidate;
+            }
+        }
+        return `g-${conversationSid.slice(-6)}`;
+    }
+
+    public static getGroupSlug(conversationSid: string): string | undefined {
+        return this.sidToGroupSlug.get(conversationSid);
+    }
+
+    public static getGroupSidBySlug(slug: string): string | undefined {
+        return this.groupSlugToSid.get(slug.toLowerCase());
+    }
+
+    /**
+     * Persist a new group Conversation and allocate a slug. Idempotent —
+     * returns the existing record if already registered.
+     */
+    public async registerGroup(
+        conversationSid: string,
+        twilioNumber: string,
+        externalAddresses: string[],
+        friendlyName?: string
+    ): Promise<{ slug: string; isNew: boolean }> {
+        const existing = await GroupConversationModel.findOne({ conversationSid });
+        if (existing) {
+            TwilioSmsService.groupSlugToSid.set(existing.slug.toLowerCase(), conversationSid);
+            TwilioSmsService.sidToGroupSlug.set(conversationSid, existing.slug.toLowerCase());
+            const merged = Array.from(new Set([...existing.externalParticipants, ...externalAddresses]));
+            if (merged.length !== existing.externalParticipants.length) {
+                existing.externalParticipants = merged;
+                await existing.save();
+            }
+            return { slug: existing.slug, isNew: false };
+        }
+
+        const slug = TwilioSmsService.generateGroupSlug(conversationSid, externalAddresses);
+        await GroupConversationModel.create({
+            conversationSid,
+            slug,
+            twilioNumber,
+            externalParticipants: externalAddresses,
+            friendlyName,
+            lastActivityAt: new Date(),
+        });
+        TwilioSmsService.groupSlugToSid.set(slug, conversationSid);
+        TwilioSmsService.sidToGroupSlug.set(conversationSid, slug);
+        for (const addr of externalAddresses) {
+            TwilioSmsService.registerSender(twilioNumber, addr, false);
+        }
+        console.log(`[TwilioSMS Proxy] Registered group ${conversationSid} as {${slug}} with ${externalAddresses.length} externals`);
+        return { slug, isNew: true };
+    }
+
+    /**
+     * Forget a group Conversation: drop the DB row and free the slug.
+     * Called from onConversationRemoved.
+     */
+    public async unregisterGroup(conversationSid: string): Promise<void> {
+        const slug = TwilioSmsService.sidToGroupSlug.get(conversationSid);
+        if (slug) {
+            TwilioSmsService.groupSlugToSid.delete(slug);
+            TwilioSmsService.sidToGroupSlug.delete(conversationSid);
+        }
+        await GroupConversationModel.deleteOne({ conversationSid }).catch(err =>
+            console.error(`[TwilioSMS Proxy] Failed to delete group ${conversationSid}:`, err)
+        );
+        console.log(`[TwilioSMS Proxy] Unregistered group ${conversationSid}${slug ? ` ({${slug}})` : ''}`);
+    }
+
+    /**
+     * Replace the stored external participant list for a group. Called from
+     * onParticipantAdded/Removed so slug metadata stays in sync with Twilio.
+     */
+    public async updateGroupExternals(conversationSid: string, externals: string[]): Promise<void> {
+        await GroupConversationModel.updateOne(
+            { conversationSid },
+            { $set: { externalParticipants: externals, lastActivityAt: new Date() } }
+        ).catch(err => console.error(`[TwilioSMS Proxy] updateGroupExternals failed:`, err));
+    }
+
+    /**
+     * Fan a group-Conversation inbound message out to SMS_PROXY_TARGET_NUMBERS
+     * as 1-on-1 SMS notifications, with enough context for Ben/Laura to reply.
+     */
+    public async notifyGroupMessage(
+        conversationSid: string,
+        authorAddress: string,
+        body: string,
+        mediaUrls?: string[]
+    ): Promise<void> {
+        if (!SMS_PROXY_ENABLED) return;
+        const slug = TwilioSmsService.getGroupSlug(conversationSid);
+        if (!slug) {
+            console.warn(`[TwilioSMS Proxy] No slug for group ${conversationSid}, skipping fan-out`);
+            return;
+        }
+
+        // Skip echo: if the author IS one of our proxy targets, they already
+        // see the message in their own sent box.
+        const skipTargets = new Set<string>();
+        if (SMS_PROXY_TARGET_NUMBERS.includes(authorAddress)) skipTargets.add(authorAddress);
+
+        const authorLabel = TwilioSmsService.getDisplayLabel(authorAddress);
+        const mediaNote = mediaUrls && mediaUrls.length ? `\n[📎 ${mediaUrls.length}]` : '';
+        const notification = `📥 {${slug}} ${authorLabel} ${authorAddress} → group:\n${body || '(no text)'}${mediaNote}\n---\nReply: {${slug}}: msg`;
+
+        const twilioNumber = process.env.TWILIO_NUMBER!;
+        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            if (skipTargets.has(target)) continue;
+            try {
+                await this.sendSms(target, notification, twilioNumber, mediaUrls && mediaUrls.length ? mediaUrls : undefined, { skipNotification: true });
+            } catch (err) {
+                console.error(`[TwilioSMS Proxy] Group fan-out to ${target} failed:`, err);
+            }
+        }
+
+        // Touch lastActivityAt
+        GroupConversationModel.updateOne(
+            { conversationSid },
+            { $set: { lastActivityAt: new Date() } }
+        ).catch(err => console.error(`[TwilioSMS Proxy] Touch group failed:`, err));
+    }
+
+    /**
+     * Handle a proxy-target reply that resolved to a group slug: post the
+     * message to the Conversation so Twilio fans out to all externals.
+     */
+    private async handleGroupReply(
+        from: string,
+        twilioNumber: string,
+        conversationSid: string,
+        slug: string,
+        message: string
+    ): Promise<void> {
+        try {
+            await this.conversationsService.postMessage(conversationSid, message);
+            console.log(`[TwilioSMS Proxy] Routed {${slug}} reply from ${from} → ${conversationSid}`);
+        } catch (err: any) {
+            console.error(`[TwilioSMS Proxy] Failed to post into group {${slug}}:`, err);
+            await this.sendSms(from, `Failed to post into {${slug}}: ${err.message}`, twilioNumber, undefined, { skipNotification: true }).catch(() => {});
+            return;
+        }
+
+        // CC the OTHER proxy targets with what got sent (so both Ben and
+        // Laura see the reply, mirroring the 1-on-1 CC pattern).
+        const senderLabel = TwilioSmsService.getDisplayLabel(from);
+        const ccNote = `📤 {${slug}} ${senderLabel} → group:\n${message}\n---\nReply: {${slug}}: msg`;
+        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            if (target === from) continue;
+            await this.sendSms(target, ccNote, twilioNumber, undefined, { skipNotification: true }).catch(err =>
+                console.error(`[TwilioSMS Proxy] Group CC to ${target} failed:`, err)
+            );
         }
     }
 
