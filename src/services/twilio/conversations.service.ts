@@ -146,16 +146,27 @@ export class TwilioConversationsService {
     }
 
     /**
-     * Post a message into a Conversation as Phony. Twilio will group-MMS
-     * fan-out to all external participants.
+     * Post a message into a Conversation as Phony.
+     *
+     * Twilio's group-MMS constraint: message `author` must match a
+     * participant. Phony's representation varies by how the Conversation
+     * was created:
+     *   - Phony-created: participant with identity="phony" +
+     *     projectedAddress=TWILIO_NUMBER → author: "phony"
+     *   - Autocreated from inbound (user-started groups): participant with
+     *     messagingBinding.address=TWILIO_NUMBER (regular SMS) → author
+     *     must be TWILIO_NUMBER, not "phony"
+     *
+     * We look up the right author at post time.
      */
     public async postMessage(
         conversationSid: string,
         body: string,
         mediaSids?: string[]
     ): Promise<string> {
+        const author = await this.resolveSelfAuthor(conversationSid);
         const payload: any = {
-            author: this.systemIdentity,
+            author,
             ...(body && { body }),
             ...(mediaSids && mediaSids.length > 0 && { mediaSid: mediaSids }),
         };
@@ -165,8 +176,40 @@ export class TwilioConversationsService {
                 .messages.create(payload),
             `postMessage to ${conversationSid}`
         );
-        console.log(`[Conversations] Posted ${msg.sid} to ${conversationSid}`);
+        console.log(`[Conversations] Posted ${msg.sid} to ${conversationSid} (author=${author})`);
         return msg.sid;
+    }
+
+    /**
+     * Find the author string Phony should use when posting into a given
+     * Conversation. Returns the systemIdentity if a participant with that
+     * identity exists, otherwise the Twilio number matching an
+     * address-bound participant.
+     */
+    public async resolveSelfAuthor(conversationSid: string): Promise<string> {
+        const participants = await this.listParticipants(conversationSid);
+        const byIdentity = participants.find(p => p.identity === this.systemIdentity);
+        if (byIdentity) return this.systemIdentity;
+
+        const twilioNumber = process.env.TWILIO_NUMBER;
+        const byAddress = participants.find(p =>
+            (p.address && twilioNumber && p.address === twilioNumber) ||
+            (p.projectedAddress && twilioNumber && p.projectedAddress === twilioNumber)
+        );
+        if (byAddress && twilioNumber) return twilioNumber;
+
+        throw new Error(`No self-participant found in ${conversationSid} — cannot post as Phony`);
+    }
+
+    /**
+     * Test whether a given message author string represents Phony itself
+     * (for echo-loop suppression in onMessageAdded handlers).
+     */
+    public isSelfAuthor(author: string | null | undefined): boolean {
+        if (!author) return false;
+        if (author === this.systemIdentity) return true;
+        if (process.env.TWILIO_NUMBER && author === process.env.TWILIO_NUMBER) return true;
+        return false;
     }
 
     /**

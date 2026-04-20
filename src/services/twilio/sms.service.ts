@@ -709,8 +709,7 @@ export class TwilioSmsService {
         messageDate?: Date,
         options?: { skipNotify?: boolean }
     ): Promise<boolean> {
-        const systemIdentity = this.conversationsService.getSystemIdentity();
-        if (!author || author === systemIdentity) return false;
+        if (!author || this.conversationsService.isSelfAuthor(author)) return false;
         if (!body && mediaUrls.length === 0) return false;
 
         // Idempotency: if we've already stored this messageSid, this is a
