@@ -1864,9 +1864,11 @@ export class VoiceServer {
         );
         if (!isNew) return;
 
+        const externalsSet = new Set(externals);
         const participantList = externals.length ? externals.join(', ') : '(no externals yet)';
         const intro = `📥 New group {${slug}} — ${participantList}\n---\nReply in thread: {${slug}}: msg`;
         for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            if (externalsSet.has(target)) continue; // already in group; not duplicative noise
             this.twilioSmsService
                 .sendSms(target, intro, twilioNumber, undefined, { skipNotification: true })
                 .catch(err => console.error(`[Conv Webhook] Group intro to ${target} failed:`, err));
@@ -1881,9 +1883,11 @@ export class VoiceServer {
         const externals = await this.twilioConversationsService.getExternalAddresses(conversationSid).catch(() => [] as string[]);
         const { slug } = await this.twilioSmsService.registerGroup(conversationSid, twilioNumber, externals);
 
+        const externalsSet = new Set(externals);
         const note = `👥 {${slug}} joined: ${address}`;
         for (const target of SMS_PROXY_TARGET_NUMBERS) {
             if (target === address) continue;
+            if (externalsSet.has(target)) continue; // already in group; they see joins natively
             this.twilioSmsService
                 .sendSms(target, note, twilioNumber, undefined, { skipNotification: true })
                 .catch(err => console.error(`[Conv Webhook] Join note to ${target} failed:`, err));
@@ -1916,9 +1920,11 @@ export class VoiceServer {
         const slug = TwilioSmsService.getGroupSlug(conversationSid);
         if (!slug) return;
 
+        const externalsSet = new Set(externals);
         const note = `👥 {${slug}} left: ${address}`;
         for (const target of SMS_PROXY_TARGET_NUMBERS) {
             if (target === address) continue;
+            if (externalsSet.has(target)) continue; // still in group; they see leaves natively
             this.twilioSmsService
                 .sendSms(target, note, twilioNumber, undefined, { skipNotification: true })
                 .catch(err => console.error(`[Conv Webhook] Leave note to ${target} failed:`, err));

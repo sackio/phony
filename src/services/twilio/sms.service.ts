@@ -672,10 +672,19 @@ export class TwilioSmsService {
             return;
         }
 
-        // Skip echo: if the author IS one of our proxy targets, they already
-        // see the message in their own sent box.
+        // Skip:
+        //   - the author (already saw it in their own sent box)
+        //   - any proxy target who is ALSO an external participant in the
+        //     group — they received the message natively via group MMS, so a
+        //     1-on-1 proxy notification would be duplicative noise.
         const skipTargets = new Set<string>();
         if (SMS_PROXY_TARGET_NUMBERS.includes(authorAddress)) skipTargets.add(authorAddress);
+
+        const group = await GroupConversationModel.findOne({ conversationSid }).lean();
+        const externalsInGroup = new Set(group?.externalParticipants ?? []);
+        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            if (externalsInGroup.has(target)) skipTargets.add(target);
+        }
 
         const authorLabel = TwilioSmsService.getDisplayLabel(authorAddress);
         const mediaNote = mediaUrls && mediaUrls.length ? `\n[📎 ${mediaUrls.length}]` : '';

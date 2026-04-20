@@ -56,11 +56,20 @@ export class TwilioConversationsService {
 
     /**
      * Ensure Phony is present as the projectedAddress participant.
-     * No-op if already present.
+     * No-op if already present by identity OR by projectedAddress binding
+     * (Twilio's autocreate path adds the projected participant automatically
+     * without assigning our identity).
+     *
+     * Harmless races during onConversationAdded:
+     *   - 50433: participant already exists
+     *   - 50438 / "still initializing": webhook fired before Twilio finished
+     *     wiring up autocreate; Phony will be added by that process anyway.
      */
     public async ensureSystemParticipant(conversationSid: string, twilioNumber: string): Promise<void> {
         const participants = await this.listParticipants(conversationSid);
-        const existing = participants.find(p => p.identity === this.systemIdentity);
+        const existing = participants.find(p =>
+            p.identity === this.systemIdentity || p.projectedAddress === twilioNumber
+        );
         if (existing) return;
 
         try {
@@ -75,7 +84,11 @@ export class TwilioConversationsService {
             );
             console.log(`[Conversations] Added system participant (projected=${twilioNumber}) to ${conversationSid}`);
         } catch (error: any) {
-            if (error.code === 50433) return; // already exists — race
+            if (error.code === 50433) return; // already exists
+            if (error.code === 50438 || error.message?.includes('still initializing')) {
+                console.log(`[Conversations] ${conversationSid} still initializing; autocreate will add Phony`);
+                return;
+            }
             throw error;
         }
     }
