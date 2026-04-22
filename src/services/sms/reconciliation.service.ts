@@ -5,6 +5,7 @@ import { MongoDBService } from '../database/mongodb.service.js';
 import { TwilioSmsService } from '../twilio/sms.service.js';
 import { TwilioConversationsService } from '../twilio/conversations.service.js';
 import { GroupConversationModel } from '../../models/group-conversation.model.js';
+import { TempMediaService } from '../temp-media.service.js';
 import { SMS_ENABLED_NUMBERS } from '../../config/constants.js';
 
 /**
@@ -22,6 +23,7 @@ export class SmsReconciliationService {
     private readonly twilioClient: twilio.Twilio;
     private readonly twilioSmsService: TwilioSmsService;
     private readonly conversationsService: TwilioConversationsService;
+    private readonly tempMediaService: TempMediaService;
     private readonly intervalMs: number;
     private readonly lookbackMs: number;
     private intervalHandle: ReturnType<typeof setInterval> | null = null;
@@ -42,6 +44,52 @@ export class SmsReconciliationService {
 
         this.conversationsService = new TwilioConversationsService(this.twilioClient);
         this.twilioSmsService = new TwilioSmsService(this.twilioClient, this.conversationsService);
+        this.tempMediaService = new TempMediaService();
+    }
+
+    /**
+     * For a Conversation message with attached media, fetch each media via
+     * the Twilio Conversations SDK (`message.media` sub-resource), rehost
+     * locally, and return durable public URLs. Returns [] on no media.
+     */
+    private async fetchConversationMessageMedia(
+        conversationSid: string,
+        messageSid: string
+    ): Promise<string[]> {
+        try {
+            const msg = await this.twilioClient.conversations.v1
+                .conversations(conversationSid)
+                .messages(messageSid)
+                .fetch();
+            const mediaList: Array<{ sid?: string; content_type?: string; filename?: string }> =
+                (msg as any).media || [];
+            if (!Array.isArray(mediaList) || mediaList.length === 0) return [];
+
+            const chatServiceSid = await this.conversationsService.getChatServiceSid(conversationSid);
+            const accountSid = process.env.TWILIO_ACCOUNT_SID!;
+            const authToken = process.env.TWILIO_AUTH_TOKEN!;
+            const urls: string[] = [];
+            for (const m of mediaList) {
+                if (!m.sid) continue;
+                try {
+                    const url = await this.tempMediaService.saveFromTwilioMedia(
+                        m.sid,
+                        m.content_type || 'application/octet-stream',
+                        m.filename,
+                        accountSid,
+                        authToken,
+                        chatServiceSid,
+                    );
+                    urls.push(url);
+                } catch (err: any) {
+                    console.error(`[SmsReconciliation] Failed to ingest media ${m.sid} for ${messageSid}:`, err.message);
+                }
+            }
+            return urls;
+        } catch (err: any) {
+            console.error(`[SmsReconciliation] Failed to fetch message media for ${messageSid}:`, err.message);
+            return [];
+        }
     }
 
     static getInstance(options?: { intervalMs?: number; lookbackMs?: number }): SmsReconciliationService {
@@ -272,22 +320,24 @@ export class SmsReconciliationService {
                     if (msg.dateCreated && msg.dateCreated < dateSentAfter) continue;
                     checked++;
 
-                    // processInboundGroupMessage is idempotent: it checks
-                    // SmsModel by messageSid (stored as 'IM…' for Conversation
-                    // messages) and no-ops on duplicates.
-                    const mediaUrls: string[] = [];
+                    // Skip-by-existing check BEFORE fetching media (avoid
+                    // expensive MCS calls for messages we already saved).
+                    const existing = await SmsModel.findOne({ messageSid: msg.sid }).lean();
+                    if (existing) continue;
+
                     const author = msg.author || '';
                     const body = msg.body || '';
+                    const mediaUrls = await this.fetchConversationMessageMedia(conv.sid, msg.sid);
 
                     const wasProcessed = await this.twilioSmsService
-                        .processInboundGroupMessage(conv.sid, msg.sid, author, body, mediaUrls, msg.dateCreated ?? undefined)
+                        .processInboundGroupMessage(conv.sid, msg.sid, author, body, mediaUrls, msg.dateCreated ?? undefined, { skipNotify: true })
                         .catch(err => {
                             console.error(`[SmsReconciliation] Failed to replay ${msg.sid} in ${conv.sid}:`, err);
                             return false;
                         });
                     if (wasProcessed) {
                         reconciled++;
-                        console.log(`[SmsReconciliation] Replayed ${msg.sid} in ${conv.sid} from ${author}: "${body.substring(0, 60)}"`);
+                        console.log(`[SmsReconciliation] Replayed ${msg.sid} in ${conv.sid} from ${author}${mediaUrls.length ? ` (+${mediaUrls.length} media)` : ''}: "${body.substring(0, 60)}"`);
                     }
                 }
             } catch (err: any) {
@@ -383,13 +433,18 @@ export class SmsReconciliationService {
 
             for (const msg of messages) {
                 checked++;
+                const existing = await SmsModel.findOne({ messageSid: msg.sid }).lean();
+                if (existing) continue;
+
+                const mediaUrls = await this.fetchConversationMessageMedia(conversationSid, msg.sid);
+
                 const wasProcessed = await this.twilioSmsService
                     .processInboundGroupMessage(
                         conversationSid,
                         msg.sid,
                         msg.author || '',
                         msg.body || '',
-                        [],
+                        mediaUrls,
                         msg.dateCreated ?? undefined,
                         { skipNotify: true }
                     )
@@ -399,7 +454,7 @@ export class SmsReconciliationService {
                     });
                 if (wasProcessed) {
                     reconciled++;
-                    console.log(`[SmsReconciliation] Backfilled ${msg.sid} in ${conversationSid} from ${msg.author}: "${(msg.body || '').substring(0, 60)}"`);
+                    console.log(`[SmsReconciliation] Backfilled ${msg.sid} in ${conversationSid} from ${msg.author}${mediaUrls.length ? ` (+${mediaUrls.length} media)` : ''}: "${(msg.body || '').substring(0, 60)}"`);
                 }
             }
             console.log(`[SmsReconciliation] Backfill ${conversationSid}: checked=${checked}, reconciled=${reconciled}`);

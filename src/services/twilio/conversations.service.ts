@@ -255,6 +255,21 @@ export class TwilioConversationsService {
         return this.systemIdentity;
     }
 
+    /**
+     * Fetch a Conversation's chatServiceSid (ISxxxxxxxxxxxx). Required for
+     * calling MCS to download inbound media. Cached per-call site for the
+     * process lifetime since chatServiceSid never changes for a given
+     * Conversation.
+     */
+    private chatServiceSidCache = new Map<string, string>();
+    public async getChatServiceSid(conversationSid: string): Promise<string> {
+        const cached = this.chatServiceSidCache.get(conversationSid);
+        if (cached) return cached;
+        const conv = await this.twilioClient.conversations.v1.conversations(conversationSid).fetch();
+        this.chatServiceSidCache.set(conversationSid, conv.chatServiceSid);
+        return conv.chatServiceSid;
+    }
+
     private async withRetry<T>(fn: () => Promise<T>, label: string, maxRetries = 3): Promise<T> {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {

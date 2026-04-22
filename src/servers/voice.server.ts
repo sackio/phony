@@ -1792,8 +1792,7 @@ export class VoiceServer {
             MessageSid,
             Author,
             Body,
-            MediaUrls,
-            ParticipantSid,
+            Media,
             FriendlyName,
         } = req.body;
         const bindingAddress = req.body['MessagingBinding.Address'] || req.body.MessagingBindingAddress;
@@ -1826,18 +1825,69 @@ export class VoiceServer {
             }
 
             if (EventType === 'onMessageAdded') {
-                const mediaUrls: string[] = [];
-                if (typeof MediaUrls === 'string') {
-                    try {
-                        const parsed = JSON.parse(MediaUrls);
-                        if (Array.isArray(parsed)) mediaUrls.push(...parsed);
-                    } catch { /* ignore malformed */ }
-                }
+                // Twilio Conversations post-event webhook sends `Media` as a
+                // JSON-encoded array of objects: [{Sid, ContentType, Filename, Size, ...}].
+                // We rehost each to a stable URL under /media/temp/permanent/.
+                const mediaUrls = await this.ingestConversationMedia(ConversationSid, Media);
                 await this.onGroupMessageAdded(ConversationSid, MessageSid, Author, Body, mediaUrls);
             }
         } catch (error) {
             console.error('[Conv Webhook] Async error:', error);
         }
+    }
+
+    /**
+     * Parse the `Media` payload from a Conversations onMessageAdded webhook,
+     * fetch each media resource from Twilio MCS, persist locally, and return
+     * durable public URLs suitable for storage in SmsModel.mediaUrls.
+     *
+     * Returns an empty array on no media, malformed payload, or if every
+     * individual fetch fails (errors are logged but don't fail the whole
+     * webhook — the text body still saves).
+     */
+    private async ingestConversationMedia(conversationSid: string, mediaField: unknown): Promise<string[]> {
+        if (!mediaField) return [];
+        let items: Array<{ Sid?: string; ContentType?: string; Filename?: string }> = [];
+        try {
+            if (typeof mediaField === 'string') {
+                const parsed = JSON.parse(mediaField);
+                if (Array.isArray(parsed)) items = parsed;
+            } else if (Array.isArray(mediaField)) {
+                items = mediaField as any[];
+            }
+        } catch (err) {
+            console.error('[Conv Webhook] Malformed Media payload:', err);
+            return [];
+        }
+        if (items.length === 0) return [];
+
+        let chatServiceSid: string;
+        try {
+            chatServiceSid = await this.twilioConversationsService.getChatServiceSid(conversationSid);
+        } catch (err: any) {
+            console.error(`[Conv Webhook] Cannot resolve chatServiceSid for ${conversationSid}:`, err.message);
+            return [];
+        }
+
+        const urls: string[] = [];
+        for (const item of items) {
+            if (!item.Sid) continue;
+            try {
+                const url = await this.tempMediaService.saveFromTwilioMedia(
+                    item.Sid,
+                    item.ContentType || 'application/octet-stream',
+                    item.Filename,
+                    process.env.TWILIO_ACCOUNT_SID!,
+                    process.env.TWILIO_AUTH_TOKEN!,
+                    chatServiceSid,
+                );
+                urls.push(url);
+                console.log(`[Conv Webhook] Ingested media ${item.Sid} (${item.ContentType || '?'}) → ${url}`);
+            } catch (err: any) {
+                console.error(`[Conv Webhook] Failed to ingest media ${item.Sid}:`, err.message);
+            }
+        }
+        return urls;
     }
 
     private async onGroupConversationCreated(conversationSid: string, friendlyName?: string): Promise<void> {
