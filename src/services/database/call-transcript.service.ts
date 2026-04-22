@@ -56,6 +56,80 @@ export class CallTranscriptService {
     }
 
     /**
+     * Persist a minimal inbound-call record at the earliest webhook entry
+     * point, BEFORE we know whether it will go to voicemail, AI, or hang up.
+     * Idempotent: uses upsert by callSid so duplicate /call/incoming retries
+     * don't error.
+     *
+     * Later calls (voicemail-complete, AI-handler takeover, status callback)
+     * can enrich this same row via callSid.
+     */
+    public async saveInboundCallEntry(data: {
+        callSid: string;
+        fromNumber: string;
+        toNumber: string;
+    }): Promise<void> {
+        if (!this.mongoService.getIsConnected()) return;
+        if (!data.callSid) return;
+        try {
+            await CallModel.updateOne(
+                { callSid: data.callSid },
+                {
+                    $setOnInsert: {
+                        callSid: data.callSid,
+                        fromNumber: data.fromNumber,
+                        toNumber: data.toNumber,
+                        callType: 'inbound',
+                        voiceProvider: 'elevenlabs',
+                        callContext: '',
+                        conversationHistory: [],
+                        twilioEvents: [],
+                        status: 'initiated',
+                        startedAt: new Date(),
+                    },
+                },
+                { upsert: true }
+            );
+            console.log(`[CallTranscript] Recorded inbound call entry ${data.callSid} (${data.fromNumber} → ${data.toNumber})`);
+        } catch (error) {
+            console.error(`[CallTranscript] Error saving inbound call entry:`, error);
+        }
+    }
+
+    /**
+     * Mark a call complete with final status + duration. Used from the
+     * voicemail-recording callback (Twilio gives us RecordingDuration + the
+     * CallSid) and from future statusCallback handlers.
+     *
+     * Idempotent: if the call is already 'completed' we leave it alone.
+     */
+    public async markCallCompleted(
+        callSid: string,
+        status: 'completed' | 'failed',
+        durationSec?: number,
+        errorMessage?: string,
+    ): Promise<void> {
+        if (!this.mongoService.getIsConnected()) return;
+        try {
+            const update: any = {
+                status,
+                endedAt: new Date(),
+            };
+            if (typeof durationSec === 'number' && durationSec > 0) update.duration = durationSec;
+            if (errorMessage) update.errorMessage = errorMessage;
+            const r = await CallModel.updateOne(
+                { callSid, status: { $nin: ['completed', 'failed'] } },
+                { $set: update }
+            );
+            if (r.modifiedCount > 0) {
+                console.log(`[CallTranscript] Marked ${callSid} as ${status}${durationSec ? ` (${durationSec}s)` : ''}`);
+            }
+        } catch (error) {
+            console.error(`[CallTranscript] Error marking call completed:`, error);
+        }
+    }
+
+    /**
      * Update call status to in-progress
      */
     public async markCallInProgress(callSid: string): Promise<void> {

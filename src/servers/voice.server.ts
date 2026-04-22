@@ -181,6 +181,7 @@ export class VoiceServer {
         // Voicemail webhook routes
         this.app.post('/voicemail/recording', this.handleVoicemailRecording.bind(this));
         this.app.post('/voicemail/transcription', this.handleVoicemailTranscription.bind(this));
+        this.app.post('/call/status', this.handleCallStatus.bind(this));
 
         // Twilio Conversations webhook (for saving group MMS messages to MongoDB)
         this.app.post('/conversations/webhook', this.handleConversationsWebhook.bind(this));
@@ -1119,6 +1120,15 @@ export class VoiceServer {
 
         const fromNumber = req.body.From;
         const toNumber = req.body.To;
+        const callSid = req.body.CallSid;
+
+        // Persist a call record at entry so EVERY inbound call is audited,
+        // not just those that reach the AI handler. Idempotent upsert.
+        if (callSid) {
+            this.transcriptService
+                .saveInboundCallEntry({ callSid, fromNumber, toNumber })
+                .catch(err => console.error('[Voice Server] Inbound call entry save failed:', err));
+        }
 
         // Production Safety Control: Check concurrent incoming call limit
         if (!this.callStateService.canAcceptIncomingCall()) {
@@ -1677,6 +1687,14 @@ export class VoiceServer {
             });
 
             const duration = parseInt(RecordingDuration) || 0;
+
+            // Mark the call record (saved at /call/incoming entry) as completed
+            // with the voicemail's recording duration.
+            if (CallSid) {
+                this.transcriptService
+                    .markCallCompleted(CallSid, 'completed', duration)
+                    .catch(err => console.error('[Voice Server] markCallCompleted failed:', err));
+            }
             const notifBody = `New voicemail from ${fromNumber} on ${toNumber} (${duration}s). Transcription pending...`;
             if (SMS_PROXY_ENABLED && fromNumber) {
                 for (const target of SMS_PROXY_TARGET_NUMBERS) {
@@ -1692,6 +1710,40 @@ export class VoiceServer {
         } catch (error) {
             console.error('[Voice Server] Error handling voicemail recording:', error);
             res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Call status callback from Twilio — fires on terminal call states
+     * (completed / busy / no-answer / canceled / failed). Updates the call
+     * record persisted at /call/incoming entry with duration + final status.
+     *
+     * Wire via TwiML `statusCallback` / IncomingPhoneNumber statusCallback
+     * pointing at `${PUBLIC_URL}/call/status`. Authorization is via callSid
+     * existence in our DB — Twilio doesn't sign these like auth-secret webhooks,
+     * so we only accept status updates for callSids we already know about.
+     */
+    private async handleCallStatus(req: express.Request, res: Response): Promise<void> {
+        res.status(200).send('OK'); // always ack fast
+        const {
+            CallSid,
+            CallStatus,
+            CallDuration,
+            ErrorMessage,
+        } = req.body;
+        if (!CallSid || !CallStatus) return;
+
+        const duration = CallDuration ? parseInt(CallDuration) : undefined;
+        const terminal = ['completed', 'busy', 'no-answer', 'canceled', 'failed'];
+        if (!terminal.includes(CallStatus)) return;
+
+        const status = CallStatus === 'completed' ? 'completed' : 'failed';
+        const err = CallStatus !== 'completed' ? `Twilio status: ${CallStatus}${ErrorMessage ? ` — ${ErrorMessage}` : ''}` : undefined;
+        try {
+            await this.transcriptService.markCallCompleted(CallSid, status, duration, err);
+            console.log(`[Voice Server] /call/status ${CallSid} → ${CallStatus}${duration ? ` (${duration}s)` : ''}`);
+        } catch (error) {
+            console.error('[Voice Server] Error in /call/status:', error);
         }
     }
 
