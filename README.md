@@ -33,12 +33,32 @@ sequenceDiagram
 
 ## Features
 
+### Voice
 - Make outbound phone calls via Twilio 📞
-- Process call audio in real-time with GPT-4o Realtime model 🎙️
+- Real-time AI-powered conversations with ElevenLabs Conversational AI or OpenAI GPT-4o Realtime 🎙️
 - Real-time language switching during calls 🌐
-- Pre-built prompts for common calling scenarios (like restaurant reservations) 🍽️
+- In-band DTMF support — AI can autonomously navigate IVR menus
+- Pre-built prompts for common calling scenarios (restaurant reservations, etc.) 🍽️
+
+### SMS (1-on-1)
+- Send/receive SMS and MMS (media via URLs or base64) 💬
+- Persistent MongoDB storage with status tracking (queued → sent → delivered → failed)
+- Per-contact **slug proxy system**: incoming messages are mirrored to a configurable list of proxy target numbers (e.g. family members). Those targets can reply with `{slug}: msg` to route back to the external contact.
+- Reconciliation loop (5-min poll, 24-hour lookback) — replays anything the webhook missed
+
+### Group MMS (Twilio Conversations API) ⭐
+- **True native group MMS threading** on participants' phones — not fan-out
+- Autocreate-driven: groups a user starts with Phony in them show up automatically
+- `projectedAddress` pattern — Phony joins each group as an avatar, externals join as native SMS
+- Slug-based reply routing (`{0101-grp}: msg` from proxy targets posts into the group)
+- Proxy targets receive group activity as 1-on-1 SMS when not in the group; skipped when in the group (no native-thread duplication)
+- Full participant lifecycle handled (add, remove, message, conversation-removed events)
+- Conversation reconciliation and one-shot historical backfill
+
+### Infrastructure
 - Public URL support via nginx reverse proxy 🔄
 - Secure handling of credentials 🔒
+- Docker Compose deployment; MongoDB exposed on loopback for host-side tooling
 
 ## Why MCP?
 
@@ -173,6 +193,7 @@ If connected, you should see Voice Call under the 🔨 menu.
 
 Here are some natural ways to interact with the server through Claude:
 
+### Voice calls
 1. Simple call:
 ```
 Can you call +1-123-456-7890 and let them know I'll be 15 minutes late for our meeting?
@@ -187,6 +208,31 @@ Please call Delicious Restaurant at +1-123-456-7890 and make a reservation for 4
 ```
 Please call Expert Dental NYC (+1-123-456-7899) and reschedule my Monday appointment to next Friday between 4–6pm.
 ```
+
+### SMS and group MMS
+
+4. Send an SMS:
+```
+Text +1-978-555-0103 that the door dimensions are 30x80.
+```
+
+5. Start a group MMS:
+```
+Create a group with +1-978-555-0103 (Murilo) and +1-978-555-0104 (Junior) and ask them to confirm they're coming tomorrow morning.
+```
+The tool (`phony_create_group_conversation`) creates a Twilio Conversation with Phony as the projected address host and sends the first message as a native group MMS to all externals.
+
+6. Post into an existing group:
+```
+Reply to group {0101-grp}: confirmed, see you at 8am.
+```
+
+7. Read the group history:
+```
+Show me all messages in group {0101-grp} since yesterday.
+```
+
+See [`docs/GROUP_MMS_ARCHITECTURE.md`](docs/GROUP_MMS_ARCHITECTURE.md) for the full data flow, Twilio Console configuration, and the participant pattern that makes Group MMS actually render as a single native thread on recipient phones.
 
 ## Important Notes
 

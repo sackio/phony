@@ -75,6 +75,7 @@ export function validateArgs(args: Record<string, any>, required: string[]): voi
  * Sanitize phone number to E.164 format
  */
 export function sanitizePhoneNumber(phone: string): string {
+    if (!phone) return '';
     // Remove all non-digit characters
     const digits = phone.replace(/\D/g, '');
 

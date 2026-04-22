@@ -27,8 +27,6 @@ export const GOODBYE_PHRASES = [
     'have a good day',
     'have a nice day',
     'take care',
-    'thanks for calling',
-    'thank you for calling',
 ];
 
 // Production Safety Controls - ALWAYS ENFORCED
@@ -67,10 +65,16 @@ export const DEFAULT_INCOMING_CALL_MESSAGE = process.env.DEFAULT_INCOMING_CALL_M
 export const DEFAULT_INCOMING_CALL_VOICE = process.env.DEFAULT_INCOMING_CALL_VOICE || 'Polly.Matthew';
 
 // SMS Proxy Configuration
-// When enabled, incoming SMS messages are forwarded to this number
-// Replies from this number are routed back to the original sender
-export const SMS_PROXY_TARGET_NUMBER = process.env.SMS_PROXY_TARGET_NUMBER || '+13015550101';
+// When enabled, incoming SMS and voicemail notifications are forwarded to these numbers
+// Uses Twilio Conversations API for native group MMS threads
+export const SMS_PROXY_TARGET_NUMBERS: string[] = process.env.SMS_PROXY_TARGET_NUMBERS
+    ? process.env.SMS_PROXY_TARGET_NUMBERS.split(',').map(n => n.trim())
+    : ['+13015550101', '+13015550102'];
 export const SMS_PROXY_ENABLED = process.env.SMS_PROXY_ENABLED !== 'false'; // Enabled by default
+
+// Twilio Messaging Service SID (optional - auto-created if not set)
+// Required for Conversations API group MMS
+export const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID || '';
 
 // ElevenLabs Configuration
 export const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '';

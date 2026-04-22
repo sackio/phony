@@ -1,13 +1,26 @@
 # Phony - Claude Context
 
+## Memo — Background Context
+
+When unclear about infrastructure, network, cluster state, server details, house/property, contacts, or any shared context — **search memo before asking the user**:
+
+```
+/recall <topic>           # targeted search
+/recall-context <topic>   # broader context block
+```
+
+Especially useful for: network topology, router/VyOS config, K8s barn cluster, iDRAC/IPMI, server hardware, 120 Reedy Meadow renovation, contractor contacts, credentials format, recent infrastructure changes.
+
+---
+
 ## Project Overview
 
-**Location**: `/mnt/nas/data/code/forks/phony`
+**Location**: `/mnt/nas/data/code/phony` (on the NAS, shared across servers. Deployed on server4 via Docker Compose.)
 
 This is a Model Context Protocol (MCP) server that enables Claude and other AI assistants to initiate and manage real-time voice calls and SMS messaging using:
-- **Twilio** for telephony and SMS infrastructure
+- **Twilio** for telephony, SMS, and **group MMS via the Conversations API**
 - **ElevenLabs Conversational AI** for AI-powered voice conversations (with per-call voice selection and DTMF support)
-- **MongoDB** for persistent storage of call transcripts and SMS messages
+- **MongoDB** for persistent storage of call transcripts, SMS messages, and group Conversation metadata
 - **Nginx** for public webhook access
 
 ## Architecture
@@ -27,9 +40,13 @@ This is a Model Context Protocol (MCP) server that enables Claude and other AI a
      - `POST /call/outgoing` - Twilio webhook handler
      - `WebSocket /call/connection-outgoing/:secret` - Media stream connection
    - SMS Endpoints:
-     - `POST /sms/incoming` - Incoming SMS webhook
+     - `POST /sms/incoming` - 1-on-1 SMS webhook (when MS Integration is `Send a webhook`)
      - `POST /sms/status` - SMS status callback webhook
-     - `POST /api/sms/send` - Send SMS API
+     - `POST /conversations/webhook` - **Twilio Conversations webhook** (group MMS).
+       Handles `onConversationAdded`, `onConversationRemoved`, `onParticipantAdded`,
+       `onParticipantRemoved`, `onMessageAdded`. Active when MS Integration is
+       set to `Autocreate a Conversation`.
+     - `POST /api/sms/send` - Send 1-on-1 SMS API
      - `GET /api/sms/messages` - List messages API
      - `GET /api/sms/messages/:messageSid` - Get message details API
      - `GET /api/sms/conversation` - Get conversation history API
@@ -98,6 +115,44 @@ This is a Model Context Protocol (MCP) server that enables Claude and other AI a
   - `limit` (number, optional): Maximum number of messages to return (default: 100)
 - Returns: `{ status, message, data: { phoneNumber1, phoneNumber2, messageCount, conversation: [...] } }`
 
+**Group MMS Tools (Twilio Conversations API):**
+
+Group MMS creates a single native group thread on every participant's phone. Phony's Twilio number joins as a `projectedAddress` participant; each external phone number joins as a native SMS participant. A message posted into the Conversation fans out as one group MMS to all externals. See `docs/group-mms-architecture.md` for the full data flow.
+
+**phony_create_group_conversation**
+- Creates a new group Conversation with Phony as the projectedAddress host and the given externals as native SMS participants. Optionally posts an initial message.
+- Parameters:
+  - `participants` (array, required): External E.164 phone numbers (do NOT include the Twilio number). 2–9 externals (3–10 total incl. Phony).
+  - `fromNumber` (string, optional): Twilio number to host the group (defaults to TWILIO_NUMBER)
+  - `friendlyName` (string, optional): Internal label (not visible on participant phones)
+  - `initialMessage` (string, optional): First message to post into the Conversation
+- Returns: `{ conversationSid, slug, externalParticipants, friendlyName, initialMessageSid? }`
+- Slug allocation: `{last4-grp}` from first external, e.g. `{0101-grp}`. Reply from proxy targets uses `{slug}: msg`.
+
+**phony_send_group_sms**
+- Post a message into an existing group Conversation. Twilio fans out as native group MMS.
+- Parameters:
+  - `conversationId` (string, required): CH-SID or group slug (e.g. `{0101-grp}`)
+  - `body` (string, optional): Message body (max 1600 chars)
+  - `mediaUrls` (string[], optional): Up to 10 public URLs — Phony uploads each to Twilio MCS then references by media SID
+- Returns: `{ conversationSid, slug, messageSid, mediaCount }`
+
+**phony_list_conversations**
+- Unified list of both group Conversations (CH-SID) and 1-on-1 pairings (conv_…)
+- Parameters: `type` (`all`/`group`/`one-on-one`), `phoneNumber` (optional filter), `limit`
+- Returns: mixed list sorted by `lastActivityAt`
+
+**phony_get_conversation_details** / **phony_get_conversation_messages**
+- Accepts a CH-SID, group slug (with or without braces), or conv_… ID
+- Group path queries `SmsModel` where `conversationId = CH-SID`
+
+**phony_add_participant** / **phony_remove_participant**
+- Add/remove an external E.164 to/from a group Conversation
+- Max 10 total participants enforced
+
+**phony_update_group_name**
+- Updates the Twilio Conversation's friendlyName (internal label; not visible on participant phones because native Messages groups have no shared name field)
+
 ### Prompts
 
 **make-restaurant-reservation**
@@ -159,10 +214,27 @@ Phone hears DTMF tones (call stays connected)
 - `call.service.ts` - Twilio API operations (makeCall, startRecording, endCall)
 - `ws.service.ts` - Handles Twilio media stream WebSocket
 - `event.service.ts` - Processes Twilio media stream events
-- `sms.service.ts` - SMS sending and webhook handling (sendSms, handleIncomingSms, handleStatusCallback)
+- `sms.service.ts` - SMS sending + webhook handling + **group Conversation proxy logic**:
+  - `handleIncomingSms` — 1-on-1 path, skips messages whose sender is already in an active group Conversation (Conversations webhook owns them)
+  - `processInboundGroupMessage` — idempotent persist + notify, called from both webhook and reconciler
+  - `notifyGroupMessage` — fan group activity out to `SMS_PROXY_TARGET_NUMBERS` as 1-on-1 SMS (skips proxies who are in the group)
+  - `registerGroup` / `resolveGroupSid` / `getGroupSlug` — slug ↔ CH-SID registry
+  - `handleProxyReply` — routes `{slug}: msg` replies from proxy targets into Conversations
+- `conversations.service.ts` - **TwilioConversationsService**: createGroupConversation, ensureSystemParticipant, addExternalParticipant, removeExternalParticipant, postMessage, updateFriendlyName, listParticipants, getExternalAddresses
 
 **SMS Services** (`src/services/sms/`)
-- `storage.service.ts` - MongoDB operations for SMS messages (saveSms, getSms, listSms, getConversation, updateSmsStatus)
+- `storage.service.ts` - MongoDB operations for SMS messages. `saveSms` accepts optional `conversationSid` for group tagging.
+- `reconciliation.service.ts` - **SmsReconciliationService** (singleton, 5-min interval, 24-hour default lookback):
+  - SMS pass: `messages.list` per enabled number, replays missed inbound via `handleIncomingSms` (capped at 500/pass)
+  - Conversations pass: lists recent Conversations, replays missed `onMessageAdded` via `processInboundGroupMessage` (200 Conversations/pass)
+  - `backfillConversation` — one-shot full-history replay (used by `scripts/backfill-conversation.ts`)
+  - `retagHistoricalSmsForConversation` — retag pre-autocreate 1-on-1 rows (`conv_…`) to a group CH-SID
+
+**Models** (`src/models/`)
+- `sms.model.ts` — SmsModel. `conversationId` holds either a `conv_<a>_<b>` 1-on-1 pairing, or a `CH…` group Conversation SID.
+- `conversation.model.ts` — ConversationModel (1-on-1 pairings, internal use)
+- `group-conversation.model.ts` — **GroupConversationModel**: `{ conversationSid (CH…), slug, twilioNumber, externalParticipants[], friendlyName, lastActivityAt }`. Unique slug per group.
+- `contact-slug.model.ts` — ContactSlugModel (individual contact slugs, e.g. `{murilo}`)
 
 **Session Management**
 - `src/handlers/call.handler.ts` - ICallHandler interface
@@ -206,15 +278,35 @@ PUBLIC_URL=https://your-domain.com  # Public URL for Twilio callbacks
 TWILIO_ACCOUNT_SID=your_account_sid
 TWILIO_AUTH_TOKEN=your_auth_token
 TWILIO_NUMBER=your_e164_number  # e.g., +11234567890
-OPENAI_API_KEY=your_openai_api_key
-MONGODB_URL=mongodb://localhost:27017/phony  # MongoDB connection string
+
+# MongoDB
+# Container: uses mongodb:27017 on the docker network
+# Host-side scripts: use 127.0.0.1:27018 (loopback-exposed by docker-compose)
+MONGODB_USERNAME=voicecalls_admin
+MONGODB_PASSWORD=...
+MONGODB_DATABASE=phony    # the actual production DB name
+MONGODB_URI=mongodb://voicecalls_admin:...@127.0.0.1:27018/phony?authSource=admin
 ```
 
 Optional:
 ```bash
-PORT=3004  # Default: 3004
-OPENAI_WEBSOCKET_URL=wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview
-RECORD_CALLS=true  # Enable call recording
+PORT=3004
+ELEVENLABS_API_KEY=...
+ELEVENLABS_DEFAULT_AGENT_ID=...
+ELEVENLABS_DEFAULT_VOICE_ID=...
+RECORD_CALLS=true
+
+# SMS proxy configuration
+SMS_PROXY_TARGET_NUMBERS=+13015550101,+13015550102  # Ben, Laura — forward inbound activity to these
+SMS_PROXY_ENABLED=true                               # Default true
+SMS_ENABLED_NUMBERS=+18575550111,+16175550113,...    # Whitelist of senders Phony can send from
+
+# Reconciler (SMS + Conversations)
+SMS_RECONCILIATION_INTERVAL_MS=300000    # 5 minutes
+SMS_RECONCILIATION_LOOKBACK_MS=86400000  # 24 hours — widened from the original 30-min default
+
+# Not used in production (autocreate replaces MS webhook):
+# TWILIO_MESSAGING_SERVICE_SID  — tracked but not attached to created Conversations
 ```
 
 See `.env.example` for template.
@@ -320,6 +412,33 @@ location /call/ {
 5. **Check message status**:
    > "What's the delivery status of message SM1234567890abcdef?"
 
+### Group MMS
+
+1. **Start a new group thread**:
+   > "Create a group with +19785550103 (Murilo) and +19785550104 (Junior) and tell them the front porch railings are ordered."
+   Uses `phony_create_group_conversation` with `participants` + `initialMessage`.
+
+2. **Reply into an active group as Phony**:
+   > "Post to group {0101-grp}: dimensions are 36x42, all black metal."
+   Uses `phony_send_group_sms` with `conversationId: "{0101-grp}"`.
+
+3. **Read the group thread**:
+   > "Show me all messages in group {0101-grp}."
+   Uses `phony_get_conversation_messages`.
+
+**Proxy-target replies (Ben/Laura by text):** If a proxy target is NOT in the group themselves, they receive each group message as a 1-on-1 SMS prefixed `📥 {slug} [sender] → group:`. They reply to Phony with `{slug}: text` and Phony posts into the group. If the proxy target IS in the group (like Ben/Laura in the Flawless Reedy Meadow thread), they see messages natively and Phony does NOT send duplicate 1-on-1 notifications.
+
+**Twilio Console config required (one-time):**
+1. Messaging Service `MGceb3122…` → Integration → `Autocreate a Conversation` → pick Default Messaging Service for Conversations (`MGc0a20fee…`)
+2. Conversations → Manage → Global webhooks → Post-Event URL = `https://phony.pushbuild.com/conversations/webhook` → filters: `onConversationAdded`, `onConversationRemoved`, `onParticipantAdded`, `onParticipantRemoved`, `onMessageAdded`
+
+**Critical constraints:**
+- US/CA long codes only; +1 numbers
+- 3–10 total participants (including Phony as projectedAddress)
+- Twilio account must be created **before March 15, 2022** (Twilio closed Group MMS to new accounts on that date). Phony's account is from Oct 2012.
+- Do NOT set `messagingServiceSid` on the Conversation — that re-triggers the A2P/Address-Config mutex.
+- Participant pattern: **system** = `identity + messagingBinding.projectedAddress`; **external** = `messagingBinding.address` ONLY (no proxy, no projected)
+
 ## Event Processing
 
 ### OpenAI Events
@@ -366,6 +485,19 @@ location /call/ {
 - ✅ Webhook handling for incoming messages and status updates
 - ✅ Character count tracking (SMS segments)
 - ✅ Frontend UI for sending/viewing messages
+- ✅ **Proxy routing** with per-contact slugs (e.g. `{murilo}: msg` replies from Ben/Laura)
+- ✅ **SMS reconciliation** — 5-min poll, 24-hour lookback, replays missed inbound
+
+### Group MMS (Twilio Conversations API)
+- ✅ Native group MMS threading on participant phones
+- ✅ Autocreate on inbound — groups the user started show up automatically
+- ✅ `projectedAddress` pattern: Phony joins as avatar, externals as native SMS
+- ✅ Slug-based reply routing (`{0101-grp}: msg`)
+- ✅ Proxy forwarding to Ben/Laura as 1-on-1 SMS (skipped when they're in the group)
+- ✅ Participant lifecycle events: add, remove, message
+- ✅ Conversation reconciliation (replays missed `onMessageAdded`)
+- ✅ Historical retag + full backfill (`scripts/backfill-conversation.ts`)
+- ✅ Dedup: inbound whose sender is in a group routes through Conversations webhook only
 
 ### Infrastructure
 - ✅ Nginx reverse proxy support for public URL
@@ -446,10 +578,12 @@ location /call/ {
 - ❌ Basic call recording (via Twilio API only)
 
 **Recently Implemented**:
+- ✅ **True group MMS via Twilio Conversations API (April 2026)** — native group threading, slug-based reply routing, proxy-aware fan-out, reconciliation + backfill. See `docs/group-mms-architecture.md` and memo `Twilio Group MMS — Working Configuration (April 2026)`.
+- ✅ SMS reconciliation service (5-min poll, 24-hour lookback)
+- ✅ Contact slugs for proxy reply routing (`{murilo}: msg`)
 - ✅ SMS messaging (send, receive, history, conversation tracking)
 - ✅ MongoDB persistence for SMS messages
 - ✅ Frontend UI for SMS management
-- ✅ Comprehensive test coverage for SMS functionality
 
 **Planned Improvements** (from README):
 - Support for multiple AI models
@@ -499,12 +633,12 @@ Licensed under MIT License.
 
 ## Recent Changes
 
-- 2cbe661: Setting up conversation context properly
-- Recent focus on improving context management and README documentation
+- **`feature/true-group-mms` (April 2026)**: True group MMS via Twilio Conversations API. Rewired MCP group tools (`phony_create_group_conversation`, `phony_send_group_sms`, `phony_add_participant`, etc.) to use TwilioConversationsService. Added reconciliation for Conversations, backfill script, DB dedup for group participants. See `docs/group-mms-architecture.md`.
+- Earlier WIP on `feature/twilio-conversations-api` (April 13, 2026) was rolled back due to wrong participant pattern — the new branch fixed it and works.
+- Contact slug proxy system (March 2026): `{murilo}: msg` replies from proxy targets route to external contacts.
 
 ---
 
 **Git Info**:
-- Branch: `main`
-- Status: Clean (no uncommitted changes)
+- Branch: `feature/true-group-mms` (target: main)
 - Remote: `https://github.com/lukaskai/phony.git`

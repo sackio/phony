@@ -6,11 +6,12 @@ import { WebSocket } from 'ws';
 import path from 'path';
 import twilio from 'twilio';
 import { Server as HTTPServer } from 'http';
-import { CallType } from '../types.js';
-import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER, DEFAULT_INCOMING_CALL_MESSAGE, DEFAULT_INCOMING_CALL_VOICE } from '../config/constants.js';
+import { CallType, SmsDirection, SmsStatus } from '../types.js';
+import { DYNAMIC_API_SECRET, ENABLE_TEST_RECEIVER, DEFAULT_INCOMING_CALL_MESSAGE, DEFAULT_INCOMING_CALL_VOICE, SMS_PROXY_TARGET_NUMBERS, SMS_PROXY_ENABLED } from '../config/constants.js';
 import { CreateSessionOptions, CallSessionManager } from '../services/session-manager.service.js';
 import { TwilioCallService } from '../services/twilio/call.service.js';
 import { TwilioSmsService } from '../services/twilio/sms.service.js';
+import { TwilioConversationsService } from '../services/twilio/conversations.service.js';
 import { ConversationService } from '../services/sms/conversation.service.js';
 import { SocketService } from '../services/socket.service.js';
 import { CallStateService } from '../services/call-state.service.js';
@@ -20,6 +21,7 @@ import { CallTranscriptService } from '../services/database/call-transcript.serv
 import { SessionManagerService } from '../services/session-manager.service.js';
 import { createMCPRouter } from '../mcp/router.js';
 import { VoicemailService } from '../services/voicemail/voicemail.service.js';
+import { TempMediaService } from '../services/temp-media.service.js';
 dotenv.config();
 
 export class VoiceServer {
@@ -29,6 +31,7 @@ export class VoiceServer {
     private callbackUrl: string;
     private twilioCallService: TwilioCallService;
     private twilioSmsService: TwilioSmsService;
+    private twilioConversationsService: TwilioConversationsService;
     private conversationService: ConversationService;
     private httpServer: HTTPServer | null = null;
     private socketService: SocketService;
@@ -37,6 +40,7 @@ export class VoiceServer {
     private contextService: ContextService;
     private transcriptService: CallTranscriptService;
     private voicemailService: VoicemailService;
+    private tempMediaService: TempMediaService;
 
     constructor(callbackUrl: string, sessionManager: CallSessionManager, transcriptService: CallTranscriptService) {
         this.callbackUrl = callbackUrl;
@@ -48,7 +52,8 @@ export class VoiceServer {
         // Initialize Twilio services
         const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
         this.twilioCallService = new TwilioCallService(twilioClient);
-        this.twilioSmsService = new TwilioSmsService(twilioClient);
+        this.twilioConversationsService = new TwilioConversationsService(twilioClient);
+        this.twilioSmsService = new TwilioSmsService(twilioClient, this.twilioConversationsService);
 
         // Initialize SMS and conversation services
         this.conversationService = new ConversationService();
@@ -59,6 +64,8 @@ export class VoiceServer {
         this.incomingConfigService = new IncomingConfigService();
         this.contextService = new ContextService();
         this.voicemailService = new VoicemailService();
+        this.tempMediaService = new TempMediaService();
+        this.tempMediaService.startCleanup();
 
         this.configureMiddleware();
         this.setupRoutes();
@@ -72,6 +79,9 @@ export class VoiceServer {
         const publicPath = path.join(process.cwd(), 'public');
         console.log('[Voice Server] Serving public files from:', publicPath);
         this.app.use('/audio', express.static(path.join(publicPath, 'audio')));
+
+        // Serve temp media files (for base64 → public URL MMS support)
+        this.app.use('/media/temp', express.static('/tmp/phony-media'));
 
         // Serve frontend static files
         const frontendPath = path.join(process.cwd(), 'frontend/dist');
@@ -171,6 +181,10 @@ export class VoiceServer {
         // Voicemail webhook routes
         this.app.post('/voicemail/recording', this.handleVoicemailRecording.bind(this));
         this.app.post('/voicemail/transcription', this.handleVoicemailTranscription.bind(this));
+        this.app.post('/call/status', this.handleCallStatus.bind(this));
+
+        // Twilio Conversations webhook (for saving group MMS messages to MongoDB)
+        this.app.post('/conversations/webhook', this.handleConversationsWebhook.bind(this));
 
         // Serve frontend for all other routes (SPA fallback)
         this.app.get('*', (req, res) => {
@@ -1106,6 +1120,15 @@ export class VoiceServer {
 
         const fromNumber = req.body.From;
         const toNumber = req.body.To;
+        const callSid = req.body.CallSid;
+
+        // Persist a call record at entry so EVERY inbound call is audited,
+        // not just those that reach the AI handler. Idempotent upsert.
+        if (callSid) {
+            this.transcriptService
+                .saveInboundCallEntry({ callSid, fromNumber, toNumber })
+                .catch(err => console.error('[Voice Server] Inbound call entry save failed:', err));
+        }
 
         // Production Safety Control: Check concurrent incoming call limit
         if (!this.callStateService.canAcceptIncomingCall()) {
@@ -1663,10 +1686,64 @@ export class VoiceServer {
                 recordingUrl: RecordingUrl
             });
 
+            const duration = parseInt(RecordingDuration) || 0;
+
+            // Mark the call record (saved at /call/incoming entry) as completed
+            // with the voicemail's recording duration.
+            if (CallSid) {
+                this.transcriptService
+                    .markCallCompleted(CallSid, 'completed', duration)
+                    .catch(err => console.error('[Voice Server] markCallCompleted failed:', err));
+            }
+            const notifBody = `New voicemail from ${fromNumber} on ${toNumber} (${duration}s). Transcription pending...`;
+            if (SMS_PROXY_ENABLED && fromNumber) {
+                for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                    try {
+                        await this.twilioSmsService.sendSms(target, notifBody, process.env.TWILIO_NUMBER, undefined, { skipNotification: true });
+                    } catch (err) {
+                        console.error(`[Voice Server] Voicemail notification to ${target} failed:`, err);
+                    }
+                }
+            }
+
             res.status(200).send('OK');
         } catch (error) {
             console.error('[Voice Server] Error handling voicemail recording:', error);
             res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Call status callback from Twilio — fires on terminal call states
+     * (completed / busy / no-answer / canceled / failed). Updates the call
+     * record persisted at /call/incoming entry with duration + final status.
+     *
+     * Wire via TwiML `statusCallback` / IncomingPhoneNumber statusCallback
+     * pointing at `${PUBLIC_URL}/call/status`. Authorization is via callSid
+     * existence in our DB — Twilio doesn't sign these like auth-secret webhooks,
+     * so we only accept status updates for callSids we already know about.
+     */
+    private async handleCallStatus(req: express.Request, res: Response): Promise<void> {
+        res.status(200).send('OK'); // always ack fast
+        const {
+            CallSid,
+            CallStatus,
+            CallDuration,
+            ErrorMessage,
+        } = req.body;
+        if (!CallSid || !CallStatus) return;
+
+        const duration = CallDuration ? parseInt(CallDuration) : undefined;
+        const terminal = ['completed', 'busy', 'no-answer', 'canceled', 'failed'];
+        if (!terminal.includes(CallStatus)) return;
+
+        const status = CallStatus === 'completed' ? 'completed' : 'failed';
+        const err = CallStatus !== 'completed' ? `Twilio status: ${CallStatus}${ErrorMessage ? ` — ${ErrorMessage}` : ''}` : undefined;
+        try {
+            await this.transcriptService.markCallCompleted(CallSid, status, duration, err);
+            console.log(`[Voice Server] /call/status ${CallSid} → ${CallStatus}${duration ? ` (${duration}s)` : ''}`);
+        } catch (error) {
+            console.error('[Voice Server] Error in /call/status:', error);
         }
     }
 
@@ -1705,6 +1782,20 @@ export class VoiceServer {
                     TranscriptionSid
                 );
                 console.log(`[Voice Server] Voicemail transcription saved for ${RecordingSid}`);
+
+                const voicemail = await this.voicemailService.getVoicemail(RecordingSid);
+                const vmFrom = voicemail?.fromNumber || 'unknown';
+                const preview = TranscriptionText.length > 1400 ? TranscriptionText.substring(0, 1400) + '...' : TranscriptionText;
+                const transcriptBody = `Voicemail from ${vmFrom}: "${preview}"`;
+                if (SMS_PROXY_ENABLED && vmFrom !== 'unknown') {
+                    for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                        try {
+                            await this.twilioSmsService.sendSms(target, transcriptBody, process.env.TWILIO_NUMBER, undefined, { skipNotification: true });
+                        } catch (err) {
+                            console.error(`[Voice Server] Transcription SMS to ${target} failed:`, err);
+                        }
+                    }
+                }
             } else if (TranscriptionStatus === 'failed') {
                 // Mark transcription as failed
                 await this.voicemailService.markTranscriptionFailed(
@@ -1712,6 +1803,19 @@ export class VoiceServer {
                     'Twilio transcription failed'
                 );
                 console.log(`[Voice Server] Voicemail transcription failed for ${RecordingSid}`);
+
+                const failedVm = await this.voicemailService.getVoicemail(RecordingSid);
+                const failedFrom = failedVm?.fromNumber || 'unknown';
+                const failBody = `Voicemail from ${failedFrom} (transcription failed - check recording)`;
+                if (SMS_PROXY_ENABLED && failedFrom !== 'unknown') {
+                    for (const target of SMS_PROXY_TARGET_NUMBERS) {
+                        try {
+                            await this.twilioSmsService.sendSms(target, failBody, process.env.TWILIO_NUMBER, undefined, { skipNotification: true });
+                        } catch (err) {
+                            console.error(`[Voice Server] Failure SMS to ${target} failed:`, err);
+                        }
+                    }
+                }
             }
 
             res.status(200).send('OK');
@@ -1721,9 +1825,239 @@ export class VoiceServer {
         }
     }
 
+    /**
+     * Twilio Conversations webhook.
+     *
+     *   onConversationAdded     → register group + allocate slug + notify Ben/Laura
+     *   onConversationRemoved   → drop the local GroupConversation row + free the slug
+     *   onParticipantAdded      → update externals + notify about join
+     *   onParticipantRemoved    → update externals + notify about leave
+     *   onMessageAdded          → fan out 1-on-1 SMS to proxy targets (unless
+     *                             the message was authored by Phony itself)
+     *
+     * We respond 200 OK fast and do real work async so Twilio doesn't retry.
+     */
+    private async handleConversationsWebhook(req: express.Request, res: Response): Promise<void> {
+        const {
+            EventType,
+            ConversationSid,
+            MessageSid,
+            Author,
+            Body,
+            Media,
+            FriendlyName,
+        } = req.body;
+        const bindingAddress = req.body['MessagingBinding.Address'] || req.body.MessagingBindingAddress;
+        const bindingProjected = req.body['MessagingBinding.ProjectedAddress'] || req.body.MessagingBindingProjectedAddress;
+
+        console.log(`[Conv Webhook] ${EventType} conv=${ConversationSid} author=${Author || '-'} binding=${bindingAddress || bindingProjected || '-'}`);
+        res.status(200).send('OK');
+
+        if (!ConversationSid) return;
+
+        try {
+            if (EventType === 'onConversationAdded') {
+                await this.onGroupConversationCreated(ConversationSid, FriendlyName);
+                return;
+            }
+
+            if (EventType === 'onConversationRemoved') {
+                await this.onGroupConversationRemoved(ConversationSid);
+                return;
+            }
+
+            if (EventType === 'onParticipantAdded') {
+                await this.onGroupParticipantAdded(ConversationSid, bindingAddress, bindingProjected);
+                return;
+            }
+
+            if (EventType === 'onParticipantRemoved') {
+                await this.onGroupParticipantRemoved(ConversationSid, bindingAddress, bindingProjected);
+                return;
+            }
+
+            if (EventType === 'onMessageAdded') {
+                // Twilio Conversations post-event webhook sends `Media` as a
+                // JSON-encoded array of objects: [{Sid, ContentType, Filename, Size, ...}].
+                // We rehost each to a stable URL under /media/temp/permanent/.
+                const mediaUrls = await this.ingestConversationMedia(ConversationSid, Media);
+                await this.onGroupMessageAdded(ConversationSid, MessageSid, Author, Body, mediaUrls);
+            }
+        } catch (error) {
+            console.error('[Conv Webhook] Async error:', error);
+        }
+    }
+
+    /**
+     * Parse the `Media` payload from a Conversations onMessageAdded webhook,
+     * fetch each media resource from Twilio MCS, persist locally, and return
+     * durable public URLs suitable for storage in SmsModel.mediaUrls.
+     *
+     * Returns an empty array on no media, malformed payload, or if every
+     * individual fetch fails (errors are logged but don't fail the whole
+     * webhook — the text body still saves).
+     */
+    private async ingestConversationMedia(conversationSid: string, mediaField: unknown): Promise<string[]> {
+        if (!mediaField) return [];
+        let items: Array<{ Sid?: string; ContentType?: string; Filename?: string }> = [];
+        try {
+            if (typeof mediaField === 'string') {
+                const parsed = JSON.parse(mediaField);
+                if (Array.isArray(parsed)) items = parsed;
+            } else if (Array.isArray(mediaField)) {
+                items = mediaField as any[];
+            }
+        } catch (err) {
+            console.error('[Conv Webhook] Malformed Media payload:', err);
+            return [];
+        }
+        if (items.length === 0) return [];
+
+        let chatServiceSid: string;
+        try {
+            chatServiceSid = await this.twilioConversationsService.getChatServiceSid(conversationSid);
+        } catch (err: any) {
+            console.error(`[Conv Webhook] Cannot resolve chatServiceSid for ${conversationSid}:`, err.message);
+            return [];
+        }
+
+        const urls: string[] = [];
+        for (const item of items) {
+            if (!item.Sid) continue;
+            try {
+                const url = await this.tempMediaService.saveFromTwilioMedia(
+                    item.Sid,
+                    item.ContentType || 'application/octet-stream',
+                    item.Filename,
+                    process.env.TWILIO_ACCOUNT_SID!,
+                    process.env.TWILIO_AUTH_TOKEN!,
+                    chatServiceSid,
+                );
+                urls.push(url);
+                console.log(`[Conv Webhook] Ingested media ${item.Sid} (${item.ContentType || '?'}) → ${url}`);
+            } catch (err: any) {
+                console.error(`[Conv Webhook] Failed to ingest media ${item.Sid}:`, err.message);
+            }
+        }
+        return urls;
+    }
+
+    private async onGroupConversationCreated(conversationSid: string, friendlyName?: string): Promise<void> {
+        // Ensure Phony is a projectedAddress participant (idempotent).
+        const twilioNumber = process.env.TWILIO_NUMBER!;
+        try {
+            await this.twilioConversationsService.ensureSystemParticipant(conversationSid, twilioNumber);
+        } catch (err: any) {
+            console.error(`[Conv Webhook] ensureSystemParticipant failed:`, err.message);
+        }
+
+        let externals: string[] = [];
+        try {
+            externals = await this.twilioConversationsService.getExternalAddresses(conversationSid);
+        } catch (err) {
+            console.error(`[Conv Webhook] getExternalAddresses failed:`, err);
+        }
+
+        const { slug, isNew } = await this.twilioSmsService.registerGroup(
+            conversationSid,
+            twilioNumber,
+            externals,
+            friendlyName
+        );
+        if (!isNew) return;
+
+        const externalsSet = new Set(externals);
+        const participantList = externals.length ? externals.join(', ') : '(no externals yet)';
+        const intro = `📥 New group {${slug}} — ${participantList}\n---\nReply in thread: {${slug}}: msg`;
+        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            if (externalsSet.has(target)) continue; // already in group; not duplicative noise
+            this.twilioSmsService
+                .sendSms(target, intro, twilioNumber, undefined, { skipNotification: true })
+                .catch(err => console.error(`[Conv Webhook] Group intro to ${target} failed:`, err));
+        }
+    }
+
+    private async onGroupParticipantAdded(conversationSid: string, address?: string, projected?: string): Promise<void> {
+        if (projected) return; // the Phony system participant — not interesting
+        if (!address) return;
+
+        const twilioNumber = process.env.TWILIO_NUMBER!;
+        const externals = await this.twilioConversationsService.getExternalAddresses(conversationSid).catch(() => [] as string[]);
+        const { slug } = await this.twilioSmsService.registerGroup(conversationSid, twilioNumber, externals);
+
+        const externalsSet = new Set(externals);
+        const note = `👥 {${slug}} joined: ${address}`;
+        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            if (target === address) continue;
+            if (externalsSet.has(target)) continue; // already in group; they see joins natively
+            this.twilioSmsService
+                .sendSms(target, note, twilioNumber, undefined, { skipNotification: true })
+                .catch(err => console.error(`[Conv Webhook] Join note to ${target} failed:`, err));
+        }
+    }
+
+    private async onGroupConversationRemoved(conversationSid: string): Promise<void> {
+        const slug = TwilioSmsService.getGroupSlug(conversationSid);
+        await this.twilioSmsService.unregisterGroup(conversationSid);
+        if (!slug) return;
+
+        const twilioNumber = process.env.TWILIO_NUMBER!;
+        const note = `🗑️ Group {${slug}} was removed.`;
+        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            this.twilioSmsService
+                .sendSms(target, note, twilioNumber, undefined, { skipNotification: true })
+                .catch(err => console.error(`[Conv Webhook] Removal note to ${target} failed:`, err));
+        }
+    }
+
+    private async onGroupParticipantRemoved(conversationSid: string, address?: string, projected?: string): Promise<void> {
+        if (projected) return; // Phony system participant leaving — shouldn't happen but not interesting
+        if (!address) return;
+
+        const twilioNumber = process.env.TWILIO_NUMBER!;
+        // Refresh the group's external list from Twilio (participant is already gone at this point)
+        const externals = await this.twilioConversationsService.getExternalAddresses(conversationSid).catch(() => [] as string[]);
+        await this.twilioSmsService.updateGroupExternals(conversationSid, externals);
+
+        const slug = TwilioSmsService.getGroupSlug(conversationSid);
+        if (!slug) return;
+
+        const externalsSet = new Set(externals);
+        const note = `👥 {${slug}} left: ${address}`;
+        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            if (target === address) continue;
+            if (externalsSet.has(target)) continue; // still in group; they see leaves natively
+            this.twilioSmsService
+                .sendSms(target, note, twilioNumber, undefined, { skipNotification: true })
+                .catch(err => console.error(`[Conv Webhook] Leave note to ${target} failed:`, err));
+        }
+    }
+
+    private async onGroupMessageAdded(
+        conversationSid: string,
+        messageSid: string | undefined,
+        author: string | undefined,
+        body: string | undefined,
+        mediaUrls: string[]
+    ): Promise<void> {
+        if (!author) return;
+        await this.twilioSmsService.processInboundGroupMessage(
+            conversationSid,
+            messageSid,
+            author,
+            body || '',
+            mediaUrls,
+        );
+    }
+
     public start(): void {
         this.httpServer = this.app.listen(this.port);
         this.socketService.initialize(this.httpServer);
+
+        // Load SMS proxy state (codes + slugs) from DB after server starts
+        this.twilioSmsService.loadProxyState().catch(err =>
+            console.error('[Voice Server] Failed to load SMS proxy state:', err)
+        );
     }
 
     public getHttpServer(): HTTPServer | null {
