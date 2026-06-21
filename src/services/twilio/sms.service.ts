@@ -7,6 +7,7 @@ import { GroupConversationModel } from '../../models/group-conversation.model.js
 import { SMS_ENABLED_NUMBERS, SMS_PROXY_ENABLED, SMS_PROXY_TARGET_NUMBERS } from '../../config/constants.js';
 import { TwilioConversationsService } from './conversations.service.js';
 import { MongoDBService } from '../database/mongodb.service.js';
+import { WebhookDispatcher } from '../webhook-dispatcher.service.js';
 
 /**
  * SMS Proxy system:
@@ -19,6 +20,7 @@ export class TwilioSmsService {
     private readonly twilioClient: twilio.Twilio;
     private readonly storageService: SmsStorageService;
     private readonly conversationsService: TwilioConversationsService;
+    private readonly webhookDispatcher: WebhookDispatcher = new WebhookDispatcher();
 
     // Maps: twilioNumber -> (last4code -> fullSenderNumber)
     private static codeToSender: Map<string, Map<string, string>> = new Map();
@@ -329,6 +331,21 @@ export class TwilioSmsService {
 
             console.log(`[TwilioSMS] Sent SMS ${message.sid} from ${sender} to ${toNumber}`);
 
+            // Fire sms.outgoing webhook event. `initiator` distinguishes
+            // user-facing messages ("mcp") from proxy notifications / system
+            // replies ("proxy") so downstream agents can filter the noise.
+            this.webhookDispatcher.dispatch('sms.outgoing', {
+                message_sid: message.sid,
+                conversation_sid: null,
+                from: sender,
+                to: toNumber,
+                body: trimmedBody,
+                media_urls: mediaUrls ?? [],
+                direction: 'outbound',
+                initiator: options?.skipNotification ? 'proxy' : 'mcp',
+                twilio_status: message.status,
+            }).catch(e => console.error('[TwilioSMS] sms.outgoing dispatch error:', e));
+
             if (SMS_PROXY_ENABLED && !options?.skipNotification) {
                 TwilioSmsService.registerSender(sender, toNumber);
                 this.notifyOutboundSms(sender, toNumber, trimmedBody, mediaUrls).catch(err =>
@@ -423,6 +440,29 @@ export class TwilioSmsService {
 
             console.log(`[TwilioSMS] Received SMS ${data.MessageSid} from ${data.From} to ${data.To}`);
 
+            // Fire-and-forget outbound webhook dispatch for any user-configured
+            // routes that match this message (e.g. forward to ATC, home-assistant,
+            // n8n, etc.). Errors are logged inside the dispatcher; never bubble up
+            // into the Twilio handler since that would cause Twilio to retry.
+            this.webhookDispatcher.dispatch('sms.incoming', {
+                message_sid: data.MessageSid,
+                conversation_sid: null,                          // 1-on-1; group MMS dispatches from processInboundGroupMessage
+                conversation_label: null,
+                from: data.From,
+                from_label: TwilioSmsService.numberToSlug.get(data.From) ?? null,
+                to: data.To,
+                body: data.Body || '',
+                media_urls: mediaUrls,
+                num_segments: parseInt((data as any).NumSegments) || 1,
+            }, {
+                reply: {
+                    kind: '1on1',
+                    tool: 'phony_send_sms',
+                    args: { to: data.From, from: data.To },
+                    description: `To reply, call phony_send_sms with to="${data.From}" body="<your reply>". The message will appear as a 1-on-1 SMS back to the sender.`,
+                },
+            }).catch((e) => console.error('[TwilioSMS] webhook dispatch error:', e));
+
             if (!SMS_PROXY_ENABLED) return;
 
             if (isFromProxyTarget) {
@@ -515,13 +555,30 @@ export class TwilioSmsService {
 
         // Send the reply to the external number
         console.log(`[TwilioSMS Proxy] Routing reply ${resolvedVia} from ${from} → ${recipient} via ${twilioNumber}`);
+        let deliveredSid: string | undefined;
         try {
-            await this.sendSms(recipient, parsed.message, twilioNumber, undefined, { skipNotification: true });
+            const result = await this.sendSms(recipient, parsed.message, twilioNumber, undefined, { skipNotification: true });
+            deliveredSid = result.messageSid;
             console.log(`[TwilioSMS Proxy] Reply sent to ${recipient}`);
         } catch (err) {
             console.error(`[TwilioSMS Proxy] Failed to send reply to ${recipient}:`, err);
             return;
         }
+
+        // Fire sms.proxy_routed so subscribed agent sessions see manual replies.
+        this.webhookDispatcher.dispatch('sms.proxy_routed', {
+            from_proxy: from,
+            twilio_number: twilioNumber,
+            parsed_kind: parsed.type === 'slug_reply' ? 'slug' : 'code',
+            body: parsed.message,
+            routed_via: '1on1',
+            routed_to_number: recipient,
+            routed_to_conversation_sid: null,
+            routed_to_slug: parsed.type === 'slug_reply' ? parsed.slug : null,
+            delivered_message_sid: deliveredSid ?? '',
+        }, {
+            ...(deliveredSid ? { eventId: `phony-proxy-routed-${deliveredSid}` } : {}),
+        }).catch(e => console.error('[TwilioSMS] sms.proxy_routed dispatch error:', e));
 
         // CC other proxy targets
         const senderLast4 = TwilioSmsService.getCodeFromNumber(from);
@@ -709,14 +766,42 @@ export class TwilioSmsService {
         messageDate?: Date,
         options?: { skipNotify?: boolean }
     ): Promise<boolean> {
-        if (!author || this.conversationsService.isSelfAuthor(author)) return false;
+        if (!author) return false;
         if (!body && mediaUrls.length === 0) return false;
 
-        // Idempotency: if we've already stored this messageSid, this is a
-        // retry (webhook duplicate or reconciler replay) — skip.
+        // Idempotency: covers both directions (self-authored echo from the
+        // outbound send-path and real inbound from a participant).
         if (messageSid) {
             const existing = await SmsModel.findOne({ messageSid }).lean();
             if (existing) return false;
+        }
+
+        // Self-authored group message: Phony posted via phony_send_group_sms,
+        // Twilio fanned out to externals, and the same message echoes back to
+        // us via onMessageAdded. Persist as outbound so the group thread has
+        // full history — but skip inbound fan-out (notifyOutboundGroupMessage
+        // already handled proxy echo on the send path).
+        if (this.conversationsService.isSelfAuthor(author)) {
+            if (!messageSid) return false;
+            const slug = TwilioSmsService.getGroupSlug(conversationSid) ?? '';
+            try {
+                await this.storageService.saveSms({
+                    messageSid,
+                    fromNumber: process.env.TWILIO_NUMBER!,
+                    toNumber: slug ? `group:${slug}` : conversationSid,
+                    direction: SmsDirection.OUTBOUND,
+                    body,
+                    status: SmsStatus.SENT,
+                    twilioStatus: 'sent',
+                    numMedia: mediaUrls.length,
+                    mediaUrls,
+                    conversationSid,
+                });
+            } catch (err: any) {
+                if (err.code === 11000) return false;
+                throw err;
+            }
+            return true;
         }
 
         // Ensure the group is registered (covers webhook-missed onConversationAdded)
@@ -750,6 +835,31 @@ export class TwilioSmsService {
                 throw err;
             }
         }
+
+        // Fire-and-forget outbound webhook dispatch for any matching routes.
+        // Done before notifyGroupMessage so the webhook always runs even if
+        // the proxy fan-out is disabled (SMS_PROXY_ENABLED off).
+        const groupSlug = TwilioSmsService.getGroupSlug(conversationSid) ?? null;
+        this.webhookDispatcher.dispatch('sms.incoming', {
+            message_sid: messageSid ?? '',
+            conversation_sid: conversationSid,
+            conversation_label: groupSlug,
+            from: author,
+            from_label: TwilioSmsService.numberToSlug.get(author) ?? null,
+            to: process.env.TWILIO_NUMBER ?? '',
+            body,
+            media_urls: mediaUrls,
+            // seq deferred to v2 — requires plumbing Twilio Conversations Message.Index
+            // through both webhook + reconciler callers.
+        }, {
+            reply: {
+                kind: 'group',
+                tool: 'phony_send_group_sms',
+                args: { conversationSid, ...(groupSlug ? { slug: groupSlug } : {}) },
+                description: `To reply to the whole group, call phony_send_group_sms with conversationSid="${conversationSid}"${groupSlug ? ` (slug "${groupSlug}")` : ''} body="<your reply>". The reply fans out to every participant in the group.`,
+            },
+            ...(messageSid ? { eventId: `phony-msg-${messageSid}` } : {}),
+        }).catch((e) => console.error('[TwilioSMS] group webhook dispatch error:', e));
 
         if (!options?.skipNotify) {
             await this.notifyGroupMessage(conversationSid, author, body, mediaUrls);
@@ -810,6 +920,56 @@ export class TwilioSmsService {
     }
 
     /**
+     * Fan a group-Conversation OUTBOUND message (one we just posted via the
+     * Conversations API) out to SMS_PROXY_TARGET_NUMBERS as a 1-on-1 SMS echo.
+     * Mirrors `notifyGroupMessage` so Ben/Laura can see what Phony's agents
+     * are sending into groups they aren't members of.
+     *
+     * Skip targets:
+     *   - any proxy target who IS an external participant in the group —
+     *     they don't get a native fan-out (Phony's the projectedAddress, not
+     *     them), but they're presumed to be watching the thread themselves so
+     *     the echo would be duplicative. (Same skip rule as inbound for parity.)
+     */
+    public async notifyOutboundGroupMessage(
+        conversationSid: string,
+        body: string,
+        mediaUrls?: string[],
+    ): Promise<void> {
+        if (!SMS_PROXY_ENABLED) return;
+        const slug = TwilioSmsService.getGroupSlug(conversationSid);
+        if (!slug) {
+            console.warn(`[TwilioSMS Proxy] No slug for group ${conversationSid}, skipping outbound echo`);
+            return;
+        }
+
+        const skipTargets = new Set<string>();
+        const group = await GroupConversationModel.findOne({ conversationSid }).lean();
+        const externalsInGroup = new Set(group?.externalParticipants ?? []);
+        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            if (externalsInGroup.has(target)) skipTargets.add(target);
+        }
+
+        const mediaNote = mediaUrls && mediaUrls.length ? `\n[📎 ${mediaUrls.length}]` : '';
+        const notification = `📤 {${slug}} agent → group:\n${body || '(no text)'}${mediaNote}\n---\nReply: {${slug}}: msg`;
+
+        const twilioNumber = process.env.TWILIO_NUMBER!;
+        for (const target of SMS_PROXY_TARGET_NUMBERS) {
+            if (skipTargets.has(target)) continue;
+            try {
+                await this.sendSms(target, notification, twilioNumber, mediaUrls && mediaUrls.length ? mediaUrls : undefined, { skipNotification: true });
+            } catch (err) {
+                console.error(`[TwilioSMS Proxy] Outbound group echo to ${target} failed:`, err);
+            }
+        }
+
+        GroupConversationModel.updateOne(
+            { conversationSid },
+            { $set: { lastActivityAt: new Date() } },
+        ).catch(err => console.error(`[TwilioSMS Proxy] Touch group failed:`, err));
+    }
+
+    /**
      * Handle a proxy-target reply that resolved to a group slug: post the
      * message to the Conversation so Twilio fans out to all externals.
      */
@@ -819,15 +979,32 @@ export class TwilioSmsService {
         conversationSid: string,
         slug: string,
         message: string
-    ): Promise<void> {
+    ): Promise<string | undefined> {
+        let deliveredSid: string | undefined;
         try {
-            await this.conversationsService.postMessage(conversationSid, message);
+            deliveredSid = await this.conversationsService.postMessage(conversationSid, message);
             console.log(`[TwilioSMS Proxy] Routed {${slug}} reply from ${from} → ${conversationSid}`);
         } catch (err: any) {
             console.error(`[TwilioSMS Proxy] Failed to post into group {${slug}}:`, err);
             await this.sendSms(from, `Failed to post into {${slug}}: ${err.message}`, twilioNumber, undefined, { skipNotification: true }).catch(() => {});
-            return;
+            return undefined;
         }
+
+        // Fire sms.proxy_routed so subscribed agent sessions see manual
+        // replies that Ben/Laura sent into a group.
+        this.webhookDispatcher.dispatch('sms.proxy_routed', {
+            from_proxy: from,
+            twilio_number: twilioNumber,
+            parsed_kind: 'slug',
+            body: message,
+            routed_via: 'group',
+            routed_to_number: null,
+            routed_to_conversation_sid: conversationSid,
+            routed_to_slug: slug,
+            delivered_message_sid: deliveredSid ?? '',
+        }, {
+            ...(deliveredSid ? { eventId: `phony-proxy-routed-${deliveredSid}` } : {}),
+        }).catch(e => console.error('[TwilioSMS] sms.proxy_routed dispatch error:', e));
 
         // CC the OTHER proxy targets with what got sent (so both Ben and
         // Laura see the reply, mirroring the 1-on-1 CC pattern).
@@ -839,6 +1016,8 @@ export class TwilioSmsService {
                 console.error(`[TwilioSMS Proxy] Group CC to ${target} failed:`, err)
             );
         }
+
+        return deliveredSid;
     }
 
     // --- Status callback ---
@@ -859,8 +1038,32 @@ export class TwilioSmsService {
             );
             console.log(`[TwilioSMS] Updated SMS ${data.MessageSid} status to ${data.MessageStatus}`);
 
-            // Notify proxy targets on delivery failure
             const status = data.MessageStatus?.toLowerCase();
+
+            // Fire webhook events on terminal status transitions.
+            // event_id is derived from message_sid + status so retries dedup.
+            const original = await SmsModel.findOne({ messageSid: data.MessageSid }).lean();
+            if (status === 'delivered') {
+                this.webhookDispatcher.dispatch('sms.delivered', {
+                    message_sid: data.MessageSid,
+                    from: original?.fromNumber ?? null,
+                    to: original?.toNumber ?? null,
+                    delivered_at: new Date().toISOString(),
+                }, { eventId: `phony-sms-delivered-${data.MessageSid}` })
+                    .catch(e => console.error('[TwilioSMS] sms.delivered dispatch error:', e));
+            } else if (status === 'failed' || status === 'undelivered') {
+                this.webhookDispatcher.dispatch('sms.failed', {
+                    message_sid: data.MessageSid,
+                    from: original?.fromNumber ?? null,
+                    to: original?.toNumber ?? null,
+                    error_code: data.ErrorCode ?? null,
+                    error_message: data.ErrorMessage ?? null,
+                    twilio_status: data.MessageStatus,
+                }, { eventId: `phony-sms-failed-${data.MessageSid}` })
+                    .catch(e => console.error('[TwilioSMS] sms.failed dispatch error:', e));
+            }
+
+            // Notify proxy targets on delivery failure (legacy proxy path)
             if (SMS_PROXY_ENABLED && (status === 'failed' || status === 'undelivered')) {
                 await this.notifyFailure(data.MessageSid, data.MessageStatus, data.ErrorCode, data.ErrorMessage);
             }

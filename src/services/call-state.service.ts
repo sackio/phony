@@ -11,6 +11,7 @@ export interface ActiveCall {
     voiceProvider?: string;  // Voice provider (elevenlabs)
     elevenLabsAgentId?: string;  // ElevenLabs agent ID
     elevenLabsVoiceId?: string;  // ElevenLabs voice ID
+    contextChannel?: string;     // Slack channel ID or ATC session id for transcript stream + mid-call injection
     startedAt: Date;
     maxDurationTimer?: NodeJS.Timeout;  // Auto-hangup timer
     conversationHistory: Array<{ role: string; content: string; timestamp: Date }>;

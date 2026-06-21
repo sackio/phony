@@ -328,6 +328,15 @@ npm run start  # Runs dist/start-all.cjs
 
 # Clean
 npm run clean
+
+# Deploy a change to the running container (server4):
+npm run build
+docker compose build voice-server
+docker compose up -d voice-server --remove-orphans
+
+# Note: docker-compose.yml no longer mounts ./dist:/app/dist:ro — the image is
+# baked from `dist/` at build time. Running `npm run build` without rebuilding
+# the image will NOT update the running container.
 ```
 
 **Requirements**: Node.js >= 22

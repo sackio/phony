@@ -1,10 +1,20 @@
 import { CallState, ConversationMessage } from '../../types.js';
 import { SocketService } from '../socket.service.js';
 import { CallStateService } from '../call-state.service.js';
-import { pcmToUlaw, audioToBase64, base64ToAudio } from './audio.service.js';
 
 /**
- * Service for processing ElevenLabs events and managing conversation state
+ * Service for processing ElevenLabs events and managing conversation state.
+ *
+ * Audio chain (post-Phase-1 with adaptive fallback):
+ *   - INBOUND (Twilio → ElevenLabs): always pass-through (Twilio µ-law payload
+ *     is forwarded verbatim as user_audio_chunk). ElevenLabs accepts ulaw_8000
+ *     input per the Phase 0 dashboard config.
+ *   - OUTBOUND (ElevenLabs → Twilio): adaptive — if the negotiated agent output
+ *     format is `ulaw_8000` we pass through. If it's `pcm_16000` (which we
+ *     observed at runtime despite asking for ulaw_8000 in the init override),
+ *     we convert PCM 16kHz → µ-law 8kHz before forwarding to Twilio.
+ *     The conversion adds ~5-10ms per chunk on this hardware — still well under
+ *     the original 40ms+ from the pre-Phase-1 double-conversion path.
  */
 export class ElevenLabsEventService {
     private callState: CallState;
@@ -12,7 +22,7 @@ export class ElevenLabsEventService {
     private sendAudioToTwilio: (payload: string) => void;
     private sendMarkToTwilio: () => void;
     private onInterruption: () => void;
-    private audioOutputFormat: string = 'ulaw_8000';
+    private agentOutputFormat: string = 'ulaw_8000';
 
     constructor(
         callState: CallState,
@@ -29,32 +39,36 @@ export class ElevenLabsEventService {
     }
 
     /**
-     * Set the audio output format from the agent metadata
+     * Record the agent's negotiated output format. Used to decide whether
+     * outbound audio needs PCM → µ-law conversion before reaching Twilio.
      */
-    public setAudioOutputFormat(format: string): void {
-        this.audioOutputFormat = format;
-        console.log('[ElevenLabs Event] Audio output format set to:', format);
+    public verifyAudioFormat(format: string): void {
+        this.agentOutputFormat = format || 'ulaw_8000';
+        if (this.agentOutputFormat !== 'ulaw_8000') {
+            console.log(
+                `[ElevenLabs Event] Agent output is "${this.agentOutputFormat}" — enabling adaptive PCM→µ-law conversion on the outbound path.`
+            );
+        }
     }
 
     /**
-     * Handle audio chunk from ElevenLabs
-     * Converts PCM to µ-law if agent outputs PCM format
+     * Forward an audio chunk from ElevenLabs to Twilio.
+     * Pass-through when both ends agree on ulaw_8000; convert PCM 16kHz → µ-law
+     * 8kHz when the agent insists on pcm_16000 (typical with the current
+     * ElevenLabs Flash 2.5 default).
      */
     public handleAudio(audioBase64: string): void {
-        // Track response timing
         if (this.callState.responseStartTimestampTwilio === null) {
             this.callState.responseStartTimestampTwilio = this.callState.latestMediaTimestamp;
             console.log('[ElevenLabs Event] Response started at timestamp:', this.callState.responseStartTimestampTwilio);
         }
 
-        // Convert PCM to µ-law if needed (Twilio requires µ-law 8kHz)
-        if (this.audioOutputFormat === 'pcm_16000') {
-            const pcmBuffer = base64ToAudio(audioBase64);
-            const ulawBuffer = pcmToUlaw(pcmBuffer, 16000);
-            const ulawBase64 = audioToBase64(ulawBuffer);
-            this.sendAudioToTwilio(ulawBase64);
+        if (this.agentOutputFormat === 'pcm_16000') {
+            const pcm = Buffer.from(audioBase64, 'base64');
+            const ulaw = pcm16kToUlaw8k(pcm);
+            this.sendAudioToTwilio(ulaw.toString('base64'));
         } else {
-            // Already in µ-law format, send directly
+            // ulaw_8000 (pass-through) or unknown format — best-effort forward
             this.sendAudioToTwilio(audioBase64);
         }
     }
@@ -223,4 +237,38 @@ export class ElevenLabsEventService {
     public logEvent(type: string, data: any): void {
         this.callState.logTwilioEvent(type, data);
     }
+}
+
+/**
+ * Convert PCM 16-bit linear 16kHz audio → µ-law 8kHz, both mono.
+ * Downsample by dropping every other sample, then µ-law encode each int16.
+ * Used only when the ElevenLabs agent outputs `pcm_16000` despite our request
+ * for `ulaw_8000`.
+ */
+function pcm16kToUlaw8k(pcm: Buffer): Buffer {
+    const inSamples = Math.floor(pcm.length / 2);
+    const outSamples = Math.floor(inSamples / 2);
+    const out = Buffer.alloc(outSamples);
+    for (let i = 0; i < outSamples; i++) {
+        const sample = pcm.readInt16LE(i * 4);
+        out[i] = linearToUlaw(sample);
+    }
+    return out;
+}
+
+function linearToUlaw(sample: number): number {
+    const BIAS = 0x84;
+    const CLIP = 32635;
+    const sign = sample < 0 ? 0x80 : 0;
+    if (sample < 0) sample = -sample;
+    if (sample > CLIP) sample = CLIP;
+    sample += BIAS;
+    let exponent = 7;
+    let mask = 0x4000;
+    while ((sample & mask) === 0 && exponent > 0) {
+        exponent--;
+        mask >>= 1;
+    }
+    const mantissa = (sample >> (exponent + 3)) & 0x0f;
+    return ~(sign | (exponent << 4) | mantissa) & 0xff;
 }

@@ -81,3 +81,13 @@ export const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '';
 export const ELEVENLABS_DEFAULT_AGENT_ID = process.env.ELEVENLABS_DEFAULT_AGENT_ID || '';
 export const ELEVENLABS_DEFAULT_VOICE_ID = process.env.ELEVENLABS_DEFAULT_VOICE_ID || '';
 
+// Native Twilio integration — used when calls go through
+// POST /v1/convai/twilio/outbound-call (Phase 2 hybrid path).
+// Get phnum_… by importing the Twilio number in the ElevenLabs dashboard.
+export const ELEVENLABS_AGENT_PHONE_NUMBER_ID = process.env.ELEVENLABS_AGENT_PHONE_NUMBER_ID || '';
+
+// Shared secret ElevenLabs uses to sign the post-call webhook body.
+// Configured per-webhook in the agent's Security tab. Empty disables HMAC check
+// (don't run with empty in prod — use the dashboard-provided wsec_… value).
+export const ELEVENLABS_POSTCALL_WEBHOOK_SECRET = process.env.ELEVENLABS_POSTCALL_WEBHOOK_SECRET || '';
+

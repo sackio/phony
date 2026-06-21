@@ -1,6 +1,8 @@
 /**
- * Common interface for call handlers (OpenAI and ElevenLabs)
- * This allows the session manager to work with any voice provider
+ * Common interface for call handlers.
+ * The ElevenLabs handler is the only implementation post-Phase-3 cleanup.
+ * Kept abstract so a future second provider (or the native bridge) can plug in
+ * via the same shape — but as of now there is no second concrete implementation.
  */
 export interface ICallHandler {
     /**

@@ -164,20 +164,61 @@ export class TwilioConversationsService {
         body: string,
         mediaSids?: string[]
     ): Promise<string> {
+        // Twilio Conversations Messages support AT MOST ONE mediaSid per
+        // message. Passing an array via the SDK silently coerces to the last
+        // one AND drops the body during MMS fan-out. Split into separate
+        // messages so all media and the body land on participant phones:
+        //   - If only body: 1 message (body).
+        //   - If only media: N messages (1 media each, no body).
+        //   - If both: 1 message body-only, then N messages media-only.
+        // Returns the SID of the FIRST posted message (body if present, else
+        // first media) — that's what gets surfaced as the "primary" SID. The
+        // onMessageAdded webhook fires for each individual message, and the
+        // Fix-A self-author persistence will record each as a row.
         const author = await this.resolveSelfAuthor(conversationSid);
-        const payload: any = {
-            author,
-            ...(body && { body }),
-            ...(mediaSids && mediaSids.length > 0 && { mediaSid: mediaSids }),
-        };
-        const msg = await this.withRetry(
-            () => this.twilioClient.conversations.v1
-                .conversations(conversationSid)
-                .messages.create(payload),
-            `postMessage to ${conversationSid}`
-        );
-        console.log(`[Conversations] Posted ${msg.sid} to ${conversationSid} (author=${author})`);
-        return msg.sid;
+        const hasBody = !!(body && body.length > 0);
+        const medias = mediaSids ?? [];
+        if (!hasBody && medias.length === 0) {
+            throw new Error('postMessage requires body or at least one mediaSid');
+        }
+
+        // Inter-message spacing for the split. Twilio reports `delivered` on
+        // every sub-message even when carriers/handsets coalesce or drop rapid
+        // MMS from the same sender (observed 2026-06-20: 2nd photo of a 3-msg
+        // split posted within ~1s of the first showed delivered:all in Twilio
+        // delivery receipts but never appeared on the recipient iPhone; a
+        // manual retry 84s later with identical content landed fine).
+        const SUBMSG_DELAY_MS = 1500;
+        const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+        let firstSid: string | undefined;
+
+        if (hasBody) {
+            const msg = await this.withRetry(
+                () => this.twilioClient.conversations.v1
+                    .conversations(conversationSid)
+                    .messages.create({ author, body }),
+                `postMessage(body) to ${conversationSid}`
+            );
+            console.log(`[Conversations] Posted ${msg.sid} (body) to ${conversationSid} (author=${author})`);
+            firstSid = msg.sid;
+            if (medias.length > 0) await sleep(SUBMSG_DELAY_MS);
+        }
+
+        for (let i = 0; i < medias.length; i++) {
+            const mediaSid = medias[i];
+            const msg = await this.withRetry(
+                () => this.twilioClient.conversations.v1
+                    .conversations(conversationSid)
+                    .messages.create({ author, mediaSid }),
+                `postMessage(media ${i + 1}/${medias.length}) to ${conversationSid}`
+            );
+            console.log(`[Conversations] Posted ${msg.sid} (media ${mediaSid}) to ${conversationSid}`);
+            if (!firstSid) firstSid = msg.sid;
+            if (i < medias.length - 1) await sleep(SUBMSG_DELAY_MS);
+        }
+
+        return firstSid!;
     }
 
     /**

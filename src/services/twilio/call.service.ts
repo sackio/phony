@@ -100,7 +100,9 @@ export class TwilioCallService {
         callInstructions: string,
         fromNumber?: string,
         elevenLabsAgentId?: string,
-        elevenLabsVoiceId?: string
+        elevenLabsVoiceId?: string,
+        dtmfScriptJson?: string,
+        dtmfPreflight?: string,
     ): Promise<string> {
         try {
             // Deduplication: prevent placing two calls to the same number within the window
@@ -139,12 +141,22 @@ export class TwilioCallService {
             if (elevenLabsVoiceId) {
                 url += `&elevenLabsVoiceId=${encodeURIComponent(elevenLabsVoiceId)}`;
             }
+            if (dtmfScriptJson) {
+                url += `&dtmfScript=${encodeURIComponent(dtmfScriptJson)}`;
+            }
 
-            const call = await twilioClient.calls.create({
+            const createParams: any = {
                 to: toNumber,
                 from: callerNumber,
                 url: url,
-            });
+            };
+            // sendDigits: Twilio dials these DTMF digits at the carrier level
+            // immediately after the called party answers, before any TwiML / media
+            // stream takes over. Use 'w' for half-second pauses. Reliable for
+            // IVR menu navigation.
+            if (dtmfPreflight) createParams.sendDigits = dtmfPreflight;
+
+            const call = await twilioClient.calls.create(createParams);
 
             return call.sid;
         } catch (error) {
@@ -162,7 +174,9 @@ export class TwilioCallService {
         callInstructions: string,
         elevenLabsAgentId?: string,
         elevenLabsVoiceId?: string,
-        fromNumber?: string
+        fromNumber?: string,
+        dtmfScriptJson?: string,
+        dtmfPreflight?: string,
     ): Promise<{ sid: string; status: string }> {
         const publicUrl = process.env.PUBLIC_URL || '';
 
@@ -173,7 +187,9 @@ export class TwilioCallService {
             callInstructions,
             fromNumber,
             elevenLabsAgentId,
-            elevenLabsVoiceId
+            elevenLabsVoiceId,
+            dtmfScriptJson,
+            dtmfPreflight,
         );
 
         return { sid: callSid, status: 'initiated' };

@@ -12,27 +12,26 @@ export class TwilioEventService {
     private readonly contextService: ContextService;
     private readonly onForwardAudio: (payload: string) => void;
     private readonly onContextReady?: () => void;
+    private readonly onScheduleDtmf?: (digits: string) => void;
+    private readonly onDtmfContextUpdate?: (note: string) => void;
+    private dtmfTimers: NodeJS.Timeout[] = [];
 
-    /**
-     * Create a new Twilio event processor
-     * @param callState The state of the call
-     * @param twilioCallService The Twilio call service
-     * @param contextService The context service
-     * @param onForwardAudio Callback for forwarding audio to voice provider
-     * @param onContextReady Callback when call context is ready (after start event)
-     */
     constructor(
         callState: CallState,
         twilioCallService: TwilioCallService,
         contextService: ContextService,
         onForwardAudio: (payload: string) => void,
-        onContextReady?: () => void
+        onContextReady?: () => void,
+        onScheduleDtmf?: (digits: string) => void,
+        onDtmfContextUpdate?: (note: string) => void,
     ) {
         this.callState = callState;
         this.twilioCallService = twilioCallService;
         this.contextService = contextService;
         this.onForwardAudio = onForwardAudio;
         this.onContextReady = onContextReady;
+        this.onScheduleDtmf = onScheduleDtmf;
+        this.onDtmfContextUpdate = onDtmfContextUpdate;
     }
 
     /**
@@ -176,6 +175,40 @@ export class TwilioEventService {
             console.log('[Twilio Start] Call context ready, triggering session initialization');
             this.onContextReady();
         }
+
+        // Parse + schedule any pre-supplied DTMF script (Phase 3.2 IVR navigation).
+        // Format: [{"at": <ms>, "digits": "<string>"}, ...]. Each entry fires
+        // after `at` milliseconds of media-stream wall-clock from the start
+        // event. The handler injects the µ-law tones into the Twilio media
+        // stream via sendDtmfPaced() and also drops a contextual_update to the
+        // agent so the LLM knows the call state shifted.
+        const dtmfScriptRaw = data.start.customParameters.dtmfScript;
+        if (dtmfScriptRaw && this.onScheduleDtmf) {
+            try {
+                const script: Array<{ at: number; digits: string }> = JSON.parse(dtmfScriptRaw);
+                if (Array.isArray(script)) {
+                    for (const step of script) {
+                        if (typeof step?.at !== 'number' || typeof step?.digits !== 'string') continue;
+                        const t = setTimeout(() => {
+                            console.log(`[Twilio Start] Firing scripted DTMF at t=${step.at}ms: "${step.digits}"`);
+                            this.onScheduleDtmf?.(step.digits);
+                            this.onDtmfContextUpdate?.(`Operator pressed ${step.digits} via scripted IVR navigation.`);
+                        }, Math.max(0, step.at));
+                        this.dtmfTimers.push(t);
+                    }
+                    console.log(`[Twilio Start] Scheduled ${this.dtmfTimers.length} DTMF entries from dtmfScript`);
+                }
+            } catch (err) {
+                console.error('[Twilio Start] Failed to parse dtmfScript:', err);
+            }
+        }
+
+    }
+
+    /** Cancel any pending scripted DTMF timers. Called on call teardown. */
+    public clearScheduledDtmf(): void {
+        for (const t of this.dtmfTimers) clearTimeout(t);
+        this.dtmfTimers = [];
     }
 
     /**

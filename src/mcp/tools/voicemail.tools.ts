@@ -2,6 +2,9 @@ import { MCPToolDefinition, MCPToolHandler } from '../types.js';
 import { createToolResponse, createToolError, validateArgs, sanitizePhoneNumber } from '../utils.js';
 import { VoicemailService } from '../../services/voicemail/voicemail.service.js';
 import { VoicemailStatus } from '../../models/voicemail.model.js';
+import { WebhookDispatcher } from '../../services/webhook-dispatcher.service.js';
+
+const webhookDispatcher = new WebhookDispatcher();
 
 /**
  * Voicemail Management Tools
@@ -270,6 +273,12 @@ export function createVoicemailToolHandlers(): Record<string, MCPToolHandler> {
                 if (!voicemail) {
                     return createToolError(`Voicemail not found: ${args.recordingSid}`);
                 }
+
+                // Fire voicemail.read webhook event.
+                webhookDispatcher.dispatch('voicemail.read', {
+                    recording_sid: voicemail.recordingSid,
+                    read_at: new Date().toISOString(),
+                }).catch(e => console.error('[VoicemailTools] voicemail.read dispatch error:', e));
 
                 return createToolResponse({
                     success: true,

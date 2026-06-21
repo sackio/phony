@@ -29,6 +29,8 @@ export interface ICall extends Document {
     voice: string;
     elevenLabsAgentId?: string;
     elevenLabsVoiceId?: string;
+    elevenLabsConversationId?: string; // native integration: links callSid → ElevenLabs conv
+    callMode?: 'native' | 'advanced';   // which provider path handled this call
     callContext: string;
     conversationHistory: ConversationMessage[];
     twilioEvents: TwilioEvent[];
@@ -131,6 +133,14 @@ const CallSchema = new Schema<ICall>({
     },
     elevenLabsVoiceId: {
         type: String
+    },
+    elevenLabsConversationId: {
+        type: String,
+        index: true
+    },
+    callMode: {
+        type: String,
+        enum: ['native', 'advanced']
     },
     callContext: {
         type: String,

@@ -61,6 +61,7 @@ pids
 # ngrok
 .ngrok/
 .claude/.nfs*
+.claude/scheduled_tasks.lock
 
 # Playwright screenshots
 .playwright-mcp/

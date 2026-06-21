@@ -92,11 +92,11 @@ export const smsToolsDefinitions: MCPToolDefinition[] = [
                             filename: { type: 'string', description: 'File name with extension (e.g., "photo.jpg")' },
                             mimeType: { type: 'string', description: 'MIME type (e.g., "image/jpeg")' },
                             data: { type: 'string', description: 'Base64-encoded file content (use this OR path)' },
-                            path: { type: 'string', description: 'Absolute path to a file readable by the server (under /mnt/nas/ or /tmp/). Preferred over data when the file is on a shared disk — avoids blowing up caller context with base64.' }
+                            path: { type: 'string', description: 'Absolute path to a file readable by the server (under /mnt/db/ or /tmp/). Preferred over data when the file is on a shared disk — avoids blowing up caller context with base64.' }
                         },
                         required: ['filename', 'mimeType']
                     },
-                    description: 'Optional array of files to attach. Supply either "data" (base64) or "path" (absolute path on /mnt/nas/ or /tmp/) per item. The server hosts them temporarily for Twilio to fetch. Max 10 files.'
+                    description: 'Optional array of files to attach. Supply either "data" (base64) or "path" (absolute path on /mnt/db/ or /tmp/) per item. The server hosts them temporarily for Twilio to fetch. Max 10 files.'
                 }
             },
             required: ['toNumber']
@@ -729,6 +729,10 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
                 let initialMessageSid: string | undefined;
                 if (initialMessage && initialMessage.trim()) {
                     initialMessageSid = await conversationsService.postMessage(convSid, initialMessage.trim());
+                    // Outbound proxy echo so Ben/Laura see the kickoff message
+                    // even when they aren't in the group themselves.
+                    smsService.notifyOutboundGroupMessage(convSid, initialMessage.trim())
+                        .catch(err => console.error('[MCP SMS] Outbound group echo (initial) failed:', err));
                 }
 
                 return createToolResponse({
@@ -1123,12 +1127,21 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
 
                 // Upload media (if any) as Twilio Media resources scoped to the
                 // Conversation, then post one message referencing them. Twilio
-                // fans out as group MMS.
+                // fans out as group MMS. MCS Media uploads are addressed by
+                // the Conversation's Chat Service SID — "default" is NOT a
+                // valid value (Twilio returns 4000 "Invalid URI parameter:
+                // ServiceSid"); we must look up the real IS-prefixed SID.
                 const mediaSids: string[] = [];
                 if (hasMedia) {
+                    let chatServiceSid: string;
+                    try {
+                        chatServiceSid = await conversationsService.getChatServiceSid(groupSid);
+                    } catch (err: any) {
+                        return createToolError(`Could not resolve chatServiceSid for ${groupSid}: ${err.message}`);
+                    }
                     for (const url of mediaUrls!) {
                         try {
-                            const res = await fetch(url);
+                            const res = await fetch(url, { redirect: 'follow' });
                             if (!res.ok) throw new Error(`Fetch ${url}: HTTP ${res.status}`);
                             const contentType = res.headers.get('content-type') || 'application/octet-stream';
                             const buf = Buffer.from(await res.arrayBuffer());
@@ -1136,7 +1149,7 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
                             const blob = new Blob([buf], { type: contentType });
                             form.append('Media', blob);
                             const mediaRes = await fetch(
-                                `https://mcs.us1.twilio.com/v1/Services/default/Media`,
+                                `https://mcs.us1.twilio.com/v1/Services/${chatServiceSid}/Media`,
                                 {
                                     method: 'POST',
                                     headers: {
@@ -1157,6 +1170,15 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
 
                 const messageSid = await conversationsService.postMessage(groupSid, body.trim(), mediaSids.length ? mediaSids : undefined);
                 const slug = TwilioSmsService.getGroupSlug(groupSid);
+
+                // Fire-and-forget proxy echo so Ben/Laura (who aren't members
+                // of vendor groups) can see what we just sent on their phones.
+                // Mirrors the inbound `notifyGroupMessage` pattern.
+                smsService.notifyOutboundGroupMessage(
+                    groupSid,
+                    body.trim(),
+                    mediaUrls && mediaUrls.length ? mediaUrls : undefined,
+                ).catch(err => console.error('[MCP SMS] Outbound group echo failed:', err));
 
                 return createToolResponse({
                     status: 'success',

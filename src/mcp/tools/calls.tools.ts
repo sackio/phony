@@ -4,6 +4,12 @@ import { CallTranscriptService } from '../../services/database/call-transcript.s
 import { TwilioCallService } from '../../services/twilio/call.service.js';
 import { CallStateService } from '../../services/call-state.service.js';
 import { SessionManagerService } from '../../services/session-manager.service.js';
+import { NativeElevenLabsService } from '../../services/elevenlabs/native.service.js';
+
+/**
+ * Singleton instance — Phase 2 native integration wrapper. Stateless; safe to share.
+ */
+const nativeElevenLabs = new NativeElevenLabsService();
 
 /**
  * Call Management Tools
@@ -12,7 +18,7 @@ import { SessionManagerService } from '../../services/session-manager.service.js
 export const callToolsDefinitions: MCPToolDefinition[] = [
     {
         name: 'phony_create_call',
-        description: 'Create an outbound phone call with ElevenLabs AI voice assistant. The AI agent can navigate IVR menus and press phone buttons automatically using its built-in send_dtmf tool - just include instructions like "press 1 for English" or "navigate the phone menu" in the systemInstructions.',
+        description: 'Create an outbound phone call with an ElevenLabs AI voice assistant. Two modes: "native" (default) — ElevenLabs hosts the call end-to-end via /v1/convai/twilio/outbound-call, lowest latency, simplest. "advanced" — Phony hosts a WebSocket bridge with mid-call control (DTMF for IVR navigation, mid-call context injection). Use advanced only when you genuinely need DTMF or live context injection.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -26,7 +32,32 @@ export const callToolsDefinitions: MCPToolDefinition[] = [
                 },
                 callInstructions: {
                     type: 'string',
-                    description: 'Specific instructions for this particular call'
+                    description: 'Specific instructions for this particular call. In native mode this becomes the agent\'s first_message override (what it says when the call connects).'
+                },
+                mode: {
+                    type: 'string',
+                    enum: ['native', 'advanced'],
+                    description: 'Which call architecture to use. "native" (default): ElevenLabs hosts the call end-to-end — lowest latency, simplest, no mid-call DTMF/context. "advanced": Phony WebSocket bridge — supports DTMF (IVR navigation) and mid-call context injection. Use advanced only when needed.'
+                },
+                contextChannel: {
+                    type: 'string',
+                    description: 'Optional Slack channel ID or ATC session id. Phony streams the call transcript + status updates to this channel, and any human/agent message arriving there during the call becomes a mid-call context injection ("operator note") delivered to the AI. The originating agent typically passes its own session id so it can watch and steer the call. Native mode receives this as a dynamic_variable; the agent can reference it via tools.'
+                },
+                dtmfPreflight: {
+                    type: 'string',
+                    description: 'Advanced mode ONLY. DTMF digits dialed by Twilio at the carrier level immediately after the called party answers, BEFORE the AI media stream connects. Use this for IVR menu navigation: Twilio generates real DTMF tones (much more reliable than audio injection). Format: digits 0-9 / * / # / w (half-second pause). Example: "wwww2" pauses 2s then presses 2 to navigate Weston Nurseries\' "design/install/delivery" menu option. Chain multiple options like "wwww2wwww1". Native mode ignores this.'
+                },
+                dtmfScript: {
+                    type: 'array',
+                    description: 'Advanced mode ONLY. Mid-call DTMF for sub-menus encountered AFTER the AI has been talking. For initial IVR navigation use `dtmfPreflight` instead (more reliable). Each entry fires at `at` milliseconds after the media stream connects. Note: mid-call DTMF goes via media-stream audio injection which some IVR detectors miss; prefer `dtmfPreflight` when possible. Format: [{at:3000,digits:"2"}].',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            at: { type: 'number', description: 'Milliseconds after media-stream start when this DTMF fires' },
+                            digits: { type: 'string', description: 'DTMF digits to send (0-9, *, #, A-D, w = 0.5s pause, W = 1s pause)' }
+                        },
+                        required: ['at', 'digits']
+                    }
                 },
                 elevenLabsAgentId: {
                     type: 'string',
@@ -294,17 +325,92 @@ export function createCallToolHandlers(
 
                 const toNumber = sanitizePhoneNumber(args.toNumber);
                 const fromNumber = process.env.TWILIO_NUMBER || '';
+                const mode: 'native' | 'advanced' = args.mode === 'advanced' ? 'advanced' : 'native';
+                const contextChannel = args.contextChannel ? String(args.contextChannel) : undefined;
 
-                // Create call via Twilio (ElevenLabs provider)
+                if (mode === 'native') {
+                    // Native path: ElevenLabs hosts the call end-to-end. We just POST
+                    // to their outbound-call API and persist the resulting Call row;
+                    // there's no WebSocket bridge to set up on our side.
+                    const dynamicVariables: Record<string, string> = {
+                        from_number: fromNumber,
+                        to_number: toNumber,
+                        source: 'phony',
+                    };
+                    if (contextChannel) dynamicVariables.context_channel = contextChannel;
+
+                    const result = await nativeElevenLabs.createOutboundCall({
+                        toNumber,
+                        systemInstructions: args.systemInstructions,
+                        firstMessage: args.callInstructions,
+                        voiceId: args.elevenLabsVoiceId,
+                        agentId: args.elevenLabsAgentId,
+                        dynamicVariables,
+                    });
+
+                    if (!result.callSid) {
+                        return createToolError('Native outbound call failed', { detail: result.message || 'no callSid returned' });
+                    }
+
+                    // Persist the Call row with conversation_id so the post-call webhook
+                    // can link the transcript back. callType is "outbound" per the model.
+                    const { CallModel } = await import('../../models/call.model.js');
+                    await CallModel.create({
+                        callSid: result.callSid,
+                        fromNumber,
+                        toNumber,
+                        callType: 'outbound',
+                        voiceProvider: 'elevenlabs',
+                        voice: '',
+                        elevenLabsAgentId: args.elevenLabsAgentId,
+                        elevenLabsVoiceId: args.elevenLabsVoiceId,
+                        elevenLabsConversationId: result.conversationId ?? undefined,
+                        callMode: 'native',
+                        systemInstructions: args.systemInstructions,
+                        callInstructions: args.callInstructions,
+                        startedAt: new Date(),
+                        status: 'initiated',
+                        conversationHistory: [],
+                        twilioEvents: [],
+                        openaiEvents: [],
+                        tags: contextChannel ? [`context-channel:${contextChannel}`] : [],
+                    }).catch(err => console.error('[phony_create_call/native] Failed to persist Call:', err));
+
+                    return createToolResponse({
+                        callSid: result.callSid,
+                        conversationId: result.conversationId,
+                        status: 'initiated',
+                        mode: 'native',
+                        contextChannel: contextChannel ?? null,
+                        message: `Call initiated to ${toNumber} (ElevenLabs native, conv=${result.conversationId})`,
+                    });
+                }
+
+                // Advanced path: our WebSocket bridge. Supports DTMF + context injection.
+                // dtmfPreflight: passed to Twilio call.create as `sendDigits` — Twilio
+                //   generates real DTMF at the carrier level RIGHT after answer,
+                //   before the media stream. Reliable for IVR navigation.
+                // dtmfScript: mid-call DTMF scheduled via setTimeout, injected as audio
+                //   into the Twilio media stream. Less reliable; use only for sub-menus
+                //   after the AI is talking.
+                const dtmfScriptJson = Array.isArray(args.dtmfScript) && args.dtmfScript.length > 0
+                    ? JSON.stringify(args.dtmfScript)
+                    : undefined;
+                const dtmfPreflight = typeof args.dtmfPreflight === 'string' && args.dtmfPreflight.length > 0
+                    ? String(args.dtmfPreflight)
+                    : undefined;
+
                 const result = await twilioService.makeOutboundCall(
                     toNumber,
                     args.systemInstructions,
                     args.callInstructions,
                     args.elevenLabsAgentId,
-                    args.elevenLabsVoiceId
+                    args.elevenLabsVoiceId,
+                    undefined, // fromNumber
+                    dtmfScriptJson,
+                    dtmfPreflight,
                 );
 
-                // Register in CallStateService so mid-call tools (hold, inject, DTMF) work
                 const callStateService = CallStateService.getInstance();
                 callStateService.addCall(result.sid, {
                     callSid: result.sid,
@@ -315,19 +421,20 @@ export function createCallToolHandlers(
                     voiceProvider: 'elevenlabs',
                     elevenLabsAgentId: args.elevenLabsAgentId,
                     elevenLabsVoiceId: args.elevenLabsVoiceId,
+                    contextChannel: contextChannel,
                     status: 'initiated',
                     startedAt: new Date(),
                     conversationHistory: []
                 });
 
-                // Start auto-hangup safety timer
                 callStateService.startDurationTimer(result.sid);
 
                 return createToolResponse({
                     callSid: result.sid,
                     status: result.status,
-                    provider: 'elevenlabs',
-                    message: `Call initiated to ${toNumber} using ElevenLabs voice provider`
+                    mode: 'advanced',
+                    contextChannel: contextChannel ?? null,
+                    message: `Call initiated to ${toNumber} (advanced WebSocket bridge${contextChannel ? `, context channel: ${contextChannel}` : ''})`
                 });
             } catch (error: any) {
                 return createToolError('Failed to create call', { message: error.message });

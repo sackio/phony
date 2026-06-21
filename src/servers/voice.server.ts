@@ -22,6 +22,7 @@ import { SessionManagerService } from '../services/session-manager.service.js';
 import { createMCPRouter } from '../mcp/router.js';
 import { VoicemailService } from '../services/voicemail/voicemail.service.js';
 import { TempMediaService } from '../services/temp-media.service.js';
+import { WebhookDispatcher } from '../services/webhook-dispatcher.service.js';
 dotenv.config();
 
 export class VoiceServer {
@@ -41,6 +42,7 @@ export class VoiceServer {
     private transcriptService: CallTranscriptService;
     private voicemailService: VoicemailService;
     private tempMediaService: TempMediaService;
+    private webhookDispatcher: WebhookDispatcher;
 
     constructor(callbackUrl: string, sessionManager: CallSessionManager, transcriptService: CallTranscriptService) {
         this.callbackUrl = callbackUrl;
@@ -66,13 +68,20 @@ export class VoiceServer {
         this.voicemailService = new VoicemailService();
         this.tempMediaService = new TempMediaService();
         this.tempMediaService.startCleanup();
+        this.webhookDispatcher = new WebhookDispatcher();
 
         this.configureMiddleware();
         this.setupRoutes();
     }
 
     private configureMiddleware(): void {
-        this.app.use(express.json());
+        // Capture the raw JSON body on every request — needed for HMAC verification
+        // of the ElevenLabs post-call webhook (signature is over the raw bytes).
+        this.app.use(express.json({
+            verify: (req, _res, buf) => {
+                (req as any).rawBody = buf?.toString('utf8') ?? '';
+            },
+        }));
         this.app.use(express.urlencoded({ extended: false }));
 
         // Serve public directory for audio files (hold messages, etc.)
@@ -168,7 +177,7 @@ export class VoiceServer {
         this.app.ws('/call/connection-outgoing/:secret', this.handleOutgoingConnection.bind(this));
         this.app.ws('/call/connection-incoming/:secret', this.handleIncomingConnection.bind(this));
 
-        // Test mode route - for internal testing without consuming OpenAI credits
+        // Test mode route - for internal testing without consuming voice-provider credits
         if (ENABLE_TEST_RECEIVER) {
             this.app.post('/call/test-receiver', this.handleTestReceiver.bind(this));
             console.log('[Voice Server] Test receiver endpoint enabled at /call/test-receiver');
@@ -185,6 +194,17 @@ export class VoiceServer {
 
         // Twilio Conversations webhook (for saving group MMS messages to MongoDB)
         this.app.post('/conversations/webhook', this.handleConversationsWebhook.bind(this));
+
+        // ElevenLabs native integration webhooks (Phase 2 — hybrid outbound)
+        // Personalization: ElevenLabs hits this during dial to fetch dynamic
+        //   conversation_initiation_client_data for INBOUND calls.
+        // Post-call: ElevenLabs hits this after the call ends with the
+        //   transcript / call_initiation_failure event.
+        // Both routes need raw body for HMAC validation, so register them with
+        //   express.json verify hook elsewhere if needed. For now the post-call
+        //   handler captures the raw body via req.rawBody (set in middleware).
+        this.app.post('/elevenlabs/personalization', this.handleElevenLabsPersonalization.bind(this));
+        this.app.post('/elevenlabs/post-call', this.handleElevenLabsPostCall.bind(this));
 
         // Serve frontend for all other routes (SPA fallback)
         this.app.get('*', (req, res) => {
@@ -310,6 +330,7 @@ export class VoiceServer {
         const callInstructions = req.query.callInstructions?.toString() || '';
         const elevenLabsAgentId = req.query.elevenLabsAgentId?.toString() || '';
         const elevenLabsVoiceId = req.query.elevenLabsVoiceId?.toString() || '';
+        const dtmfScript = req.query.dtmfScript?.toString() || '';
 
         console.log('[Voice Server] Creating outgoing call via ElevenLabs');
 
@@ -331,6 +352,9 @@ export class VoiceServer {
         }
         if (elevenLabsVoiceId) {
             stream.parameter({ name: 'elevenLabsVoiceId', value: elevenLabsVoiceId });
+        }
+        if (dtmfScript) {
+            stream.parameter({ name: 'dtmfScript', value: dtmfScript });
         }
 
         // Hang up when the stream ends (prevents falling through to voicemail)
@@ -365,7 +389,7 @@ export class VoiceServer {
 
     /**
      * Test receiver endpoint - answers call and stays on line for limited duration
-     * This is for internal testing without consuming OpenAI credits
+     * This is for internal testing without consuming voice-provider credits
      */
     private async handleTestReceiver(req: express.Request, res: Response): Promise<void> {
         console.log('[Voice Server] Test receiver endpoint called');
@@ -1130,6 +1154,17 @@ export class VoiceServer {
                 .catch(err => console.error('[Voice Server] Inbound call entry save failed:', err));
         }
 
+        // Fire call.incoming webhook event.
+        if (callSid) {
+            this.webhookDispatcher.dispatch('call.incoming', {
+                call_sid: callSid,
+                from: fromNumber,
+                to: toNumber,
+                direction: 'inbound',
+            }, { eventId: `phony-call-incoming-${callSid}` })
+                .catch(e => console.error('[Voice Server] call.incoming dispatch error:', e));
+        }
+
         // Production Safety Control: Check concurrent incoming call limit
         if (!this.callStateService.canAcceptIncomingCall()) {
             const stats = {
@@ -1695,6 +1730,19 @@ export class VoiceServer {
                     .markCallCompleted(CallSid, 'completed', duration)
                     .catch(err => console.error('[Voice Server] markCallCompleted failed:', err));
             }
+
+            // Fire voicemail.received webhook event.
+            this.webhookDispatcher.dispatch('voicemail.received', {
+                recording_sid: RecordingSid,
+                call_sid: CallSid,
+                from: fromNumber,
+                to: toNumber,
+                duration_sec: duration,
+                recording_url: RecordingUrl,
+                transcription_status: 'pending',
+            }, { eventId: `phony-vm-recv-${RecordingSid}` })
+                .catch(e => console.error('[Voice Server] voicemail.received dispatch error:', e));
+
             const notifBody = `New voicemail from ${fromNumber} on ${toNumber} (${duration}s). Transcription pending...`;
             if (SMS_PROXY_ENABLED && fromNumber) {
                 for (const target of SMS_PROXY_TARGET_NUMBERS) {
@@ -1745,6 +1793,34 @@ export class VoiceServer {
         } catch (error) {
             console.error('[Voice Server] Error in /call/status:', error);
         }
+
+        // Look up the persisted record for from/to + direction. Fall back to
+        // unknowns; webhook receivers should tolerate nulls there.
+        const CallModel = (await import('../models/call.model.js')).CallModel;
+        const callRecord = await CallModel.findOne({ callSid: CallSid }).lean().catch(() => null) as any;
+
+        if (CallStatus === 'completed') {
+            this.webhookDispatcher.dispatch('call.ended', {
+                call_sid: CallSid,
+                from: callRecord?.fromNumber ?? null,
+                to: callRecord?.toNumber ?? null,
+                direction: callRecord?.callType === 'outgoing' ? 'outbound' : 'inbound',
+                duration_sec: duration ?? 0,
+                ended_at: new Date().toISOString(),
+                recording_url: callRecord?.recordingUrl ?? null,
+            }, { eventId: `phony-call-ended-${CallSid}` })
+                .catch(e => console.error('[Voice Server] call.ended dispatch error:', e));
+        } else {
+            this.webhookDispatcher.dispatch('call.failed', {
+                call_sid: CallSid,
+                from: callRecord?.fromNumber ?? null,
+                to: callRecord?.toNumber ?? null,
+                direction: callRecord?.callType === 'outgoing' ? 'outbound' : 'inbound',
+                reason: CallStatus,
+                error_message: ErrorMessage ?? null,
+            }, { eventId: `phony-call-failed-${CallSid}-${CallStatus}` })
+                .catch(e => console.error('[Voice Server] call.failed dispatch error:', e));
+        }
     }
 
     /**
@@ -1785,6 +1861,17 @@ export class VoiceServer {
 
                 const voicemail = await this.voicemailService.getVoicemail(RecordingSid);
                 const vmFrom = voicemail?.fromNumber || 'unknown';
+
+                // Fire voicemail.transcribed webhook event.
+                this.webhookDispatcher.dispatch('voicemail.transcribed', {
+                    recording_sid: RecordingSid,
+                    call_sid: voicemail?.callSid ?? null,
+                    from: voicemail?.fromNumber ?? null,
+                    to: voicemail?.toNumber ?? null,
+                    transcription: TranscriptionText,
+                    duration_sec: voicemail?.duration ?? 0,
+                }, { eventId: `phony-vm-trans-${RecordingSid}` })
+                    .catch(e => console.error('[Voice Server] voicemail.transcribed dispatch error:', e));
                 const preview = TranscriptionText.length > 1400 ? TranscriptionText.substring(0, 1400) + '...' : TranscriptionText;
                 const transcriptBody = `Voicemail from ${vmFrom}: "${preview}"`;
                 if (SMS_PROXY_ENABLED && vmFrom !== 'unknown') {
@@ -1966,6 +2053,16 @@ export class VoiceServer {
         );
         if (!isNew) return;
 
+        // Fire conversation.created webhook event.
+        this.webhookDispatcher.dispatch('conversation.created', {
+            conversation_sid: conversationSid,
+            slug,
+            friendly_name: friendlyName ?? null,
+            twilio_number: twilioNumber,
+            external_participants: externals,
+        }, { eventId: `phony-conv-created-${conversationSid}` })
+            .catch(e => console.error('[Voice Server] conversation.created dispatch error:', e));
+
         const externalsSet = new Set(externals);
         const participantList = externals.length ? externals.join(', ') : '(no externals yet)';
         const intro = `📥 New group {${slug}} — ${participantList}\n---\nReply in thread: {${slug}}: msg`;
@@ -1985,6 +2082,13 @@ export class VoiceServer {
         const externals = await this.twilioConversationsService.getExternalAddresses(conversationSid).catch(() => [] as string[]);
         const { slug } = await this.twilioSmsService.registerGroup(conversationSid, twilioNumber, externals);
 
+        // Fire conversation.participant_added webhook event.
+        this.webhookDispatcher.dispatch('conversation.participant_added', {
+            conversation_sid: conversationSid,
+            slug,
+            address,
+        }).catch(e => console.error('[Voice Server] conversation.participant_added dispatch error:', e));
+
         const externalsSet = new Set(externals);
         const note = `👥 {${slug}} joined: ${address}`;
         for (const target of SMS_PROXY_TARGET_NUMBERS) {
@@ -1999,6 +2103,14 @@ export class VoiceServer {
     private async onGroupConversationRemoved(conversationSid: string): Promise<void> {
         const slug = TwilioSmsService.getGroupSlug(conversationSid);
         await this.twilioSmsService.unregisterGroup(conversationSid);
+
+        // Fire conversation.removed webhook event (even if no slug was registered).
+        this.webhookDispatcher.dispatch('conversation.removed', {
+            conversation_sid: conversationSid,
+            slug: slug ?? null,
+        }, { eventId: `phony-conv-removed-${conversationSid}` })
+            .catch(e => console.error('[Voice Server] conversation.removed dispatch error:', e));
+
         if (!slug) return;
 
         const twilioNumber = process.env.TWILIO_NUMBER!;
@@ -2020,6 +2132,14 @@ export class VoiceServer {
         await this.twilioSmsService.updateGroupExternals(conversationSid, externals);
 
         const slug = TwilioSmsService.getGroupSlug(conversationSid);
+
+        // Fire conversation.participant_removed webhook event.
+        this.webhookDispatcher.dispatch('conversation.participant_removed', {
+            conversation_sid: conversationSid,
+            slug: slug ?? null,
+            address,
+        }).catch(e => console.error('[Voice Server] conversation.participant_removed dispatch error:', e));
+
         if (!slug) return;
 
         const externalsSet = new Set(externals);
@@ -2050,6 +2170,205 @@ export class VoiceServer {
         );
     }
 
+    /**
+     * Personalization webhook for the ElevenLabs native Twilio integration.
+     *
+     * ElevenLabs hits this URL during the Twilio dialing period (before audio
+     * connects). The response body becomes the conversation_initiation_client_data,
+     * letting us inject per-caller dynamic variables and override the agent's
+     * prompt / first message / voice based on which Phony number was called.
+     *
+     * Request body: { caller_id, agent_id, called_number, call_sid }
+     * Response body: conversation_initiation_client_data (see ElevenLabs docs)
+     *
+     * If there's no IncomingConfig for the called number, we return a minimal
+     * response — ElevenLabs falls back to the agent defaults.
+     */
+    private async handleElevenLabsPersonalization(req: express.Request, res: Response): Promise<void> {
+        const { caller_id, agent_id, called_number, call_sid } = req.body || {};
+        console.log(`[EL Personalization] caller=${caller_id} agent=${agent_id} called=${called_number} call_sid=${call_sid}`);
+
+        const baseResponse: any = {
+            type: 'conversation_initiation_client_data',
+            dynamic_variables: {
+                caller_id: caller_id || '',
+                called_number: called_number || '',
+                call_sid: call_sid || '',
+                source: 'phony',
+            },
+        };
+
+        try {
+            if (!called_number) {
+                res.json(baseResponse);
+                return;
+            }
+
+            const cfg = await this.incomingConfigService.getConfigByNumber(called_number);
+            if (!cfg) {
+                console.log(`[EL Personalization] No IncomingConfig for ${called_number}; returning base response`);
+                res.json(baseResponse);
+                return;
+            }
+
+            const override: any = { agent: {} };
+            if (cfg.systemInstructions) override.agent.prompt = { prompt: cfg.systemInstructions };
+            if (cfg.callInstructions) override.agent.first_message = cfg.callInstructions;
+            // We deliberately don't override TTS voice here — the agent's
+            // configured voice + the per-call override at make-call time win.
+
+            baseResponse.conversation_config_override = override;
+            res.json(baseResponse);
+            console.log(`[EL Personalization] Returned override for ${called_number} (config "${cfg.name}")`);
+        } catch (error) {
+            console.error('[EL Personalization] Error:', error);
+            // Always return *something* — failing here would block the call entirely
+            res.json(baseResponse);
+        }
+    }
+
+    /**
+     * Post-call webhook for the ElevenLabs native Twilio integration.
+     *
+     * ElevenLabs hits this URL after a call ends. Body is one of:
+     *   - { type: "post_call_transcription", data: { ...full transcript, metadata... } }
+     *   - { type: "call_initiation_failure", data: { ...reason, callSid... } }
+     *
+     * Body is signed with HMAC-SHA256 using ELEVENLABS_POSTCALL_WEBHOOK_SECRET.
+     * Header `ElevenLabs-Signature` carries `t=<unix_ts>,v0=<hex_signature>`.
+     * Verify or 401.
+     *
+     * We extract the conversation_id + callSid, link back to the Call row,
+     * save the full transcript, and mark the call completed/failed.
+     */
+    private async handleElevenLabsPostCall(req: express.Request, res: Response): Promise<void> {
+        const rawBody = (req as any).rawBody ?? JSON.stringify(req.body ?? {});
+        const signature = req.headers['elevenlabs-signature'] || req.headers['x-elevenlabs-signature'];
+
+        const { ELEVENLABS_POSTCALL_WEBHOOK_SECRET } = await import('../config/constants.js');
+        if (ELEVENLABS_POSTCALL_WEBHOOK_SECRET) {
+            const verified = this.verifyElevenLabsSignature(
+                rawBody,
+                typeof signature === 'string' ? signature : '',
+                ELEVENLABS_POSTCALL_WEBHOOK_SECRET,
+            );
+            if (!verified) {
+                console.warn('[EL Post-call] Invalid signature — rejecting');
+                res.status(401).json({ error: 'invalid signature' });
+                return;
+            }
+        } else {
+            console.warn('[EL Post-call] No webhook secret configured — accepting unverified body');
+        }
+
+        // Ack fast — process async so ElevenLabs doesn't retry.
+        res.status(200).json({ ok: true });
+
+        try {
+            const eventType = req.body?.type;
+            const data = req.body?.data ?? {};
+            const conversationId = data.conversation_id ?? data.conversationId;
+            const callSid = data.callSid ?? data.call_sid;
+
+            console.log(`[EL Post-call] event=${eventType} conv=${conversationId} call=${callSid}`);
+
+            const { CallModel } = await import('../models/call.model.js');
+            const callDoc = await CallModel.findOne(
+                conversationId
+                    ? { elevenLabsConversationId: conversationId }
+                    : (callSid ? { callSid } : {})
+            );
+
+            if (eventType === 'post_call_transcription' || eventType === 'transcription') {
+                const transcript = this.extractTranscriptFromPostCall(data);
+                const durationSec = data.metadata?.call_duration_secs ?? data.duration_seconds ?? data.duration ?? 0;
+                const endedAt = data.metadata?.accepted_at ? new Date(data.metadata.accepted_at * 1000) : new Date();
+
+                if (callDoc) {
+                    callDoc.conversationHistory = transcript;
+                    callDoc.endedAt = endedAt;
+                    callDoc.duration = durationSec;
+                    callDoc.status = 'completed';
+                    if (!callDoc.elevenLabsConversationId && conversationId) callDoc.elevenLabsConversationId = conversationId;
+                    await callDoc.save();
+                    console.log(`[EL Post-call] Saved transcript to call ${callDoc.callSid} (${transcript.length} turns, ${durationSec}s)`);
+                } else {
+                    console.warn(`[EL Post-call] No Call row found for conv=${conversationId} call=${callSid}; transcript not persisted`);
+                }
+            } else if (eventType === 'call_initiation_failure' || eventType === 'post_call_failure') {
+                const reason = data.failure_reason ?? data.reason ?? 'unknown';
+                if (callDoc) {
+                    callDoc.status = 'failed';
+                    callDoc.errorMessage = `ElevenLabs: ${reason}`;
+                    await callDoc.save();
+                }
+                console.error(`[EL Post-call] Call failure: ${reason}`);
+            } else {
+                console.log(`[EL Post-call] Unhandled event type: ${eventType}`);
+            }
+        } catch (error) {
+            console.error('[EL Post-call] Processing error:', error);
+        }
+    }
+
+    /**
+     * Verify HMAC-SHA256 signature on the post-call webhook body.
+     * Format follows the Stripe-style `t=<unix_ts>,v0=<hex>` convention.
+     * Returns true if valid, false otherwise.
+     */
+    private verifyElevenLabsSignature(rawBody: string, headerValue: string, secret: string): boolean {
+        if (!headerValue) return false;
+        const parts = Object.fromEntries(
+            headerValue.split(',').map(p => p.trim().split('=', 2)) as [string, string][]
+        );
+        const ts = parts.t;
+        const sig = parts.v0;
+        if (!ts || !sig) return false;
+
+        // Reject signatures older than 30 minutes to limit replay window
+        const tsNum = parseInt(ts, 10);
+        if (!Number.isFinite(tsNum) || Math.abs(Date.now() / 1000 - tsNum) > 1800) {
+            console.warn(`[EL Post-call] Signature timestamp too old or invalid: t=${ts}`);
+            return false;
+        }
+
+        // ElevenLabs signs `<ts>.<rawBody>` with HMAC-SHA256, using the secret
+        // string AS-IS (including the `wsec_` prefix — empirically verified
+        // 2026-06-05). Format: `t=<unix_ts>,v0=<hex_signature>`, Stripe-style.
+        const { createHmac, timingSafeEqual } = require('node:crypto') as typeof import('node:crypto');
+        const expected = createHmac('sha256', secret).update(`${ts}.${rawBody}`).digest('hex');
+        try {
+            return sig.length === expected.length
+                && timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'));
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Pull the conversation history out of ElevenLabs' post-call transcript shape.
+     * Tries the common field names; falls back to an empty array.
+     */
+    private extractTranscriptFromPostCall(data: any): Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: Date }> {
+        const turns = data?.transcript ?? data?.conversation?.transcript ?? data?.messages ?? [];
+        if (!Array.isArray(turns)) return [];
+        return turns
+            .map((t: any) => {
+                const rawRole = t.role ?? t.speaker ?? t.from ?? '';
+                const role: 'user' | 'assistant' | 'system' =
+                    rawRole === 'user' ? 'user'
+                    : rawRole === 'agent' || rawRole === 'assistant' ? 'assistant'
+                    : 'system';
+                const content = t.message ?? t.text ?? t.content ?? '';
+                const tsRaw = t.time_in_call_secs ?? t.timestamp ?? t.created_at;
+                let timestamp = new Date();
+                if (typeof tsRaw === 'number') timestamp = new Date(tsRaw < 1e12 ? tsRaw * 1000 : tsRaw);
+                else if (typeof tsRaw === 'string') timestamp = new Date(tsRaw);
+                return { role, content, timestamp };
+            })
+            .filter((m: any) => m.content);
+    }
+
     public start(): void {
         this.httpServer = this.app.listen(this.port);
         this.socketService.initialize(this.httpServer);
@@ -2058,6 +2377,39 @@ export class VoiceServer {
         this.twilioSmsService.loadProxyState().catch(err =>
             console.error('[Voice Server] Failed to load SMS proxy state:', err)
         );
+
+        // Twilio webhook drift check (one-shot, on boot). Loudly warns if any
+        // IncomingPhoneNumber has a voice/status/sms URL that doesn't point at
+        // Phony — catches "silent intercept" hijacks like the ElevenLabs Phase 0
+        // import on June 5, 2026 that rewrote +18575550111's voiceUrl and
+        // routed 4 days of inbound to the agent before drift was noticed.
+        // Daily cron complement: scripts/check-twilio-webhooks.ts
+        this.runStartupWebhookAudit().catch(err =>
+            console.error('[Voice Server] Webhook audit failed:', err?.message ?? err)
+        );
+    }
+
+    private async runStartupWebhookAudit(): Promise<void> {
+        const { TwilioWebhookAuditService } = await import('../services/twilio/webhook-audit.service.js');
+        const publicUrl = process.env.PUBLIC_URL || '';
+        if (!publicUrl) {
+            console.warn('[Voice Server] PUBLIC_URL not set — skipping webhook audit');
+            return;
+        }
+        const client = this.twilioCallService.getTwilioClient();
+        const audit = new TwilioWebhookAuditService(client, publicUrl);
+        const result = await audit.audit();
+        const report = TwilioWebhookAuditService.formatReport(result);
+
+        if (result.ok) {
+            console.log('[Voice Server] ' + report.split('\n')[0]); // single-line confirmation
+        } else {
+            // Loud, multi-line — survives log scanning, prefixed for grep.
+            console.error('====== TWILIO WEBHOOK DRIFT DETECTED ======');
+            console.error(report);
+            console.error('===========================================');
+            console.error('Action: fix the Twilio IncomingPhoneNumber config (or update PUBLIC_URL).');
+        }
     }
 
     public getHttpServer(): HTTPServer | null {

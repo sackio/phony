@@ -81,7 +81,9 @@ export class ElevenLabsCallHandler implements ICallHandler {
             this.twilioCallService,
             contextService,
             (payload) => this.sendAudioToElevenLabs(payload),
-            () => this.startSession()
+            () => this.startSession(),
+            (digits) => this.injectDtmfNow(digits),
+            (note) => this.injectAgentContext(note),
         );
 
         this.setupEventHandlers();
@@ -118,7 +120,7 @@ export class ElevenLabsCallHandler implements ICallHandler {
             callSid: callSid,
             conversationHistory: fullConversationHistory,
             twilioEvents: this.callState.twilioEvents,
-            openaiEvents: [],
+            openaiEvents: [], // legacy field, retained for schema compat; always empty post-Phase-3
             endedAt: endTime,
             duration: duration,
             status: 'completed'
@@ -159,11 +161,16 @@ export class ElevenLabsCallHandler implements ICallHandler {
             },
             onUserTranscript: (text, isFinal) => {
                 this.elevenLabsEventProcessor.handleUserTranscript(text, isFinal);
-                if (isFinal) this.checkGoodbye(text, 'user');
+                if (isFinal) this.recordTurnTranscript(text, 'user');
             },
             onAgentTranscript: (text, isFinal) => {
                 this.elevenLabsEventProcessor.handleAgentTranscript(text, isFinal);
-                if (isFinal) this.checkGoodbye(text, 'agent');
+                if (isFinal) this.recordTurnTranscript(text, 'agent');
+            },
+            onAgentResponseComplete: () => {
+                // The agent finished its turn. If the last agent transcript matched
+                // a goodbye phrase, end the call after the audio finishes playing.
+                this.maybeEndOnGoodbye();
             },
             onInterruption: () => {
                 this.elevenLabsEventProcessor.handleInterruption();
@@ -178,21 +185,14 @@ export class ElevenLabsCallHandler implements ICallHandler {
                 console.log(`[ElevenLabs Handler] Tool call: ${toolName}`, parameters);
                 if (toolName === 'send_dtmf') {
                     const digits = parameters.digits;
-                    if (!digits) {
-                        return { result: 'No digits provided', isError: true };
-                    }
+                    if (!digits) return { result: 'No digits provided', isError: true };
                     try {
-                        // Send DTMF tones in-band through the Twilio media stream
-                        const { generateDtmfSequence } = await import('../services/elevenlabs/audio.service.js');
+                        const { generateDtmfSequence, TWILIO_FRAME_MS } =
+                            await import('../services/elevenlabs/audio.service.js');
                         const chunks = generateDtmfSequence(digits);
-                        console.log(`[ElevenLabs Handler] Sending ${chunks.length} DTMF audio chunks for: ${digits}`);
-
-                        // Send each chunk through the Twilio stream with small delays
-                        for (const chunk of chunks) {
-                            this.twilioStream.sendAudio(chunk);
-                        }
-
-                        console.log(`[ElevenLabs Handler] DTMF sent in-band: ${digits}`);
+                        console.log(`[ElevenLabs Handler] Pacing ${chunks.length} DTMF chunks at ${TWILIO_FRAME_MS}ms for "${digits}"`);
+                        await this.sendDtmfPaced(chunks, TWILIO_FRAME_MS);
+                        console.log(`[ElevenLabs Handler] DTMF complete: ${digits}`);
                         return { result: `Successfully sent DTMF tones: ${digits}` };
                     } catch (error: any) {
                         console.error(`[ElevenLabs Handler] DTMF error:`, error);
@@ -201,30 +201,100 @@ export class ElevenLabsCallHandler implements ICallHandler {
                 }
                 return { result: `Unknown tool: ${toolName}`, isError: true };
             },
-            onReady: async () => {
+            onReady: async (negotiatedAgentOutputFormat) => {
                 console.log('[ElevenLabs Handler] ElevenLabs session ready');
 
-                // Set audio format on event processor based on agent metadata
-                const outputFormat = this.elevenLabsService.getAgentOutputFormat();
-                this.elevenLabsEventProcessor.setAudioOutputFormat(outputFormat);
+                // Verify the negotiated format matches our pass-through expectation
+                this.elevenLabsEventProcessor.verifyAudioFormat(negotiatedAgentOutputFormat);
 
-                // If already initialized, don't do it again
                 if (this.elevenLabsReady) {
                     console.log('[ElevenLabs Handler] Already initialized, skipping');
                     return;
                 }
 
-                // Session is ready with prompt included in init - finish setup
                 if (this.needsInitialization) {
                     this.onElevenLabsSessionReady();
-
-                    // If this was a resume scenario, restore conversation
                     if (this.callState.conversationHistory && this.callState.conversationHistory.length > 0) {
                         console.log('[ElevenLabs Handler] Restoring conversation after initialization');
                     }
                 }
             }
         });
+    }
+
+    /**
+     * Send a sequence of DTMF audio chunks to Twilio, paced at `frameMs`
+     * milliseconds per chunk to match Twilio's media frame cadence.
+     * Prevents buffer overrun by spreading the chunks over wall-clock time
+     * instead of dumping them as fast as possible.
+     */
+    private async sendDtmfPaced(chunks: string[], frameMs: number): Promise<void> {
+        const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+        for (const chunk of chunks) {
+            this.twilioStream.sendAudio(chunk);
+            await sleep(frameMs);
+        }
+    }
+
+    /**
+     * Inject DTMF tones into the active Twilio media stream. Used by the
+     * scripted-DTMF IVR navigation path (Phase 3.2) — fires from a scheduled
+     * setTimeout in TwilioEventService, independent of any agent turn.
+     */
+    public async injectDtmfNow(digits: string): Promise<void> {
+        try {
+            const { generateDtmfSequence, TWILIO_FRAME_MS } =
+                await import('../services/elevenlabs/audio.service.js');
+            const chunks = generateDtmfSequence(digits);
+            console.log(`[ElevenLabs Handler] Scripted DTMF: "${digits}" → ${chunks.length} chunks at ${TWILIO_FRAME_MS}ms`);
+            await this.sendDtmfPaced(chunks, TWILIO_FRAME_MS);
+        } catch (err) {
+            console.error('[ElevenLabs Handler] injectDtmfNow failed:', err);
+        }
+    }
+
+    /**
+     * Drop a contextual_update into the live ElevenLabs conversation. Used to
+     * tell the agent about side-channel events (e.g. operator pressed a key
+     * via scripted DTMF) so its LLM has accurate state.
+     */
+    public injectAgentContext(note: string): void {
+        if (!this.elevenLabsService.isReady()) return;
+        this.elevenLabsService.injectContext(note);
+    }
+
+    /**
+     * Track the latest transcript per role so `agent_response_complete` can
+     * decide whether the agent just said goodbye.
+     */
+    private lastUserText: string = '';
+    private lastAgentText: string = '';
+    private recordTurnTranscript(text: string, role: 'user' | 'agent'): void {
+        if (role === 'user') this.lastUserText = text;
+        else this.lastAgentText = text;
+        // Also detect user goodbye immediately — the agent's response_complete
+        // may not fire if the user hung up after saying goodbye.
+        if (role === 'user' && this.isGoodbye(text)) {
+            console.log(`[ElevenLabs Handler] User goodbye detected: "${text}"`);
+            setTimeout(() => this.endCall(), 2000);
+        }
+    }
+
+    /**
+     * Called on `agent_response_complete` — the agent just finished its turn.
+     * If the last thing it said matched a goodbye phrase, end the call after
+     * a short delay (so the audio gets a chance to flush to Twilio).
+     */
+    private maybeEndOnGoodbye(): void {
+        if (this.isGoodbye(this.lastAgentText)) {
+            console.log(`[ElevenLabs Handler] Agent goodbye detected: "${this.lastAgentText}"`);
+            setTimeout(() => this.endCall(), 2000);
+        }
+    }
+
+    private isGoodbye(text: string): boolean {
+        const lower = (text || '').toLowerCase();
+        return GOODBYE_PHRASES.some(phrase => lower.includes(phrase));
     }
 
     /**
@@ -252,13 +322,21 @@ export class ElevenLabsCallHandler implements ICallHandler {
         console.log('[ElevenLabs Handler] Starting ElevenLabs session with context:', this.callState.callContext.substring(0, 100) + '...');
         console.log('[ElevenLabs Handler] Call type:', this.callState.callType, '(incoming:', isIncoming, ')');
 
-        // Queue the system prompt on the ElevenLabs service BEFORE connecting
-        // This way it will be included in conversation_config_override on init
-        this.elevenLabsService.initializeConversation(this.callState.callContext, {
-            call_type: isIncoming ? 'incoming' : 'outgoing',
-            from_number: this.callState.fromNumber,
-            to_number: this.callState.toNumber
-        }, this.callState.elevenLabsVoiceId);
+        // Queue the system prompt + first message on the ElevenLabs service BEFORE connecting
+        // so they will be included in conversation_config_override on init. The
+        // first_message tells the agent what to say when the call connects —
+        // without it, the agent waits indefinitely for the human to speak first,
+        // which is fatal on IVR phone trees (no natural turn-end signal).
+        this.elevenLabsService.initializeConversation(
+            this.callState.callContext,
+            {
+                call_type: isIncoming ? 'incoming' : 'outgoing',
+                from_number: this.callState.fromNumber,
+                to_number: this.callState.toNumber
+            },
+            this.callState.elevenLabsVoiceId,
+            this.callState.callInstructions || undefined,
+        );
 
         if (!this.elevenLabsService.isConnected()) {
             // Connect now - the prompt will be sent with the init message
@@ -284,6 +362,26 @@ export class ElevenLabsCallHandler implements ICallHandler {
 
         // Start safety timer to prevent zombie calls
         this.startMaxDurationTimer();
+
+        // Persist the ElevenLabs conversation_id on the Call row for outbound
+        // calls so the post-call webhook can link the transcript back to the
+        // right row. Best-effort, non-blocking.
+        const conversationId = this.elevenLabsService.getConversationId();
+        const callSid = this.callState.callSid;
+        if (conversationId && callSid) {
+            (async () => {
+                try {
+                    const { CallModel } = await import('../models/call.model.js');
+                    await CallModel.updateOne(
+                        { callSid },
+                        { $set: { elevenLabsConversationId: conversationId, callMode: 'advanced' } },
+                    );
+                    console.log(`[ElevenLabs Handler] Linked call ${callSid} → conv ${conversationId}`);
+                } catch (e) {
+                    console.error('[ElevenLabs Handler] Failed to link call → conv:', e);
+                }
+            })();
+        }
     }
 
     private sendAudioToElevenLabs(payload: string): void {
@@ -316,19 +414,6 @@ export class ElevenLabsCallHandler implements ICallHandler {
         this.callState.markQueue = [];
         this.callState.lastAssistantItemId = null;
         this.callState.responseStartTimestampTwilio = null;
-    }
-
-    /**
-     * Check transcript for goodbye phrases and end the call if detected
-     */
-    private checkGoodbye(text: string, speaker: string): void {
-        const lower = text.toLowerCase();
-        const isGoodbye = GOODBYE_PHRASES.some(phrase => lower.includes(phrase));
-        if (isGoodbye) {
-            console.log(`[ElevenLabs Handler] Goodbye detected from ${speaker}: "${text}"`);
-            // Small delay to let the final audio play
-            setTimeout(() => this.endCall(), 2000);
-        }
     }
 
     /**

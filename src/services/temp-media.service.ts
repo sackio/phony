@@ -21,15 +21,15 @@ export class TempMediaService {
 
     /**
      * Copy a file at the given absolute path into temp media and return its public URL.
-     * Path must be under /mnt/nas/ or /tmp/ to prevent arbitrary filesystem reads.
+     * Path must be under /mnt/db/ or /tmp/ to prevent arbitrary filesystem reads.
      */
     savePathFile(filename: string, mimeType: string, srcPath: string): string {
         if (!path.isAbsolute(srcPath)) {
             throw new Error(`Path must be absolute: ${srcPath}`);
         }
         const normalized = path.normalize(srcPath);
-        if (!normalized.startsWith('/mnt/nas/') && !normalized.startsWith('/tmp/')) {
-            throw new Error(`Path must be under /mnt/nas/ or /tmp/: ${srcPath}`);
+        if (!normalized.startsWith('/mnt/db/') && !normalized.startsWith('/tmp/')) {
+            throw new Error(`Path must be under /mnt/db/ or /tmp/: ${srcPath}`);
         }
         if (!fs.existsSync(normalized)) {
             throw new Error(`File not found: ${srcPath}`);
