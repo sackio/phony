@@ -297,6 +297,28 @@ export class ElevenLabsWsService {
                 asr: { user_input_audio_format: 'ulaw_8000' },
                 tts: { output_format: 'ulaw_8000' },
             },
+            // Declare the DTMF tool so the agent knows it can press digits in
+            // advanced mode. In native mode ElevenLabs's own play_keypad_touch_tone
+            // system tool handles this; in advanced mode we must surface it as
+            // a client tool because Phony bridges the audio, not ElevenLabs.
+            // Handler in elevenlabs.handler.ts:onToolCall accepts both
+            // `play_keypad_touch_tone` and `send_dtmf` as aliases.
+            client_tools: [
+                {
+                    name: 'play_keypad_touch_tone',
+                    description: 'Press one or more digits on the phone keypad. Use to navigate IVR menus (press 0 for an operator, etc.) or interact with phone systems. Sends real DTMF tones to the line.',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            digit: {
+                                type: 'string',
+                                description: 'The digit(s) to press, e.g. "0" or "1" or "#" or "*". Can be multiple digits ("12") to dial sequentially.',
+                            },
+                        },
+                        required: ['digit'],
+                    },
+                },
+            ],
         };
 
         if (this.pendingSystemPrompt || this.pendingFirstMessage) {

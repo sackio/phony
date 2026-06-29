@@ -183,14 +183,21 @@ export class ElevenLabsCallHandler implements ICallHandler {
             },
             onToolCall: async (toolName, toolCallId, parameters) => {
                 console.log(`[ElevenLabs Handler] Tool call: ${toolName}`, parameters);
-                if (toolName === 'send_dtmf') {
-                    const digits = parameters.digits;
+                // Accept either `send_dtmf` (our client tool name) OR
+                // `play_keypad_touch_tone` (ElevenLabs's system-tool name that
+                // agents configured on the EL dashboard expect). In advanced
+                // mode neither path goes through ElevenLabs's Twilio
+                // integration, so we must generate DTMF audio ourselves.
+                if (toolName === 'send_dtmf' || toolName === 'play_keypad_touch_tone') {
+                    // Some agent configs surface the parameter as `digit`,
+                    // others as `digits`. Accept both.
+                    const digits = parameters.digits ?? parameters.digit;
                     if (!digits) return { result: 'No digits provided', isError: true };
                     try {
                         const { generateDtmfSequence, TWILIO_FRAME_MS } =
                             await import('../services/elevenlabs/audio.service.js');
-                        const chunks = generateDtmfSequence(digits);
-                        console.log(`[ElevenLabs Handler] Pacing ${chunks.length} DTMF chunks at ${TWILIO_FRAME_MS}ms for "${digits}"`);
+                        const chunks = generateDtmfSequence(String(digits));
+                        console.log(`[ElevenLabs Handler] Pacing ${chunks.length} DTMF chunks at ${TWILIO_FRAME_MS}ms for "${digits}" (via ${toolName})`);
                         await this.sendDtmfPaced(chunks, TWILIO_FRAME_MS);
                         console.log(`[ElevenLabs Handler] DTMF complete: ${digits}`);
                         return { result: `Successfully sent DTMF tones: ${digits}` };

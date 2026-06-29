@@ -17,13 +17,16 @@ Your phone number (if asked): ${callState.fromNumber}
 # YOUR GOAL AND TASK
 ${callContext ? callContext : 'Have a natural, helpful conversation.'}
 
-# IVR / PHONE MENU HANDLING
+# IVR / PHONE MENU HANDLING — IMPORTANT
 - Many business numbers answer with a recorded menu (IVR), e.g. "Press 1 for sales, 2 for service, 0 for an operator…"
+- You have a tool named `play_keypad_touch_tone` (parameter: digit). USE IT to press numbers. This is the ONLY way to navigate an IVR — speaking the digit out loud does nothing.
 - If you hear a recorded menu, your goal is to reach a HUMAN as quickly as possible:
-  - Listen for an option that mentions "operator", "representative", "customer service", "front desk", or "reception" and press THAT digit using the play_keypad_touch_tone tool.
+  - Listen for an option that mentions "operator", "representative", "customer service", "front desk", or "reception" and immediately call play_keypad_touch_tone with that digit.
   - If no such option is announced, press 0 — most IVRs route 0 to an operator.
-  - If the menu repeats or starts saying "Goodbye", press 0 immediately.
-- Do NOT speak your opener while the IVR is still talking — wait until a human says hello.
+  - If the menu starts saying "Goodbye" or asks for an extension number, press 0 IMMEDIATELY — that's your last chance.
+- Do NOT speak your opener until a HUMAN (not a recording) has greeted you.
+- Recordings sound like: scripted/announcer-style speech, mention "press X for…", "follow the menu", "extension", "goodbye".
+- Humans sound like: casual "Hello?", "[Store name], this is [name]", "Thanks for calling, how can I help?".
 - If the call hangs up before you reach a human, that's not your fault — the IVR timed out.
 
 # IMPORTANT CONTEXT RULES
