@@ -18,7 +18,7 @@ const nativeElevenLabs = new NativeElevenLabsService();
 export const callToolsDefinitions: MCPToolDefinition[] = [
     {
         name: 'phony_create_call',
-        description: 'Create an outbound phone call with an ElevenLabs AI voice assistant. Two modes: "native" (default) — ElevenLabs hosts the call end-to-end via /v1/convai/twilio/outbound-call, lowest latency, simplest. "advanced" — Phony hosts a WebSocket bridge with mid-call control (DTMF for IVR navigation, mid-call context injection). Use advanced only when you genuinely need DTMF or live context injection.',
+        description: 'Create an outbound phone call with an ElevenLabs AI voice assistant. Two modes: "advanced" (default) — Phony hosts a WebSocket bridge with mid-call control (DTMF for IVR navigation, mid-call context injection); works on the typical business number that has an IVR. "native" — ElevenLabs hosts the call end-to-end via /v1/convai/twilio/outbound-call (lowest latency, simplest), opt-in via mode:"native"; lacks DTMF preflight, so any IVR will likely strand the call. Use native only when you know the line is human-answered.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -37,7 +37,7 @@ export const callToolsDefinitions: MCPToolDefinition[] = [
                 mode: {
                     type: 'string',
                     enum: ['native', 'advanced'],
-                    description: 'Which call architecture to use. "native" (default): ElevenLabs hosts the call end-to-end — lowest latency, simplest, no mid-call DTMF/context. "advanced": Phony WebSocket bridge — supports DTMF (IVR navigation) and mid-call context injection. Use advanced only when needed.'
+                    description: 'Which call architecture to use. "advanced" (default): Phony WebSocket bridge — supports DTMF preflight (IVR navigation) and mid-call context injection; reliable on any number that may have an IVR. "native": ElevenLabs hosts the call end-to-end — lowest latency, simplest, but NO sendDigits preflight (an IVR will likely strand the call). Use native only when you know the line is human-answered.'
                 },
                 contextChannel: {
                     type: 'string',
@@ -325,7 +325,12 @@ export function createCallToolHandlers(
 
                 const toNumber = sanitizePhoneNumber(args.toNumber);
                 const fromNumber = process.env.TWILIO_NUMBER || '';
-                const mode: 'native' | 'advanced' = args.mode === 'advanced' ? 'advanced' : 'native';
+                // Default to `advanced` so any IVR-gated business line has a
+                // chance of being navigated (dtmfPreflight, dtmfScript, and
+                // mid-call DTMF via play_keypad_touch_tone all live there).
+                // `native` remains opt-in for the niche "let ElevenLabs host
+                // everything" use case.
+                const mode: 'native' | 'advanced' = args.mode === 'native' ? 'native' : 'advanced';
                 const contextChannel = args.contextChannel ? String(args.contextChannel) : undefined;
 
                 if (mode === 'native') {
