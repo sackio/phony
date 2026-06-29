@@ -66,6 +66,10 @@ export const callToolsDefinitions: MCPToolDefinition[] = [
                 elevenLabsVoiceId: {
                     type: 'string',
                     description: 'ElevenLabs voice ID. Choose natural, conversational voices - avoid dramatic/performative ones. RECOMMENDED Natural Female: Sarah (EXAVITQu4vr4xnSDxMaL, professional), Alice (Xb7hH8MSUJpSbSDYk0k2, professional), Rachel (21m00Tcm4TlvDq8ikWAM, warm narrative), Nicole (piTKgcLEGmPE4e6mEKli, natural). RECOMMENDED Natural Male: Chris (iP95p4xoKVk53GoZ742B, conversational), Charlie (IKne3meq5aSn9XLyUdCD, conversational), Dave (CYw3kZ02Hs0563khs1Fj, casual), Daniel (onwK4e9ZLuTAKqWW03F9, professional), James (ZQe5CZNOzWyzPSCn5a3c, authoritative). Other options - Female: Matilda (XrExE9yKIg1WjnnlVkGX), Lily (pFZP5JQG7iQjIQuC4Bku), Grace (oWAxZDx7w5VEj9dCyTzz), Freya (jsCqWAovK2LkecY7zXl4). Male: Brian (nPczCjzI2devNBz1zQrb), Bill (pqHfZKP75CvOlQylNhV4), Adam (pNInz6obpgDQGcFmaJgB), Drew (29vD33N1CtxCmqQRPOHJ). AVOID dramatic voices: Charlotte, Arnold, Callum, Clyde, Fin, Gigi, Glinda, Harry, Jessie, Mimi, Patrick.'
+                },
+                recordingEnabled: {
+                    type: 'boolean',
+                    description: 'When true, Twilio records both sides of the call (dual-channel) from answer to hangup. Useful for IVR debugging (verify our DTMF tones actually reach the line) and for probe calls that map IVR menu timing. Default false. Recording URL accessible via twilioClient.calls(sid).recordings.list() post-call.'
                 }
             },
             required: ['toNumber', 'systemInstructions', 'callInstructions']
@@ -401,9 +405,30 @@ export function createCallToolHandlers(
                 const dtmfScriptJson = Array.isArray(args.dtmfScript) && args.dtmfScript.length > 0
                     ? JSON.stringify(args.dtmfScript)
                     : undefined;
-                const dtmfPreflight = typeof args.dtmfPreflight === 'string' && args.dtmfPreflight.length > 0
+
+                // Explicit dtmfPreflight from the caller wins. If absent, fall back
+                // to the per-number IVR registry — barge-in-disabled IVRs that have
+                // been probed previously will auto-navigate to an operator without
+                // the caller needing to know the timing.
+                let dtmfPreflight = typeof args.dtmfPreflight === 'string' && args.dtmfPreflight.length > 0
                     ? String(args.dtmfPreflight)
                     : undefined;
+                let registryHit: string | undefined;
+                if (!dtmfPreflight) {
+                    try {
+                        const { IvrPreflightModel } = await import('../../models/ivr-preflight.model.js');
+                        const entry = await IvrPreflightModel.findOne({ phoneNumber: toNumber, enabled: true }).lean();
+                        if (entry?.preflight) {
+                            dtmfPreflight = entry.preflight;
+                            registryHit = `${entry.preflight} (registry, gen=${entry.generation}${entry.derivedFrom ? `, from ${entry.derivedFrom}` : ''})`;
+                            console.log(`[phony_create_call] Auto-applied IVR preflight for ${toNumber}: ${entry.preflight.slice(0, 60)}…`);
+                        }
+                    } catch (err) {
+                        console.error('[phony_create_call] IVR registry lookup failed:', err);
+                    }
+                }
+
+                const recordingEnabled = args.recordingEnabled === true;
 
                 const result = await twilioService.makeOutboundCall(
                     toNumber,
@@ -414,6 +439,7 @@ export function createCallToolHandlers(
                     undefined, // fromNumber
                     dtmfScriptJson,
                     dtmfPreflight,
+                    recordingEnabled,
                 );
 
                 const callStateService = CallStateService.getInstance();
@@ -439,7 +465,9 @@ export function createCallToolHandlers(
                     status: result.status,
                     mode: 'advanced',
                     contextChannel: contextChannel ?? null,
-                    message: `Call initiated to ${toNumber} (advanced WebSocket bridge${contextChannel ? `, context channel: ${contextChannel}` : ''})`
+                    dtmfPreflight: registryHit ?? dtmfPreflight ?? null,
+                    recordingEnabled,
+                    message: `Call initiated to ${toNumber} (advanced WebSocket bridge${contextChannel ? `, context channel: ${contextChannel}` : ''}${registryHit ? ', IVR registry preflight applied' : ''}${recordingEnabled ? ', recording on' : ''})`
                 });
             } catch (error: any) {
                 return createToolError('Failed to create call', { message: error.message });

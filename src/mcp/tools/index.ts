@@ -15,6 +15,7 @@ import { smsToolsDefinitions, createSmsToolHandlers } from './sms.tools.js';
 import { webhookToolsDefinitions, createWebhookToolHandlers } from './webhook.tools.js';
 import { voicemailToolsDefinitions, createVoicemailToolHandlers } from './voicemail.tools.js';
 import { tagsToolsDefinitions, createTagsToolHandlers } from './tags.tools.js';
+import { ivrToolsDefinitions, createIvrToolHandlers } from './ivr.tools.js';
 
 /**
  * Tool Registry
@@ -41,7 +42,8 @@ export class ToolRegistry {
             ...smsToolsDefinitions,
             ...webhookToolsDefinitions,
             ...voicemailToolsDefinitions,
-            ...tagsToolsDefinitions
+            ...tagsToolsDefinitions,
+            ...ivrToolsDefinitions
         ];
 
         // Webhook config service + dispatcher are self-contained (no external deps);
@@ -58,6 +60,7 @@ export class ToolRegistry {
         const webhookHandlers = createWebhookToolHandlers(webhookService, webhookDispatcher);
         const voicemailHandlers = createVoicemailToolHandlers();
         const tagsHandlers = createTagsToolHandlers();
+        const ivrHandlers = createIvrToolHandlers();
 
         // Combine into map
         this.handlers = new Map([
@@ -68,7 +71,8 @@ export class ToolRegistry {
             ...Object.entries(smsHandlers),
             ...Object.entries(webhookHandlers),
             ...Object.entries(voicemailHandlers),
-            ...Object.entries(tagsHandlers)
+            ...Object.entries(tagsHandlers),
+            ...Object.entries(ivrHandlers)
         ]);
     }
 

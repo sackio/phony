@@ -103,6 +103,7 @@ export class TwilioCallService {
         elevenLabsVoiceId?: string,
         dtmfScriptJson?: string,
         dtmfPreflight?: string,
+        recordingEnabled?: boolean,
     ): Promise<string> {
         try {
             // Deduplication: prevent placing two calls to the same number within the window
@@ -156,6 +157,15 @@ export class TwilioCallService {
             // IVR menu navigation.
             if (dtmfPreflight) createParams.sendDigits = dtmfPreflight;
 
+            // Per-call recording override. When true, asks Twilio to record
+            // both legs from answer to hangup. Useful for debugging IVR
+            // transmission (whether our DTMF tones actually reach the line)
+            // and for probe calls that map an IVR's menu timing.
+            if (recordingEnabled) {
+                createParams.record = true;
+                createParams.recordingChannels = 'dual';
+            }
+
             const call = await twilioClient.calls.create(createParams);
 
             return call.sid;
@@ -177,6 +187,7 @@ export class TwilioCallService {
         fromNumber?: string,
         dtmfScriptJson?: string,
         dtmfPreflight?: string,
+        recordingEnabled?: boolean,
     ): Promise<{ sid: string; status: string }> {
         const publicUrl = process.env.PUBLIC_URL || '';
 
@@ -190,6 +201,7 @@ export class TwilioCallService {
             elevenLabsVoiceId,
             dtmfScriptJson,
             dtmfPreflight,
+            recordingEnabled,
         );
 
         return { sid: callSid, status: 'initiated' };

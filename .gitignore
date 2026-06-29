@@ -63,5 +63,12 @@ pids
 .claude/.nfs*
 .claude/scheduled_tasks.lock
 
+# Local-only MacBook prep + DB dumps — contain PII, never commit
+phony.dump.gz
+phony.dump*
+docker-compose.macbook.yml
+docker-compose.macbook.yml.bak
+*.dump.gz
+
 # Playwright screenshots
 .playwright-mcp/
