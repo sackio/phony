@@ -466,7 +466,7 @@ export class TwilioSmsService {
             if (!SMS_PROXY_ENABLED) return;
 
             if (isFromProxyTarget) {
-                await this.handleProxyReply(data.From, data.To, data.Body || '');
+                await this.handleProxyReply(data.From, data.To, data.Body || '', { messageSid: data.MessageSid, mediaUrls });
             } else {
                 await this.handleExternalIncoming(data.From, data.To, data.Body || '', mediaUrls);
             }
@@ -500,16 +500,52 @@ export class TwilioSmsService {
     /**
      * A proxy target (Ben/Laura) texted a Twilio number.
      * Parse for: code reply, slug reply, or label command.
+     *
+     * If body doesn't match any known reply format, fires `sms.needs_routing`
+     * so the phony Claude session (subscribed via ATC) can pick a target
+     * agent and relay the message. Only falls back to the "Reply formats:"
+     * auto-help SMS if no live subscriber is handling the event.
      */
-    private async handleProxyReply(from: string, twilioNumber: string, body: string): Promise<void> {
+    private async handleProxyReply(
+        from: string,
+        twilioNumber: string,
+        body: string,
+        opts?: { messageSid?: string; mediaUrls?: string[] }
+    ): Promise<void> {
         const parsed = TwilioSmsService.parseIncoming(body);
 
         if (!parsed) {
-            console.log(`[TwilioSMS Proxy] Reply from ${from} has no recognized format`);
+            console.log(`[TwilioSMS Proxy] Reply from ${from} has no recognized format — checking for smart-router subscriber`);
+            const mediaUrls = opts?.mediaUrls ?? [];
+            const eventPayload = {
+                message_sid: opts?.messageSid ?? '',
+                from,
+                to: twilioNumber,
+                from_proxy: from,
+                twilio_number: twilioNumber,
+                body,
+                media_urls: mediaUrls,
+                num_media: mediaUrls.length,
+                received_at: new Date().toISOString(),
+            };
+            let hasRouter = false;
+            try {
+                hasRouter = await this.webhookDispatcher.hasSubscriber('sms.needs_routing', eventPayload);
+            } catch (e) {
+                console.error('[TwilioSMS Proxy] hasSubscriber check failed:', e);
+            }
+            if (hasRouter) {
+                console.log(`[TwilioSMS Proxy] Dispatching sms.needs_routing for ${from} → smart router`);
+                this.webhookDispatcher.dispatch('sms.needs_routing', eventPayload, {
+                    ...(opts?.messageSid ? { eventId: `phony-needs-routing-${opts.messageSid}` } : {}),
+                }).catch(e => console.error('[TwilioSMS Proxy] sms.needs_routing dispatch error:', e));
+                return;
+            }
+            // No live router — fall back to the original format-help auto-reply.
             try {
                 await this.sendSms(
                     from,
-                    `Reply formats:\n• 1234: your message\n• {slug}: your message\n• label 1234 slug`,
+                    `Reply formats:\n• 1234: your message\n• {slug}: your message\n• label 1234 slug\n(Smart-router offline — text an agent name to reach one.)`,
                     twilioNumber, undefined, { skipNotification: true }
                 );
             } catch (e) {

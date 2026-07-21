@@ -224,22 +224,31 @@ export class TwilioConversationsService {
     /**
      * Find the author string Phony should use when posting into a given
      * Conversation. Returns the systemIdentity if a participant with that
-     * identity exists, otherwise the Twilio number matching an
-     * address-bound participant.
+     * identity exists, otherwise the Phony-owned number matching an
+     * address-bound (or projectedAddress-bound) participant.
+     *
+     * Multi-number support: Phony owns multiple Twilio numbers (e.g.
+     * +18575550111, +19785550112, +16175550113, +16175550114). A group
+     * autocreated by inbound MMS to one of them will only have THAT number
+     * as its self-participant — not TWILIO_NUMBER env. So we accept any of
+     * SMS_ENABLED_NUMBERS (which is the canonical list) plus TWILIO_NUMBER.
      */
     public async resolveSelfAuthor(conversationSid: string): Promise<string> {
         const participants = await this.listParticipants(conversationSid);
         const byIdentity = participants.find(p => p.identity === this.systemIdentity);
         if (byIdentity) return this.systemIdentity;
 
-        const twilioNumber = process.env.TWILIO_NUMBER;
-        const byAddress = participants.find(p =>
-            (p.address && twilioNumber && p.address === twilioNumber) ||
-            (p.projectedAddress && twilioNumber && p.projectedAddress === twilioNumber)
-        );
-        if (byAddress && twilioNumber) return twilioNumber;
+        const { SMS_ENABLED_NUMBERS } = await import('../../config/constants.js');
+        const phonyNumbers = new Set<string>(SMS_ENABLED_NUMBERS);
+        if (process.env.TWILIO_NUMBER) phonyNumbers.add(process.env.TWILIO_NUMBER);
 
-        throw new Error(`No self-participant found in ${conversationSid} — cannot post as Phony`);
+        const byAddress = participants.find(p =>
+            (p.address && phonyNumbers.has(p.address)) ||
+            (p.projectedAddress && phonyNumbers.has(p.projectedAddress))
+        );
+        if (byAddress) return (byAddress.address || byAddress.projectedAddress)!;
+
+        throw new Error(`No self-participant found in ${conversationSid} — cannot post as Phony (participants: ${participants.map(p => p.address || p.projectedAddress || p.identity).join(', ')}; expected one of: ${Array.from(phonyNumbers).join(', ')})`);
     }
 
     /**
@@ -249,7 +258,13 @@ export class TwilioConversationsService {
     public isSelfAuthor(author: string | null | undefined): boolean {
         if (!author) return false;
         if (author === this.systemIdentity) return true;
+        // Multi-number: any Phony-owned number counts as self.
         if (process.env.TWILIO_NUMBER && author === process.env.TWILIO_NUMBER) return true;
+        try {
+            // Sync const import; safe because constants.ts has no side effects.
+            const { SMS_ENABLED_NUMBERS } = require('../../config/constants.js');
+            if (Array.isArray(SMS_ENABLED_NUMBERS) && SMS_ENABLED_NUMBERS.includes(author)) return true;
+        } catch { /* ignore */ }
         return false;
     }
 

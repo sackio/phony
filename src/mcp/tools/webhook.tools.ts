@@ -196,6 +196,21 @@ export const EVENT_CATALOG: Array<{
             delivered_message_sid: 'Twilio Message SID of the forwarded message (SM/IM)',
         },
     },
+    {
+        event: 'sms.needs_routing',
+        description: 'A proxy target (Ben/Laura) texted Phony without a recognized reply format (no {slug}:, no 1234:, no "label ..."). Fires so the phony Claude session can pick a target agent from the ATC board and relay the message. The old "Reply formats:" auto-help SMS is suppressed when this event has a live subscriber. Note: `from` and `to` are provided (mirroring sms.incoming) so the standard `fromNumber` / `toNumber` filters work; `from_proxy` / `twilio_number` are aliases retained for semantic clarity.',
+        fields: {
+            message_sid: 'Twilio Message SID of the inbound',
+            from: 'E.164 of the proxy target who sent the message (alias: from_proxy)',
+            to: 'E.164 Twilio number that received the message (alias: twilio_number)',
+            from_proxy: 'alias of `from` for semantic clarity',
+            twilio_number: 'alias of `to` for semantic clarity',
+            body: 'raw message body',
+            media_urls: 'array of public media URLs (may be empty)',
+            num_media: 'attachment count',
+            received_at: 'ISO-8601 timestamp',
+        },
+    },
 ];
 
 export const webhookToolsDefinitions: MCPToolDefinition[] = [

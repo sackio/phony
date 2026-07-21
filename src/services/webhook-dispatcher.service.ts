@@ -77,6 +77,16 @@ export class WebhookDispatcher {
     }
 
     /**
+     * True if any enabled webhook subscribes to this event and its filters
+     * pass against the given payload. Lets emitters conditionally suppress
+     * a legacy fallback path when a live subscriber is handling the event.
+     */
+    public async hasSubscriber(event: string, payload: Record<string, unknown>): Promise<boolean> {
+        const matches = await this.configService.findMatching(event, payload);
+        return matches.length > 0;
+    }
+
+    /**
      * Fire a synthetic event through the real dispatcher path. Used by
      * `phony_webhook_test` for end-to-end verification of HMAC, headers, retry.
      * Returns the final delivery outcome of the FIRST matching attempt
