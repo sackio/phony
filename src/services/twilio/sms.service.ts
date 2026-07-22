@@ -392,6 +392,8 @@ export class TwilioSmsService {
         MediaUrl2?: string;
         MediaUrl3?: string;
         MediaUrl4?: string;
+        /** When the message was actually sent (reconciler replays). Defaults to now. */
+        SentAt?: Date;
     }): Promise<void> {
         try {
             const numMedia = data.NumMedia ? parseInt(data.NumMedia) : 0;
@@ -424,6 +426,31 @@ export class TwilioSmsService {
             if (inGroup && !parsedReply) {
                 console.log(`[TwilioSMS] ${data.MessageSid} from ${data.From} is a group participant in ${inGroup.conversationSid} and doesn't parse as a reply command — Conversations webhook owns this, skipping 1-on-1 path`);
                 return;
+            }
+
+            // Dedup against the Conversations-side copy: with autocreate, the
+            // same human message surfaces twice — live via /conversations/webhook
+            // (IM… sid, persisted with a CH… conversationId) and again via the
+            // SMS reconciler replaying the Programmable Messaging record
+            // (SM/MM… sid). Same content, different sids, so match on
+            // sender+body near the message's send time. (Media-only messages
+            // have no body to match on; let those through.)
+            if (data.Body) {
+                const sentAt = data.SentAt ?? new Date();
+                const conversationCopy = await SmsModel.findOne({
+                    fromNumber: data.From,
+                    body: data.Body,
+                    direction: SmsDirection.INBOUND,
+                    conversationId: { $regex: /^CH/ },
+                    createdAt: {
+                        $gte: new Date(sentAt.getTime() - 10 * 60 * 1000),
+                        $lte: new Date(sentAt.getTime() + 10 * 60 * 1000),
+                    },
+                }).lean();
+                if (conversationCopy) {
+                    console.log(`[TwilioSMS] ${data.MessageSid} from ${data.From} duplicates Conversations message ${(conversationCopy as any).messageSid} — skipping 1-on-1 path`);
+                    return;
+                }
             }
 
             await this.storageService.saveSms({

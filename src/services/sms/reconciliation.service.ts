@@ -231,6 +231,9 @@ export class SmsReconciliationService {
                                 From: msg.from,
                                 To: msg.to,
                                 Body: msg.body || '',
+                                ...(msg.dateSent || msg.dateCreated
+                                    ? { SentAt: new Date(msg.dateSent || msg.dateCreated) }
+                                    : {}),
                                 NumMedia: numMedia.toString(),
                                 ...(mediaUrls[0] && { MediaUrl0: mediaUrls[0] }),
                                 ...(mediaUrls[1] && { MediaUrl1: mediaUrls[1] }),
