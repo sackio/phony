@@ -56,6 +56,14 @@ export const SMS_ENABLED_NUMBERS = process.env.SMS_ENABLED_NUMBERS
     ? process.env.SMS_ENABLED_NUMBERS.split(',').map(n => n.trim())
     : ['+18575550111']; // Default to 857 number only
 
+// Ordered preference list for automatic failover resends when an outbound
+// SMS bounces (e.g. Twilio 30005). Excludes persona lines (Ben's direct
+// +16175550113) and toll-free numbers by default — failover messages must
+// come from a general-purpose Phony number.
+export const SMS_FAILOVER_NUMBERS: string[] = process.env.SMS_FAILOVER_NUMBERS
+    ? process.env.SMS_FAILOVER_NUMBERS.split(',').map(n => n.trim())
+    : ['+19785550112', '+18575550111'];
+
 // Default incoming call redirect message (played when no config exists)
 // Encourages callers to use SMS instead of phone calls
 export const DEFAULT_INCOMING_CALL_MESSAGE = process.env.DEFAULT_INCOMING_CALL_MESSAGE ||

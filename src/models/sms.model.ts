@@ -15,6 +15,8 @@ export interface ISms extends Document {
     numMedia?: number;
     mediaUrls?: string[];
     tags: string[];
+    /** Set on automatic failover resends: the messageSid of the failed original. */
+    retryOf?: string;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -77,6 +79,11 @@ const SmsSchema = new Schema<ISms>({
     tags: {
         type: [String],
         default: []
+    },
+    retryOf: {
+        type: String,
+        required: false,
+        index: true
     }
 }, {
     timestamps: true

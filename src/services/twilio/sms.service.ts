@@ -4,7 +4,7 @@ import { SmsStorageService } from '../sms/storage.service.js';
 import { SmsModel } from '../../models/sms.model.js';
 import { ContactSlugModel } from '../../models/contact-slug.model.js';
 import { GroupConversationModel } from '../../models/group-conversation.model.js';
-import { SMS_ENABLED_NUMBERS, SMS_PROXY_ENABLED, SMS_PROXY_TARGET_NUMBERS } from '../../config/constants.js';
+import { SMS_ENABLED_NUMBERS, SMS_FAILOVER_NUMBERS, SMS_PROXY_ENABLED, SMS_PROXY_TARGET_NUMBERS } from '../../config/constants.js';
 import { TwilioConversationsService } from './conversations.service.js';
 import { MongoDBService } from '../database/mongodb.service.js';
 import { WebhookDispatcher } from '../webhook-dispatcher.service.js';
@@ -1189,12 +1189,62 @@ export class TwilioSmsService {
                     .catch(e => console.error('[TwilioSMS] sms.failed dispatch error:', e));
             }
 
+            // Automatic failover: resend a bounced outbound message from an
+            // alternate Phony number. Carrier-side bounces (e.g. 30005) are
+            // usually specific to the (sender, recipient) pair — the same
+            // handset often accepts the message from a different number.
+            if (status === 'failed' || status === 'undelivered') {
+                await this.attemptFailoverResend(data.MessageSid, data.ErrorCode);
+            }
+
             // Notify proxy targets on delivery failure (legacy proxy path)
             if (SMS_PROXY_ENABLED && (status === 'failed' || status === 'undelivered')) {
                 await this.notifyFailure(data.MessageSid, data.MessageStatus, data.ErrorCode, data.ErrorMessage);
             }
         } catch (error) {
             console.error(`[TwilioSMS] Error handling status callback:`, error);
+        }
+    }
+
+    /**
+     * Resend a bounced outbound SMS from an alternate SMS_ENABLED_NUMBERS
+     * entry. One failover per original: retries of retries are never
+     * attempted (a second bounce means the handset itself is unreachable,
+     * not the sender pairing). Idempotent across Twilio callback retries
+     * via the retryOf marker on the resent row.
+     */
+    private async attemptFailoverResend(messageSid: string, errorCode?: string): Promise<void> {
+        try {
+            const original = await SmsModel.findOne({ messageSid }).lean();
+            if (!original) return;
+            if (original.direction !== SmsDirection.OUTBOUND) return;
+            if (original.retryOf) {
+                console.log(`[TwilioSMS Failover] ${messageSid} was already a failover resend (of ${original.retryOf}) and bounced again — recipient ${original.toNumber} unreachable, not retrying further`);
+                return;
+            }
+            if (!original.body && !(original.mediaUrls && original.mediaUrls.length > 0)) return;
+
+            const existingRetry = await SmsModel.findOne({ retryOf: messageSid }).lean();
+            if (existingRetry) return; // callback replay — already failed over
+
+            const altFrom = SMS_FAILOVER_NUMBERS.find(n => n !== original.fromNumber && SMS_ENABLED_NUMBERS.includes(n));
+            if (!altFrom) {
+                console.log(`[TwilioSMS Failover] No alternate sender available for bounced ${messageSid} (from ${original.fromNumber})`);
+                return;
+            }
+
+            console.log(`[TwilioSMS Failover] ${messageSid} to ${original.toNumber} bounced (err=${errorCode ?? '?'}) — resending from ${altFrom}`);
+            const resent = await this.sendSms(
+                original.toNumber,
+                original.body || '',
+                altFrom,
+                original.mediaUrls && original.mediaUrls.length > 0 ? original.mediaUrls : undefined,
+                { skipNotification: true }
+            );
+            await SmsModel.updateOne({ messageSid: resent.messageSid }, { $set: { retryOf: messageSid } });
+            console.log(`[TwilioSMS Failover] Resent as ${resent.messageSid} from ${altFrom}`);
+        } catch (error) {
+            console.error(`[TwilioSMS Failover] Failover resend for ${messageSid} failed:`, error);
         }
     }
 
