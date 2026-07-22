@@ -82,7 +82,9 @@ export class WebhookDispatcher {
      * a legacy fallback path when a live subscriber is handling the event.
      */
     public async hasSubscriber(event: string, payload: Record<string, unknown>): Promise<boolean> {
-        const matches = await this.configService.findMatching(event, payload);
+        // findMatching evaluates filters against the ENVELOPE shape (data.from
+        // etc.), so wrap the raw payload the same way dispatch() will.
+        const matches = await this.configService.findMatching(event, { event, data: payload });
         return matches.length > 0;
     }
 

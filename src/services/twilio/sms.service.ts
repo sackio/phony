@@ -840,12 +840,75 @@ export class TwilioSmsService {
             return true;
         }
 
+        // Resolve this Conversation's actual participants + Phony number once.
+        // Multi-number: a Conversation can live on any SMS_ENABLED_NUMBERS
+        // entry (projectedAddress for groups, proxyAddress for autocreated
+        // 1-on-1s) — never assume TWILIO_NUMBER.
+        const participants = await this.conversationsService
+            .listParticipants(conversationSid)
+            .catch(() => [] as Awaited<ReturnType<TwilioConversationsService['listParticipants']>>);
+        const twilioNumber = this.conversationsService.resolvePhonyNumberFromParticipants(participants);
+        const externals = participants
+            .filter(p => p.address && !this.conversationsService.isSelfAuthor(p.address))
+            .map(p => p.address!);
+
+        // Proxy target (Ben/Laura) texting a Phony number 1-on-1: with the
+        // Messaging Service set to "Autocreate a Conversation", their plain
+        // SMS arrives HERE — inside a Conversation whose other members are
+        // at most fellow proxy targets — and never reaches the /sms/incoming
+        // proxy-reply path. Hand it off to handleProxyReply so slug replies,
+        // label commands, and the sms.needs_routing smart-router all work.
+        const isProxyOnlyConversation =
+            SMS_PROXY_TARGET_NUMBERS.includes(author) &&
+            externals.length > 0 &&
+            externals.every(a => SMS_PROXY_TARGET_NUMBERS.includes(a));
+        if (isProxyOnlyConversation) {
+            if (messageSid) {
+                try {
+                    await this.storageService.saveSms({
+                        messageSid,
+                        fromNumber: author,
+                        toNumber: twilioNumber,
+                        direction: SmsDirection.INBOUND,
+                        body,
+                        status: SmsStatus.RECEIVED,
+                        twilioStatus: 'received',
+                        numMedia: mediaUrls.length,
+                        mediaUrls,
+                        conversationSid,
+                    });
+                } catch (err: any) {
+                    if (err.code === 11000) return false;
+                    throw err;
+                }
+            }
+            this.webhookDispatcher.dispatch('sms.incoming', {
+                message_sid: messageSid ?? '',
+                conversation_sid: conversationSid,
+                conversation_label: null,
+                from: author,
+                from_label: TwilioSmsService.numberToSlug.get(author) ?? null,
+                to: twilioNumber,
+                body,
+                media_urls: mediaUrls,
+            }, {
+                reply: {
+                    kind: '1on1',
+                    tool: 'phony_send_sms',
+                    args: { to: author, from: twilioNumber },
+                    description: `To reply, call phony_send_sms with to="${author}" body="<your reply>". The message will appear as a 1-on-1 SMS back to the sender.`,
+                },
+                ...(messageSid ? { eventId: `phony-msg-${messageSid}` } : {}),
+            }).catch((e) => console.error('[TwilioSMS] proxy-conv webhook dispatch error:', e));
+            if (SMS_PROXY_ENABLED && !options?.skipNotify) {
+                console.log(`[TwilioSMS Proxy] ${messageSid ?? '(no sid)'} from ${author} via proxy-only Conversation ${conversationSid} → handleProxyReply`);
+                await this.handleProxyReply(author, twilioNumber, body, { messageSid, mediaUrls });
+            }
+            return true;
+        }
+
         // Ensure the group is registered (covers webhook-missed onConversationAdded)
         if (!TwilioSmsService.getGroupSlug(conversationSid)) {
-            const twilioNumber = process.env.TWILIO_NUMBER!;
-            const externals = await this.conversationsService
-                .getExternalAddresses(conversationSid)
-                .catch(() => [] as string[]);
             await this.registerGroup(conversationSid, twilioNumber, externals);
         }
 
@@ -855,7 +918,7 @@ export class TwilioSmsService {
                 await this.storageService.saveSms({
                     messageSid,
                     fromNumber: author,
-                    toNumber: process.env.TWILIO_NUMBER!,
+                    toNumber: twilioNumber,
                     direction: SmsDirection.INBOUND,
                     body,
                     status: SmsStatus.RECEIVED,
@@ -882,7 +945,7 @@ export class TwilioSmsService {
             conversation_label: groupSlug,
             from: author,
             from_label: TwilioSmsService.numberToSlug.get(author) ?? null,
-            to: process.env.TWILIO_NUMBER ?? '',
+            to: twilioNumber,
             body,
             media_urls: mediaUrls,
             // seq deferred to v2 — requires plumbing Twilio Conversations Message.Index

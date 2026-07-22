@@ -276,6 +276,7 @@ export class TwilioConversationsService {
         identity: string | null;
         address: string | null;
         projectedAddress: string | null;
+        proxyAddress: string | null;
     }>> {
         const list = await this.twilioClient.conversations.v1
             .conversations(conversationSid)
@@ -287,8 +288,24 @@ export class TwilioConversationsService {
                 identity: p.identity ?? null,
                 address: typeof binding.address === 'string' ? binding.address : null,
                 projectedAddress: typeof binding.projected_address === 'string' ? binding.projected_address : null,
+                proxyAddress: typeof binding.proxy_address === 'string' ? binding.proxy_address : null,
             };
         });
+    }
+
+    /**
+     * Resolve which Phony-owned number a Conversation lives on: the system
+     * participant's projectedAddress (group pattern), else any participant's
+     * proxyAddress (legacy 1-on-1 / autocreate pattern), else TWILIO_NUMBER.
+     */
+    public resolvePhonyNumberFromParticipants(
+        participants: Array<{ projectedAddress: string | null; proxyAddress: string | null }>
+    ): string {
+        const projected = participants.find(p => p.projectedAddress)?.projectedAddress;
+        if (projected) return projected;
+        const proxy = participants.find(p => p.proxyAddress)?.proxyAddress;
+        if (proxy) return proxy;
+        return process.env.TWILIO_NUMBER!;
     }
 
     /**
