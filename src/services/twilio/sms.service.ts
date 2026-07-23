@@ -1168,7 +1168,10 @@ export class TwilioSmsService {
 
             // Fire webhook events on terminal status transitions.
             // event_id is derived from message_sid + status so retries dedup.
-            const original = await SmsModel.findOne({ messageSid: data.MessageSid }).lean();
+            // Retry-fetch: fast carrier rejections (landline 30005) can land
+            // the status callback before sendSms's saveSms commits — a null
+            // row here would blank the event payload and skip failover.
+            const original = await this.findSmsWithRetry(data.MessageSid);
             if (status === 'delivered') {
                 this.webhookDispatcher.dispatch('sms.delivered', {
                     message_sid: data.MessageSid,
@@ -1213,10 +1216,25 @@ export class TwilioSmsService {
      * not the sender pairing). Idempotent across Twilio callback retries
      * via the retryOf marker on the resent row.
      */
+    /**
+     * Fetch an SmsModel row, retrying once after a short delay. Covers the
+     * race where a fast carrier rejection delivers the status callback
+     * before the send path's saveSms has committed the row.
+     */
+    private async findSmsWithRetry(messageSid: string, delayMs = 2000): Promise<any | null> {
+        const first = await SmsModel.findOne({ messageSid }).lean();
+        if (first) return first;
+        await new Promise(r => setTimeout(r, delayMs));
+        return SmsModel.findOne({ messageSid }).lean();
+    }
+
     private async attemptFailoverResend(messageSid: string, errorCode?: string): Promise<void> {
         try {
-            const original = await SmsModel.findOne({ messageSid }).lean();
-            if (!original) return;
+            const original = await this.findSmsWithRetry(messageSid);
+            if (!original) {
+                console.log(`[TwilioSMS Failover] ${messageSid} not found in DB (even after retry) — cannot fail over`);
+                return;
+            }
             if (original.direction !== SmsDirection.OUTBOUND) return;
             if (original.retryOf) {
                 console.log(`[TwilioSMS Failover] ${messageSid} was already a failover resend (of ${original.retryOf}) and bounced again — recipient ${original.toNumber} unreachable, not retrying further`);
