@@ -17,6 +17,7 @@ import { voicemailToolsDefinitions, createVoicemailToolHandlers } from './voicem
 import { tagsToolsDefinitions, createTagsToolHandlers } from './tags.tools.js';
 import { ivrToolsDefinitions, createIvrToolHandlers } from './ivr.tools.js';
 import { smartRouteToolsDefinitions, createSmartRouteToolHandlers } from './smart-route.tools.js';
+import { lookupToolsDefinitions, createLookupToolHandlers } from './lookup.tools.js';
 
 /**
  * Tool Registry
@@ -45,7 +46,8 @@ export class ToolRegistry {
             ...voicemailToolsDefinitions,
             ...tagsToolsDefinitions,
             ...ivrToolsDefinitions,
-            ...smartRouteToolsDefinitions
+            ...smartRouteToolsDefinitions,
+            ...lookupToolsDefinitions
         ];
 
         // Webhook config service + dispatcher are self-contained (no external deps);
@@ -64,6 +66,7 @@ export class ToolRegistry {
         const tagsHandlers = createTagsToolHandlers();
         const ivrHandlers = createIvrToolHandlers();
         const smartRouteHandlers = createSmartRouteToolHandlers();
+        const lookupHandlers = createLookupToolHandlers(twilioService.getTwilioClient());
 
         // Combine into map
         this.handlers = new Map([
@@ -76,7 +79,8 @@ export class ToolRegistry {
             ...Object.entries(voicemailHandlers),
             ...Object.entries(tagsHandlers),
             ...Object.entries(ivrHandlers),
-            ...Object.entries(smartRouteHandlers)
+            ...Object.entries(smartRouteHandlers),
+            ...Object.entries(lookupHandlers)
         ]);
     }
 

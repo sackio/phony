@@ -19,7 +19,7 @@ ${callContext ? callContext : 'Have a natural, helpful conversation.'}
 
 # IVR / PHONE MENU HANDLING — IMPORTANT
 - Many business numbers answer with a recorded menu (IVR), e.g. "Press 1 for sales, 2 for service, 0 for an operator…"
-- You have a tool named `play_keypad_touch_tone` (parameter: digit). USE IT to press numbers. This is the ONLY way to navigate an IVR — speaking the digit out loud does nothing.
+- You have a tool named \`play_keypad_touch_tone\` (parameter: digit). USE IT to press numbers. This is the ONLY way to navigate an IVR — speaking the digit out loud does nothing.
 - If you hear a recorded menu, your goal is to reach a HUMAN as quickly as possible:
   - Listen for an option that mentions "operator", "representative", "customer service", "front desk", or "reception" and immediately call play_keypad_touch_tone with that digit.
   - If no such option is announced, press 0 — most IVRs route 0 to an operator.

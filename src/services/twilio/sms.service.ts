@@ -1228,8 +1228,32 @@ export class TwilioSmsService {
         return SmsModel.findOne({ messageSid }).lean();
     }
 
+    // Storm circuit-breaker: timestamps of recent failover resends. A bulk
+    // send sweeping landline numbers (e.g. a dealer-list outreach) bounces
+    // en masse — doubling every futile send hurts cost and carrier
+    // reputation without helping anyone.
+    private static failoverTimestamps: number[] = [];
+    private static readonly FAILOVER_STORM_WINDOW_MS = 5 * 60 * 1000;
+    private static readonly FAILOVER_STORM_MAX = 5;
+
     private async attemptFailoverResend(messageSid: string, errorCode?: string): Promise<void> {
         try {
+            // 30006 = "Landline or unreachable carrier" — a hard property of
+            // the destination. No sender number can fix it; don't double the
+            // futile send. (30005 stays retried: it can be pairing-specific
+            // carrier filtering, which failover has genuinely fixed.)
+            if (errorCode === '30006') {
+                console.log(`[TwilioSMS Failover] ${messageSid} bounced 30006 (landline/unreachable destination) — failover cannot help, skipping`);
+                return;
+            }
+
+            const now = Date.now();
+            TwilioSmsService.failoverTimestamps = TwilioSmsService.failoverTimestamps
+                .filter(t => now - t < TwilioSmsService.FAILOVER_STORM_WINDOW_MS);
+            if (TwilioSmsService.failoverTimestamps.length >= TwilioSmsService.FAILOVER_STORM_MAX) {
+                console.log(`[TwilioSMS Failover] Storm guard: ${TwilioSmsService.failoverTimestamps.length} failovers in the last 5 min — skipping failover for ${messageSid} (bulk bounce pattern, resend won't help)`);
+                return;
+            }
             const original = await this.findSmsWithRetry(messageSid);
             if (!original) {
                 console.log(`[TwilioSMS Failover] ${messageSid} not found in DB (even after retry) — cannot fail over`);
