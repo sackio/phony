@@ -130,8 +130,10 @@ export function createDebugToolHandlers(
                 const callStateService = CallStateService.getInstance();
                 const activeCalls = callStateService.getAllCalls();
 
-                // Get total calls from database
-                const allCalls = await transcriptService.getRecentCalls(1000);
+                // Count-by-status/type via aggregation — never hydrate call docs
+                // here (embedded twilioEvents made the old 1000-doc fetch take
+                // tens of minutes)
+                const callCounts = await transcriptService.getCallCounts();
 
                 // Get configured numbers
                 const configs = await incomingConfigService.getAllConfigs();
@@ -143,18 +145,6 @@ export function createDebugToolHandlers(
                 const mongoService = MongoDBService.getInstance();
                 const mongoConnected = mongoService.getIsConnected();
 
-                // Count by status
-                const statusCounts: Record<string, number> = {};
-                allCalls.forEach(call => {
-                    statusCounts[call.status] = (statusCounts[call.status] || 0) + 1;
-                });
-
-                // Count by type
-                const typeCounts: Record<string, number> = {};
-                allCalls.forEach(call => {
-                    typeCounts[call.callType] = (typeCounts[call.callType] || 0) + 1;
-                });
-
                 return createToolResponse({
                     system: {
                         mongodbConnected: mongoConnected,
@@ -162,9 +152,9 @@ export function createDebugToolHandlers(
                     },
                     calls: {
                         active: activeCalls.length,
-                        total: allCalls.length,
-                        byStatus: statusCounts,
-                        byType: typeCounts
+                        total: callCounts.total,
+                        byStatus: callCounts.byStatus,
+                        byType: callCounts.byType
                     },
                     configuration: {
                         configuredNumbers: configs.length,

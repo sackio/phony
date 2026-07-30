@@ -391,6 +391,38 @@ export class CallTranscriptService {
     }
 
     /**
+     * Count calls grouped by status and callType without loading documents.
+     * Full call docs embed twilioEvents/transcripts and can be megabytes each,
+     * so status/type tallies must never hydrate them.
+     */
+    public async getCallCounts(): Promise<{ total: number; byStatus: Record<string, number>; byType: Record<string, number> }> {
+        if (!this.mongoService.getIsConnected()) {
+            return { total: 0, byStatus: {}, byType: {} };
+        }
+
+        try {
+            const rows: { _id: { status?: string; callType?: string }; count: number }[] = await CallModel.aggregate([
+                { $group: { _id: { status: '$status', callType: '$callType' }, count: { $sum: 1 } } }
+            ]);
+
+            let total = 0;
+            const byStatus: Record<string, number> = {};
+            const byType: Record<string, number> = {};
+            for (const row of rows) {
+                total += row.count;
+                const status = row._id.status ?? 'unknown';
+                const type = row._id.callType ?? 'unknown';
+                byStatus[status] = (byStatus[status] || 0) + row.count;
+                byType[type] = (byType[type] || 0) + row.count;
+            }
+            return { total, byStatus, byType };
+        } catch (error) {
+            console.error(`[CallTranscript] Error counting calls:`, error);
+            return { total: 0, byStatus: {}, byType: {} };
+        }
+    }
+
+    /**
      * Get recent calls
      */
     public async getRecentCalls(limit: number = 50): Promise<ICall[]> {

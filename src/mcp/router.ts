@@ -83,7 +83,11 @@ export function createMCPRouter(
         }
 
         if (!sseManager.hasSession(sessionId)) {
-            res.status(404).json({ error: `No active session found for sessionId: ${sessionId}` });
+            res.status(404).json({
+                error: `MCP session ${sessionId} is no longer active (the server restarted or your SSE stream dropped). ` +
+                    `This is an MCP transport error, not a tool failure — no tool arguments are wrong. ` +
+                    `Your MCP client should reconnect automatically; retry the same call.`
+            });
             return;
         }
 
