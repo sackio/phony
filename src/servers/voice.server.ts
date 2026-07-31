@@ -91,6 +91,11 @@ export class VoiceServer {
 
         // Serve temp media files (for base64 → public URL MMS support)
         this.app.use('/media/temp', express.static('/tmp/phony-media'));
+        // A missing media file must 404, not fall through to the SPA shell —
+        // a 200 text/html response silently corrupts naive `curl -o x.jpg` saves
+        this.app.use('/media/temp', (_req: express.Request, res: express.Response) => {
+            res.status(404).json({ error: 'Media file not found (expired, or lost to a container rebuild before /tmp/phony-media was volume-backed)' });
+        });
 
         // Serve frontend static files
         const frontendPath = path.join(process.cwd(), 'frontend/dist');

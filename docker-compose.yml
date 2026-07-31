@@ -38,6 +38,9 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - /mnt/db:/mnt/db:ro
+      # MMS media marked "permanent" must survive image rebuilds — lost ID
+      # photos on 2026-07-30 when this lived in the container's own /tmp
+      - phony_media:/tmp/phony-media
     environment:
       # Server configuration
       PORT: 3004
@@ -97,4 +100,6 @@ volumes:
   mongodb_data:
     driver: local
   mongodb_config:
+    driver: local
+  phony_media:
     driver: local
