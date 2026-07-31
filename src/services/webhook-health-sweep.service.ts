@@ -71,34 +71,58 @@ export class WebhookHealthSweepService {
         if (this.timer) { clearInterval(this.timer); this.timer = null; }
     }
 
-    private bucketFor(cfg: IWebhookConfig, now: number): string | null {
+    /** Buckets that page. auto_disabled and born_silent ride along in reports
+     *  but never trigger one: the disable moment is owned by the real-time
+     *  webhook.auto_disabled meta-event (a sweep re-flagging it later would
+     *  page about considered decisions), and born_silent alone is
+     *  indistinguishable from a healthy quiet channel. */
+    private static readonly ACTIONABLE = new Set(['cannot_deliver_unsigned', 'no_broker_route', 'failing', 'never_delivered']);
+
+    private bucketFor(cfg: IWebhookConfig, now: number, routeTargets: Set<string> | null): string | null {
         const stats = cfg.deliveryStats ?? { ok: 0, fail: 0, consecutiveFailures: 0 };
-        const unsigned = !cfg.hmacSecret && /\/webhook\/phony\//.test(cfg.url);
+        const brokerTarget = cfg.url.match(/\/webhook\/phony\/([^/?#]+)/)?.[1] ?? null;
+        const unsigned = !cfg.hmacSecret && brokerTarget !== null;
         if (!cfg.enabled) {
             const auto = typeof cfg.lastError === 'string' && cfg.lastError.includes('auto-disabled');
             // Deliberately-disabled configs are a considered decision, not a fault.
             return auto ? 'auto_disabled' : null;
         }
         if (unsigned) return 'cannot_deliver_unsigned';
+        // Signed but pointed at a route the broker doesn't know: 404s before
+        // HMAC is ever evaluated — same silent symptom, different layer. A
+        // set-membership test in code, not an enrichment by a standing session.
+        if (brokerTarget && routeTargets && !routeTargets.has(brokerTarget)) return 'no_broker_route';
         if (stats.consecutiveFailures > 0) return 'failing';
         if (stats.ok === 0 && stats.fail > 0) return 'never_delivered';
         const createdAt = cfg.createdAt ? new Date(cfg.createdAt).getTime() : now;
         if (stats.ok === 0 && stats.fail === 0 && now - createdAt > BORN_SILENT_MIN_AGE_MS) {
-            // Quiet channel or born-dead — unverifiable from stats alone. The
-            // broker cross-checks route existence for these at delivery time.
             return 'born_silent';
         }
         return null;
+    }
+
+    /** Broker's registered route targets, or null if unreachable (skip the
+     *  route check rather than false-page on a broker blip). */
+    private async fetchRouteTargets(): Promise<Set<string> | null> {
+        try {
+            const res = await fetch(`${this.brokerUrl}/phony/routes`, { signal: AbortSignal.timeout(5000) });
+            if (!res.ok) return null;
+            const body = await res.json() as { targets?: unknown };
+            return Array.isArray(body.targets) ? new Set(body.targets.map(String)) : null;
+        } catch {
+            return null;
+        }
     }
 
     public async sweep(): Promise<void> {
         if (!MongoDBService.getInstance().getIsConnected()) return;
         const now = Date.now();
         const configs = await WebhookConfigModel.find({}).lean<IWebhookConfig[]>();
+        const routeTargets = await this.fetchRouteTargets();
 
         const findings: SweepFinding[] = [];
         for (const cfg of configs) {
-            const bucket = this.bucketFor(cfg as IWebhookConfig, now);
+            const bucket = this.bucketFor(cfg as IWebhookConfig, now, routeTargets);
             if (!bucket) { this.reported.delete(cfg.name); continue; }
             if (this.reported.get(cfg.name) === bucket) continue; // already alerted in this state
             const stats = cfg.deliveryStats ?? { ok: 0, fail: 0 };
@@ -114,11 +138,14 @@ export class WebhookHealthSweepService {
             });
         }
 
-        // born_silent alone is too weak a signal to page on — it fires only
-        // alongside at least one actionable finding, where the broker's
-        // route-existence enrichment can disambiguate it.
-        const actionable = findings.filter(f => f.bucket !== 'born_silent');
-        if (actionable.length === 0) return;
+        const actionable = findings.filter(f => WebhookHealthSweepService.ACTIONABLE.has(f.bucket));
+        if (actionable.length === 0) {
+            // A clean sweep must be distinguishable from a sweep that never ran
+            // — silence reading as health is the exact failure shape this
+            // service exists to catch.
+            console.log(`[WebhookHealthSweep] clean: ${configs.length} configs checked, 0 actionable${findings.length ? ` (${findings.length} non-paging: ${findings.map(f => `${f.name}[${f.bucket}]`).join(', ')})` : ''}${routeTargets ? '' : ' — route check SKIPPED (broker unreachable)'}`);
+            return;
+        }
 
         const lines = findings.map(f =>
             `- **${f.name}** [${f.bucket}] ok:${f.ok}/fail:${f.fail}, age ${f.ageDays}d, target ${f.url}${f.lastError ? `, lastError: ${f.lastError}` : ''}${f.label ? ` — ${f.label}` : ''}`
@@ -126,9 +153,12 @@ export class WebhookHealthSweepService {
         const content =
             `Webhook health sweep found ${actionable.length} actionable config(s) (${findings.length} total flagged):\n` +
             lines.join('\n') +
-            `\n\nBuckets: cannot_deliver_unsigned = enabled but unsigned at the ATC broker (401s on every attempt); ` +
-            `never_delivered = tried and failed every time; failing = current consecutive failures; ` +
-            `auto_disabled = gave up after 5 straight failures; born_silent = ok:0/fail:0 for >24h (quiet or dead — cross-check route existence / phony_webhook_test). ` +
+            `\n\nPaging buckets: cannot_deliver_unsigned = enabled but unsigned at the ATC broker (401 every attempt); ` +
+            `no_broker_route = signed but the broker has no route for the target (404 before HMAC is evaluated); ` +
+            `failing = current consecutive failures; never_delivered = tried and failed every time. ` +
+            `Riders (never page alone): auto_disabled = gave up after 5 straight failures (real-time alerting owned by the webhook.auto_disabled event); ` +
+            `born_silent = ok:0/fail:0 for >24h with a live route — quiet or dead, verify with phony_webhook_test if in doubt. ` +
+            `Route check ${routeTargets ? 'ACTIVE' : 'SKIPPED (broker /phony/routes unreachable this pass)'}. ` +
             `Each name re-alerts only when its bucket changes (or the server restarts).`;
 
         try {
