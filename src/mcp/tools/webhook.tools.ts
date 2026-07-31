@@ -339,11 +339,16 @@ export const webhookToolsDefinitions: MCPToolDefinition[] = [
  */
 function health(cfg: any): string {
     const stats = cfg.deliveryStats || { ok: 0, fail: 0, consecutiveFailures: 0 };
+    // Cause outranks consequence: "auto_disabled" is equally true of a config
+    // that worked for months and then broke, so a disabled-but-unsigned config
+    // reports the informative state and lets `enabled: false` carry the rest.
+    const cause = !cfg.hmacSecret && isAtcBrokerUrl(cfg.url) ? 'cannot_deliver_unsigned' : null;
     if (!cfg.enabled) {
-        return typeof cfg.lastError === 'string' && cfg.lastError.includes('auto-disabled')
-            ? 'auto_disabled' : 'disabled';
+        const auto = typeof cfg.lastError === 'string' && cfg.lastError.includes('auto-disabled');
+        if (cause) return `${cause} (${auto ? 'auto_disabled' : 'disabled'})`;
+        return auto ? 'auto_disabled' : 'disabled';
     }
-    if (!cfg.hmacSecret && isAtcBrokerUrl(cfg.url)) return 'cannot_deliver_unsigned';
+    if (cause) return cause;
     if (stats.consecutiveFailures > 0) return 'failing';
     if (stats.ok === 0 && stats.fail > 0) return 'never_delivered';
     if (stats.ok === 0 && stats.fail === 0) return 'never_fired';

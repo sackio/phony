@@ -8,6 +8,7 @@ import { CallSessionManager } from './services/session-manager.service.js';
 import { MongoDBService } from './services/database/mongodb.service.js';
 import { CallTranscriptService } from './services/database/call-transcript.service.js';
 import { SmsReconciliationService } from './services/sms/reconciliation.service.js';
+import { WebhookHealthSweepService } from './services/webhook-health-sweep.service.js';
 
 // Load environment variables
 dotenv.config();
@@ -135,6 +136,11 @@ async function main(): Promise<void> {
             lookbackMs: parseInt(process.env.SMS_RECONCILIATION_LOOKBACK_MS || '86400000'), // 24 hours
         });
         reconciliationService.start();
+
+        // Webhook health sweep: catches configs that fail without ever firing
+        // (unsigned, dead route, auto-disabled). Reports go straight to the
+        // ATC broker's /messages endpoint, not through the dispatcher.
+        WebhookHealthSweepService.getInstance().start();
 
         // Set up graceful shutdown
         setupShutdownHandlers();

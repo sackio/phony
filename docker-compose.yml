@@ -75,6 +75,11 @@ services:
 
       # Optional settings
       RECORD_CALLS: ${RECORD_CALLS:-false}
+
+      # Webhook health sweep — reports broken configs to the ATC broker
+      # via POST /messages (out-of-band from the webhook dispatcher).
+      ATC_BROKER_URL: ${ATC_BROKER_URL:-http://host.docker.internal:3030}
+      WEBHOOK_HEALTH_SWEEP_INTERVAL_MS: ${WEBHOOK_HEALTH_SWEEP_INTERVAL_MS:-21600000}
     tty: true
     dns:
       - 1.1.1.1
