@@ -187,6 +187,19 @@ export const EVENT_CATALOG: Array<{
         },
     },
     {
+        event: 'webhook.auto_disabled',
+        description: 'A webhook config was auto-disabled after 5 consecutive delivery failures. Subscribe to this to catch silently-dead webhooks (e.g. unsigned configs 401ing at the ATC broker) instead of discovering them weeks later.',
+        fields: {
+            name: 'webhook config name',
+            label: 'human-readable label or null',
+            url: 'target URL',
+            consecutive_failures: 'failure count that triggered the disable',
+            last_error: 'error from the final failed attempt (e.g. "HTTP 401 Unauthorized")',
+            last_event_type: 'event type of the delivery that tipped it over',
+            hmac_set: 'whether the config had an hmacSecret (false + 401 = the unsigned-webhook failure shape)',
+        },
+    },
+    {
         event: 'sms.proxy_routed',
         description: 'A proxy target (Ben/Laura) replied to Phony and Phony forwarded the message. Fires for both 1-on-1 routing (code or slug→contact) and group routing (slug→group). Use this to track manual replies from the human operator.',
         fields: {
@@ -318,9 +331,29 @@ export const webhookToolsDefinitions: MCPToolDefinition[] = [
     },
 ];
 
+/**
+ * Computed health summary. `consecutiveFailures` only trips if something
+ * tried: a born-dead webhook on a quiet channel is byte-identical to a
+ * healthy webhook on a quiet channel, and an auto-disabled one reports no
+ * errors at all ("a webhook that stopped trying reports no errors").
+ */
+function health(cfg: any): string {
+    const stats = cfg.deliveryStats || { ok: 0, fail: 0, consecutiveFailures: 0 };
+    if (!cfg.enabled) {
+        return typeof cfg.lastError === 'string' && cfg.lastError.includes('auto-disabled')
+            ? 'auto_disabled' : 'disabled';
+    }
+    if (!cfg.hmacSecret && isAtcBrokerUrl(cfg.url)) return 'cannot_deliver_unsigned';
+    if (stats.consecutiveFailures > 0) return 'failing';
+    if (stats.ok === 0 && stats.fail > 0) return 'never_delivered';
+    if (stats.ok === 0 && stats.fail === 0) return 'never_fired';
+    return 'ok';
+}
+
 function shape(cfg: any): Record<string, unknown> {
     return {
         name: cfg.name,
+        health: health(cfg),
         label: cfg.label || '',
         eventTypes: cfg.eventTypes,
         filters: cfg.filters || {},

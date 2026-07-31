@@ -186,6 +186,19 @@ export class WebhookDispatcher {
                 `auto-disabled after ${fresh.deliveryStats.consecutiveFailures} consecutive failures`
             );
             console.error(`[WebhookDispatcher] AUTO-DISABLED ${cfg.name} after ${fresh.deliveryStats.consecutiveFailures} consecutive failures`);
+            // Meta-event: without this, an auto-disable is a console line plus
+            // a DB flag nobody watches — a dead webhook sat unnoticed for three
+            // weeks once. Recursion is bounded: the disabled config no longer
+            // matches, and a failing meta-subscriber just disables itself.
+            this.dispatch('webhook.auto_disabled', {
+                name: cfg.name,
+                label: cfg.label ?? null,
+                url: cfg.url,
+                consecutive_failures: fresh.deliveryStats.consecutiveFailures,
+                last_error: lastResult.error ?? `HTTP ${lastResult.statusCode}`,
+                last_event_type: envelope.event,
+                hmac_set: !!cfg.hmacSecret,
+            }).catch(e => console.error('[WebhookDispatcher] webhook.auto_disabled dispatch error:', e));
         }
 
         return {
