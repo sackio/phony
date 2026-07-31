@@ -334,6 +334,7 @@ export class TwilioSmsService {
             // Fire sms.outgoing webhook event. `initiator` distinguishes
             // user-facing messages ("mcp") from proxy notifications / system
             // replies ("proxy") so downstream agents can filter the noise.
+            const outgoingHint = await this.buildReplyHint(sender, toNumber, null).catch(() => null);
             this.webhookDispatcher.dispatch('sms.outgoing', {
                 message_sid: message.sid,
                 conversation_sid: null,
@@ -344,7 +345,8 @@ export class TwilioSmsService {
                 direction: 'outbound',
                 initiator: options?.skipNotification ? 'proxy' : 'mcp',
                 twilio_status: message.status,
-            }).catch(e => console.error('[TwilioSMS] sms.outgoing dispatch error:', e));
+            }, outgoingHint ? { reply: outgoingHint.reply } : undefined)
+                .catch(e => console.error('[TwilioSMS] sms.outgoing dispatch error:', e));
 
             if (SMS_PROXY_ENABLED && !options?.skipNotification) {
                 TwilioSmsService.registerSender(sender, toNumber);
@@ -864,6 +866,30 @@ export class TwilioSmsService {
                 if (err.code === 11000) return false;
                 throw err;
             }
+            // Send confirmation for group posts. Without this, agents watching
+            // a group via a conversationSid-filtered webhook see inbound only —
+            // their own sends (and proxy-routed posts) vanish from the event
+            // stream, because Conversations fan-out never touches sendSms().
+            this.webhookDispatcher.dispatch('sms.outgoing', {
+                message_sid: messageSid,
+                conversation_sid: conversationSid,
+                conversation_label: slug || null,
+                from: process.env.TWILIO_NUMBER!,
+                to: slug ? `group:${slug}` : conversationSid,
+                body,
+                media_urls: mediaUrls,
+                direction: 'outbound',
+                initiator: 'mcp',
+                twilio_status: 'sent',
+            }, {
+                eventId: `phony-msg-${messageSid}`,
+                reply: {
+                    kind: 'group',
+                    tool: 'phony_send_group_sms',
+                    args: { conversationSid, ...(slug ? { slug } : {}) },
+                    description: `This was a GROUP post to ${conversationSid}${slug ? ` (slug "${slug}")` : ''}. To post again, call phony_send_group_sms with conversationSid="${conversationSid}" — not phony_send_sms.`,
+                },
+            }).catch(e => console.error('[TwilioSMS] group sms.outgoing dispatch error:', e));
             return true;
         }
 
@@ -1146,6 +1172,71 @@ export class TwilioSmsService {
         return deliveredSid;
     }
 
+    // --- Reply-hint construction ---
+
+    /**
+     * Build a conversation-aware reply hint for webhook envelopes about a
+     * message between `twilioNumber` and `externalNumber`.
+     *
+     * A hint that names the wrong thread is worse than no hint: a contact can
+     * simultaneously have a 1-on-1 thread and one or more group threads on the
+     * same Phony number, and a bare `phony_send_sms(to=...)` suggestion on a
+     * group-related event silently answers into their 1-on-1 thread. So:
+     *  - CH… conversationSid → group hint (phony_send_group_sms).
+     *  - otherwise → 1-on-1 hint, but if the external is ALSO a participant in
+     *    any active group on this Phony number, the ambiguity is disclosed.
+     */
+    private async buildReplyHint(
+        twilioNumber: string | null,
+        externalNumber: string | null,
+        conversationSid?: string | null,
+    ): Promise<{
+        reply: { kind: string; tool: string; args: Record<string, string>; description: string };
+        conversation_sid: string | null;
+        conversation_label: string | null;
+    } | null> {
+        if (conversationSid && conversationSid.startsWith('CH')) {
+            let slug = TwilioSmsService.getGroupSlug(conversationSid) ?? null;
+            if (!slug) {
+                const row = await GroupConversationModel.findOne({ conversationSid }).lean().catch(() => null);
+                slug = row?.slug ?? null;
+            }
+            return {
+                reply: {
+                    kind: 'group',
+                    tool: 'phony_send_group_sms',
+                    args: { conversationSid, ...(slug ? { slug } : {}) },
+                    description: `This message belongs to GROUP conversation ${conversationSid}${slug ? ` (slug "${slug}")` : ''}. To reply to the whole group, call phony_send_group_sms with conversationSid="${conversationSid}" — do NOT use phony_send_sms, which would answer into the sender's separate 1-on-1 thread.`,
+                },
+                conversation_sid: conversationSid,
+                conversation_label: slug,
+            };
+        }
+
+        if (!externalNumber) return null;
+
+        // 1-on-1 hint — with group-ambiguity disclosure when applicable.
+        const groups = await GroupConversationModel.find(
+            twilioNumber
+                ? { externalParticipants: externalNumber, twilioNumber }
+                : { externalParticipants: externalNumber },
+            { conversationSid: 1, slug: 1 },
+        ).limit(5).lean().catch(() => []);
+        const groupNote = groups.length
+            ? ` CAUTION: ${externalNumber} is also a participant in group${groups.length > 1 ? 's' : ''} ${groups.map(g => `"${g.slug}" (${g.conversationSid})`).join(', ')} — phony_send_sms reaches their separate 1-on-1 thread only; to address a group use phony_send_group_sms instead.`
+            : '';
+        return {
+            reply: {
+                kind: '1on1',
+                tool: 'phony_send_sms',
+                args: { to: externalNumber, ...(twilioNumber ? { from: twilioNumber } : {}) },
+                description: `To reply 1-on-1, call phony_send_sms with to="${externalNumber}" body="<your reply>".${groupNote}`,
+            },
+            conversation_sid: null,
+            conversation_label: null,
+        };
+    }
+
     // --- Status callback ---
 
     public async handleStatusCallback(data: {
@@ -1172,23 +1263,35 @@ export class TwilioSmsService {
             // the status callback before sendSms's saveSms commits — a null
             // row here would blank the event payload and skip failover.
             const original = await this.findSmsWithRetry(data.MessageSid);
+            // Conversation-aware context: status callbacks only carry from/to,
+            // but the underlying message may belong to a group Conversation —
+            // a bare 1:1 reply hint here would silently misroute group replies.
+            const hint = await this.buildReplyHint(
+                original?.fromNumber ?? null,
+                original?.toNumber ?? null,
+                original?.conversationId?.startsWith('CH') ? original.conversationId : null,
+            ).catch(() => null);
             if (status === 'delivered') {
                 this.webhookDispatcher.dispatch('sms.delivered', {
                     message_sid: data.MessageSid,
                     from: original?.fromNumber ?? null,
                     to: original?.toNumber ?? null,
+                    conversation_sid: hint?.conversation_sid ?? null,
+                    conversation_label: hint?.conversation_label ?? null,
                     delivered_at: new Date().toISOString(),
-                }, { eventId: `phony-sms-delivered-${data.MessageSid}` })
+                }, { eventId: `phony-sms-delivered-${data.MessageSid}`, ...(hint ? { reply: hint.reply } : {}) })
                     .catch(e => console.error('[TwilioSMS] sms.delivered dispatch error:', e));
             } else if (status === 'failed' || status === 'undelivered') {
                 this.webhookDispatcher.dispatch('sms.failed', {
                     message_sid: data.MessageSid,
                     from: original?.fromNumber ?? null,
                     to: original?.toNumber ?? null,
+                    conversation_sid: hint?.conversation_sid ?? null,
+                    conversation_label: hint?.conversation_label ?? null,
                     error_code: data.ErrorCode ?? null,
                     error_message: data.ErrorMessage ?? null,
                     twilio_status: data.MessageStatus,
-                }, { eventId: `phony-sms-failed-${data.MessageSid}` })
+                }, { eventId: `phony-sms-failed-${data.MessageSid}`, ...(hint ? { reply: hint.reply } : {}) })
                     .catch(e => console.error('[TwilioSMS] sms.failed dispatch error:', e));
             }
 

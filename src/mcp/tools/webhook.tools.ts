@@ -41,12 +41,13 @@ export const EVENT_CATALOG: Array<{
     },
     {
         event: 'sms.outgoing',
-        description: 'Phony sent an SMS.',
+        description: 'Phony sent an SMS (1-on-1) or posted into a group Conversation (fires on the Twilio echo of the post; conversation_sid set, to = "group:<slug>").',
         fields: {
-            message_sid: 'Twilio Message SID',
-            conversation_sid: 'group Conversation SID or null',
+            message_sid: 'Twilio Message SID (SM…) or Conversations Message SID (IM…) for group posts',
+            conversation_sid: 'group Conversation SID (CH…) or null for 1-on-1',
+            conversation_label: 'group slug or null',
             from: 'E.164 sender (a Phony number)',
-            to: 'E.164 recipient',
+            to: 'E.164 recipient, or "group:<slug>" / CH-SID for group posts',
             body: 'message text',
             media_urls: 'array of public media URLs',
             direction: '"outbound"',
@@ -56,21 +57,25 @@ export const EVENT_CATALOG: Array<{
     },
     {
         event: 'sms.delivered',
-        description: 'Twilio confirmed an outbound SMS was delivered.',
+        description: 'Twilio confirmed an outbound SMS was delivered. The envelope `reply` hint is conversation-aware: group-tagged messages get a phony_send_group_sms hint; 1-on-1 hints disclose when the recipient is also in an active group.',
         fields: {
             message_sid: 'Twilio Message SID',
             from: 'E.164 sender or null',
             to: 'E.164 recipient or null',
+            conversation_sid: 'group Conversation SID (CH…) or null for 1-on-1',
+            conversation_label: 'group slug or null',
             delivered_at: 'ISO-8601 delivery timestamp',
         },
     },
     {
         event: 'sms.failed',
-        description: 'Twilio reported an outbound SMS as failed or undelivered.',
+        description: 'Twilio reported an outbound SMS as failed or undelivered. The envelope `reply` hint is conversation-aware (see sms.delivered).',
         fields: {
             message_sid: 'Twilio Message SID',
             from: 'E.164 sender or null',
             to: 'E.164 recipient or null',
+            conversation_sid: 'group Conversation SID (CH…) or null for 1-on-1',
+            conversation_label: 'group slug or null',
             error_code: 'Twilio error code or null',
             error_message: 'Twilio error message or null',
             twilio_status: 'final status (failed|undelivered)',
@@ -334,7 +339,21 @@ function shape(cfg: any): Record<string, unknown> {
     };
 }
 
-/** Build a `test-*`-stubbed payload for a given eventType using the catalog. */
+/**
+ * The ATC broker rejects UNSIGNED deliveries with 401 — an hmac-less webhook
+ * pointed at it is byte-identical to a healthy one from the caller's side
+ * (enabled, no error) yet can never deliver, and auto-disables after 5
+ * consecutive failures. Refuse to create that configuration outright; for
+ * other receivers (which may not require signing) warn loudly instead.
+ */
+function isAtcBrokerUrl(url: string): boolean {
+    return /\/webhook\/phony\//.test(url);
+}
+
+function unsignedWarning(url: string): string | null {
+    if (isAtcBrokerUrl(url)) return null; // handled as a hard error at create time
+    return 'hmacSecret is NOT set. If this receiver requires signed payloads, every delivery will be rejected while the config continues to look healthy (enabled, no error at create time), and after 5 consecutive failures it will be auto-disabled. Verify end-to-end with phony_webhook_test.';
+}
 function buildSamplePayload(eventType: string): { event: string; data: Record<string, unknown> } {
     const entry = EVENT_CATALOG.find(e => e.event === eventType);
     if (!entry) {
@@ -362,6 +381,11 @@ export function createWebhookToolHandlers(
                 if (!Array.isArray(args.eventTypes) || args.eventTypes.length === 0) {
                     return createToolError('eventTypes must be a non-empty array of strings');
                 }
+                if (!args.hmacSecret && isAtcBrokerUrl(String(args.url))) {
+                    return createToolError(
+                        'Refusing to create an UNSIGNED webhook pointed at the ATC broker: the broker rejects unsigned deliveries with 401, so this config would look healthy but never deliver a single event. Pass hmacSecret with your session\'s HMAC secret (DM the `atc` session if you don\'t have yours), then verify end-to-end with phony_webhook_test.'
+                    );
+                }
                 const cfg = await service.createConfig({
                     name: String(args.name),
                     eventTypes: args.eventTypes.map(String),
@@ -374,7 +398,12 @@ export function createWebhookToolHandlers(
                     retry: args.retry,
                     timeoutMs: args.timeoutMs,
                 });
-                return createToolResponse({ config: shape(cfg), message: `Webhook '${cfg.name}' created` });
+                const warning = cfg.hmacSecret ? null : unsignedWarning(cfg.url);
+                return createToolResponse({
+                    config: shape(cfg),
+                    ...(warning ? { warning } : {}),
+                    message: `Webhook '${cfg.name}' created${warning ? `. WARNING: ${warning}` : ''}`,
+                });
             } catch (e: any) {
                 return createToolError('Failed to create webhook', { message: e.message });
             }
@@ -412,7 +441,16 @@ export function createWebhookToolHandlers(
                 }
                 const updated = await service.updateConfig(String(args.name), updates as any);
                 if (!updated) return createToolError(`Webhook '${args.name}' not found`);
-                return createToolResponse({ config: shape(updated), message: `Webhook '${args.name}' updated` });
+                const updWarning = !updated.hmacSecret
+                    ? (isAtcBrokerUrl(updated.url)
+                        ? 'This webhook targets the ATC broker but has NO hmacSecret — the broker rejects unsigned deliveries with 401, so it cannot deliver anything and will auto-disable after 5 consecutive failures. Set hmacSecret to your session\'s HMAC secret.'
+                        : unsignedWarning(updated.url))
+                    : null;
+                return createToolResponse({
+                    config: shape(updated),
+                    ...(updWarning ? { warning: updWarning } : {}),
+                    message: `Webhook '${args.name}' updated${updWarning ? `. WARNING: ${updWarning}` : ''}`,
+                });
             } catch (e: any) {
                 return createToolError('Failed to update webhook', { message: e.message });
             }
