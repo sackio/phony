@@ -16,6 +16,29 @@ export class SmsStorageService {
     }
 
     /**
+     * Guard for READ paths.
+     *
+     * Returning [] / null when the database is unreachable produces an answer
+     * that is byte-identical to a genuine "nothing matched" — the caller (an
+     * MCP tool, a sweep, a human) cannot tell "0 matched" from "0 returned
+     * because we never asked". Throw instead: every read caller already wraps
+     * these in try/catch and surfaces an error, so the ambiguity disappears
+     * without any of them changing.
+     *
+     * Write paths deliberately keep their existing skip-and-log behaviour —
+     * changing those affects Twilio webhook retry semantics and is a separate
+     * change.
+     */
+    private assertConnected(operation: string): void {
+        if (!this.mongoService.getIsConnected()) {
+            throw new Error(
+                `MongoDB not connected — cannot ${operation}. This is a database availability error, ` +
+                `not an empty result set.`
+            );
+        }
+    }
+
+    /**
      * Save an SMS message
      */
     public async saveSms(data: {
@@ -75,15 +98,15 @@ export class SmsStorageService {
      * Get an SMS message by messageSid
      */
     public async getSms(messageSid: string): Promise<ISms | null> {
-        if (!this.mongoService.getIsConnected()) {
-            return null;
-        }
+        this.assertConnected(`retrieve SMS ${messageSid}`);
 
         try {
             return await SmsModel.findOne({ messageSid });
         } catch (error) {
+            // null must mean "no such message", never "the lookup failed" —
+            // callers render null as "Message not found".
             console.error(`[SmsStorage] Error retrieving SMS:`, error);
-            return null;
+            throw error;
         }
     }
 
@@ -138,9 +161,7 @@ export class SmsStorageService {
         endDate?: Date;
         limit?: number;
     } = {}): Promise<ISms[]> {
-        if (!this.mongoService.getIsConnected()) {
-            return [];
-        }
+        this.assertConnected('list SMS messages');
 
         try {
             const query: any = {};
@@ -178,7 +199,7 @@ export class SmsStorageService {
                 .limit(limit);
         } catch (error) {
             console.error(`[SmsStorage] Error listing SMS:`, error);
-            return [];
+            throw error;
         }
     }
 
@@ -190,9 +211,7 @@ export class SmsStorageService {
         number2: string,
         limit: number = 100
     ): Promise<ISms[]> {
-        if (!this.mongoService.getIsConnected()) {
-            return [];
-        }
+        this.assertConnected(`retrieve conversation between ${number1} and ${number2}`);
 
         try {
             return await SmsModel.find({
@@ -205,7 +224,7 @@ export class SmsStorageService {
             .limit(limit);
         } catch (error) {
             console.error(`[SmsStorage] Error retrieving conversation:`, error);
-            return [];
+            throw error;
         }
     }
 
@@ -281,9 +300,7 @@ export class SmsStorageService {
         endDate?: Date;
         limit?: number;
     }): Promise<ISms[]> {
-        if (!this.mongoService.getIsConnected()) {
-            return [];
-        }
+        this.assertConnected(`search SMS messages for "${options.query}"`);
 
         try {
             const filter: any = {
@@ -319,7 +336,7 @@ export class SmsStorageService {
                 .limit(limit);
         } catch (error) {
             console.error(`[SmsStorage] Error searching SMS:`, error);
-            return [];
+            throw error;
         }
     }
 }

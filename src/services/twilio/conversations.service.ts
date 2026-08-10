@@ -300,12 +300,17 @@ export class TwilioConversationsService {
      */
     public resolvePhonyNumberFromParticipants(
         participants: Array<{ projectedAddress: string | null; proxyAddress: string | null }>
-    ): string {
+    ): string | null {
         const projected = participants.find(p => p.projectedAddress)?.projectedAddress;
         if (projected) return projected;
         const proxy = participants.find(p => p.proxyAddress)?.proxyAddress;
         if (proxy) return proxy;
-        return process.env.TWILIO_NUMBER!;
+        // Deliberately NO env fallback. Defaulting to TWILIO_NUMBER here is
+        // indistinguishable from a correct answer at the call site, and a
+        // failed listParticipants (which yields an empty array) would silently
+        // rewrite a message's destination to the wrong Phony number. Callers
+        // must treat null as "cannot resolve — defer", never as a default.
+        return null;
     }
 
     /**

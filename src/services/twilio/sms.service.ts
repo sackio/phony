@@ -897,10 +897,32 @@ export class TwilioSmsService {
         // Multi-number: a Conversation can live on any SMS_ENABLED_NUMBERS
         // entry (projectedAddress for groups, proxyAddress for autocreated
         // 1-on-1s) — never assume TWILIO_NUMBER.
-        const participants = await this.conversationsService
-            .listParticipants(conversationSid)
-            .catch(() => [] as Awaited<ReturnType<TwilioConversationsService['listParticipants']>>);
+        // ⛔ Do NOT swallow a listParticipants failure into an empty array: an
+        // empty result is indistinguishable from "this Conversation has no
+        // participants", and the number resolution below would then fall back
+        // to the wrong Phony number and persist the message against it.
+        // Defer instead — this method is idempotent and the reconciler replays.
+        let participants: Awaited<ReturnType<TwilioConversationsService['listParticipants']>>;
+        try {
+            participants = await this.conversationsService.listParticipants(conversationSid);
+        } catch (err) {
+            console.error(
+                `[TwilioSMS] listParticipants failed for ${conversationSid} — deferring message ` +
+                `${messageSid ?? '(no sid)'} to reconciliation rather than persisting it against a guessed number:`,
+                err
+            );
+            return false;
+        }
+
         const twilioNumber = this.conversationsService.resolvePhonyNumberFromParticipants(participants);
+        if (!twilioNumber) {
+            console.error(
+                `[TwilioSMS] Conversation ${conversationSid} has no participant carrying a projectedAddress ` +
+                `or proxyAddress (${participants.length} participant(s)) — cannot determine which Phony number ` +
+                `this message arrived on. Deferring ${messageSid ?? '(no sid)'} to reconciliation.`
+            );
+            return false;
+        }
         const externals = participants
             .filter(p => p.address && !this.conversationsService.isSelfAuthor(p.address))
             .map(p => p.address!);

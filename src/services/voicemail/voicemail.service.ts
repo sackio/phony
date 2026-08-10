@@ -12,6 +12,25 @@ export class VoicemailService {
     }
 
     /**
+     * Guard for READ paths.
+     *
+     * Returning [] / null / 0 when the database is unreachable is
+     * indistinguishable from a genuine "no voicemails" — which is exactly the
+     * answer an automated sweep reports as all-clear. Throw instead; every
+     * read caller already wraps these and surfaces an error.
+     *
+     * Write paths keep their existing behaviour — that is a separate change.
+     */
+    private assertConnected(operation: string): void {
+        if (!this.mongoService.getIsConnected()) {
+            throw new Error(
+                `MongoDB not connected — cannot ${operation}. This is a database availability error, ` +
+                `not an empty result set.`
+            );
+        }
+    }
+
+    /**
      * Create a new voicemail record (called when recording starts)
      */
     public async createVoicemail(data: {
@@ -106,15 +125,13 @@ export class VoicemailService {
      * Get voicemail by recording SID
      */
     public async getVoicemail(recordingSid: string): Promise<IVoicemail | null> {
-        if (!this.mongoService.getIsConnected()) {
-            return null;
-        }
+        this.assertConnected(`get voicemail ${recordingSid}`);
 
         try {
             return await VoicemailModel.findOne({ recordingSid });
         } catch (error) {
             console.error('[Voicemail] Error getting voicemail:', error);
-            return null;
+            throw error;
         }
     }
 
@@ -122,15 +139,13 @@ export class VoicemailService {
      * Get voicemail by call SID
      */
     public async getVoicemailByCallSid(callSid: string): Promise<IVoicemail | null> {
-        if (!this.mongoService.getIsConnected()) {
-            return null;
-        }
+        this.assertConnected(`get voicemail for call ${callSid}`);
 
         try {
             return await VoicemailModel.findOne({ callSid });
         } catch (error) {
             console.error('[Voicemail] Error getting voicemail by call SID:', error);
-            return null;
+            throw error;
         }
     }
 
@@ -146,9 +161,7 @@ export class VoicemailService {
         endDate?: Date;
         limit?: number;
     } = {}): Promise<IVoicemail[]> {
-        if (!this.mongoService.getIsConnected()) {
-            return [];
-        }
+        this.assertConnected('list voicemails');
 
         try {
             const query: any = {};
@@ -182,7 +195,7 @@ export class VoicemailService {
                 .limit(limit);
         } catch (error) {
             console.error('[Voicemail] Error listing voicemails:', error);
-            return [];
+            throw error;
         }
     }
 
@@ -290,9 +303,10 @@ export class VoicemailService {
      * Get unread voicemail count for a phone number
      */
     public async getUnreadCount(toNumber: string): Promise<number> {
-        if (!this.mongoService.getIsConnected()) {
-            return 0;
-        }
+        // A 0 here reads as "no unread voicemail" — the all-clear an automated
+        // sweep reports and stops looking. It must never be produced by a
+        // database failure.
+        this.assertConnected(`count unread voicemails for ${toNumber}`);
 
         try {
             return await VoicemailModel.countDocuments({
@@ -302,7 +316,7 @@ export class VoicemailService {
             });
         } catch (error) {
             console.error('[Voicemail] Error getting unread count:', error);
-            return 0;
+            throw error;
         }
     }
 
@@ -313,9 +327,7 @@ export class VoicemailService {
         toNumber?: string;
         limit?: number;
     } = {}): Promise<IVoicemail[]> {
-        if (!this.mongoService.getIsConnected()) {
-            return [];
-        }
+        this.assertConnected(`search voicemails for "${query}"`);
 
         try {
             const searchQuery: any = {
@@ -334,7 +346,7 @@ export class VoicemailService {
                 .limit(limit);
         } catch (error) {
             console.error('[Voicemail] Error searching voicemails:', error);
-            return [];
+            throw error;
         }
     }
 }
