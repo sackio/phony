@@ -169,6 +169,12 @@ export class SmsReconciliationService {
         const dateSentAfter = new Date(Date.now() - this.lookbackMs);
         let checked = 0;
         let reconciled = 0;
+        // ⛔ Every path that swallows an error MUST bump this. A pass where
+        // every Twilio call timed out checked nothing and proves nothing — it
+        // must not print the same all-clear as a pass that genuinely found no
+        // gaps. (2026-08-12 ISP outage: six timeouts followed by
+        // "checked=0, no missed messages".)
+        let failures = 0;
 
         try {
             // Query Twilio for inbound messages to each of our enabled numbers
@@ -193,9 +199,22 @@ export class SmsReconciliationService {
                     for (const msg of inboundMessages) {
                         checked++;
 
-                        // Check if we already have this message
+                        // Check if we already have this message.
+                        //
+                        // ⚠️ TWO SID NAMESPACES. `msg.sid` here is a Programmable
+                        // Messaging sid (SM…/MM…). The SAME physical message, when
+                        // it belongs to a group, is stored by the Conversations
+                        // webhook under its Conversations sid (IM…). Matching on
+                        // messageSid alone therefore NEVER matches for group
+                        // traffic, so every group message looks permanently
+                        // "missed" and gets replayed on every pass — forever, until
+                        // it ages out of the lookback window. Measured 2026-08-12:
+                        // 77 replays of one message over 7h15m.
                         const existing = await SmsModel.findOne({ messageSid: msg.sid }).lean();
                         if (existing) {
+                            continue;
+                        }
+                        if (await this.hasConversationCopy(msg)) {
                             continue;
                         }
 
@@ -226,7 +245,7 @@ export class SmsReconciliationService {
                         // Use TwilioSmsService.handleIncomingSms — same as the webhook handler
                         // This saves to DB, links to conversation, and triggers proxy notifications
                         try {
-                            await this.twilioSmsService.handleIncomingSms({
+                            const outcome = await this.twilioSmsService.handleIncomingSms({
                                 MessageSid: msg.sid,
                                 From: msg.from,
                                 To: msg.to,
@@ -241,11 +260,29 @@ export class SmsReconciliationService {
                                 ...(mediaUrls[3] && { MediaUrl3: mediaUrls[3] }),
                                 ...(mediaUrls[4] && { MediaUrl4: mediaUrls[4] }),
                             });
-                            reconciled++;
-                            console.log(
-                                `[SmsReconciliation] Reconciled message ${msg.sid} from ${msg.from}`
-                            );
+                            // ⛔ Only a real persist counts. handleIncomingSms
+                            // legitimately declines messages the Conversations
+                            // webhook owns, and it returns rather than throwing —
+                            // so counting "it didn't throw" as a reconcile both
+                            // inflates the number and hides the fact that this
+                            // message will come back next pass.
+                            if (outcome === 'saved') {
+                                reconciled++;
+                                console.log(
+                                    `[SmsReconciliation] Reconciled message ${msg.sid} from ${msg.from}`
+                                );
+                            } else if (outcome === 'error') {
+                                failures++;
+                                console.error(
+                                    `[SmsReconciliation] Processing ${msg.sid} from ${msg.from} failed internally — NOT reconciled`
+                                );
+                            } else {
+                                console.log(
+                                    `[SmsReconciliation] ${msg.sid} from ${msg.from} declined by the inbound pipeline (${outcome}) — nothing to reconcile`
+                                );
+                            }
                         } catch (processErr) {
+                            failures++;
                             console.error(
                                 `[SmsReconciliation] Failed to process missed message ${msg.sid}:`,
                                 processErr
@@ -253,6 +290,7 @@ export class SmsReconciliationService {
                         }
                     }
                 } catch (fetchErr) {
+                    failures++;
                     console.error(
                         `[SmsReconciliation] Failed to fetch messages for ${twilioNumber}:`,
                         fetchErr
@@ -263,12 +301,22 @@ export class SmsReconciliationService {
             // Also reconcile Conversation-sourced messages (group MMS).
             const convResult = await this.reconcileConversations(dateSentAfter).catch(err => {
                 console.error('[SmsReconciliation] Conversations pass failed:', err);
-                return { checked: 0, reconciled: 0 };
+                return { checked: 0, reconciled: 0, failures: 1 };
             });
             checked += convResult.checked;
             reconciled += convResult.reconciled;
+            failures += convResult.failures ?? 0;
 
-            if (reconciled > 0) {
+            // ⛔ Never claim a clean bill of health on a pass that failed. A
+            // reader (human or sweep) stops looking at "no missed messages";
+            // that phrase must mean "I looked and there were none", never "I
+            // could not look".
+            if (failures > 0) {
+                console.warn(
+                    `[SmsReconciliation] Completed WITH ERRORS — checked=${checked}, reconciled=${reconciled}, failed=${failures}. ` +
+                    `Coverage is INCOMPLETE for this pass; missed messages may remain undetected until a later pass succeeds.`
+                );
+            } else if (reconciled > 0) {
                 console.log(
                     `[SmsReconciliation] Completed — checked=${checked}, reconciled=${reconciled}`
                 );
@@ -294,9 +342,10 @@ export class SmsReconciliationService {
      * Catches gaps from: webhook downtime, network issues during autocreate,
      * Twilio queueing delays, and missed onMessageAdded retries.
      */
-    public async reconcileConversations(dateSentAfter: Date): Promise<{ checked: number; reconciled: number }> {
+    public async reconcileConversations(dateSentAfter: Date): Promise<{ checked: number; reconciled: number; failures: number }> {
         let checked = 0;
         let reconciled = 0;
+        let failures = 0;
 
         let conversations: Array<{ sid: string; dateUpdated: Date | null }> = [];
         try {
@@ -309,8 +358,11 @@ export class SmsReconciliationService {
                 .map(c => ({ sid: c.sid, dateUpdated: c.dateUpdated }))
                 .filter(c => !c.dateUpdated || c.dateUpdated >= dateSentAfter);
         } catch (err) {
+            // Could not enumerate Conversations at all — this pass covered
+            // nothing on the group side. Report it as a failure so the caller
+            // cannot print an all-clear over it.
             console.error('[SmsReconciliation] Failed to list Conversations:', err);
-            return { checked: 0, reconciled: 0 };
+            return { checked: 0, reconciled: 0, failures: 1 };
         }
 
         for (const conv of conversations) {
@@ -335,6 +387,7 @@ export class SmsReconciliationService {
                     const wasProcessed = await this.twilioSmsService
                         .processInboundGroupMessage(conv.sid, msg.sid, author, body, mediaUrls, msg.dateCreated ?? undefined, { skipNotify: true })
                         .catch(err => {
+                            failures++;
                             console.error(`[SmsReconciliation] Failed to replay ${msg.sid} in ${conv.sid}:`, err);
                             return false;
                         });
@@ -344,13 +397,62 @@ export class SmsReconciliationService {
                     }
                 }
             } catch (err: any) {
-                // 20404 = conversation was deleted since we listed it; skip
+                // 20404 = conversation was deleted since we listed it; skip.
+                // That is a real terminal answer, not a failure to look.
                 if (err.status === 404 || err.code === 20404) continue;
+                failures++;
                 console.error(`[SmsReconciliation] Failed to fetch messages for ${conv.sid}:`, err);
             }
         }
 
-        return { checked, reconciled };
+        return { checked, reconciled, failures };
+    }
+
+    /**
+     * Does a Conversations-side copy of this Programmable Messaging record
+     * already exist in our DB?
+     *
+     * With autocreate, one human message surfaces twice with DIFFERENT sids:
+     * live via /conversations/webhook (IM… sid, stored with a CH… conversationId)
+     * and again in the Messages API (SM…/MM… sid). They can only be matched on
+     * content, so mirror the dedup TwilioSmsService.handleIncomingSms already
+     * applies — same sender, same body, inbound, group-tagged, near the same
+     * time — and use it as a pre-check so we skip before doing any work.
+     *
+     * Conservative by design: a false "yes" would suppress a genuine replay, so
+     * this requires an exact body match and a tight time window. Media-only
+     * messages have no body to match on and are left to the pipeline's own
+     * dedup.
+     */
+    private async hasConversationCopy(msg: {
+        sid: string;
+        from: string;
+        body?: string | null;
+        dateSent?: Date | null;
+        dateCreated?: Date | null;
+    }): Promise<boolean> {
+        if (!msg.body) return false;
+
+        const sentAt = msg.dateSent ?? msg.dateCreated ?? new Date();
+        const copy = await SmsModel.findOne({
+            fromNumber: msg.from,
+            body: msg.body,
+            direction: SmsDirection.INBOUND,
+            conversationId: { $regex: /^CH/ },
+            createdAt: {
+                $gte: new Date(sentAt.getTime() - 10 * 60 * 1000),
+                $lte: new Date(sentAt.getTime() + 10 * 60 * 1000),
+            },
+        }).lean();
+
+        if (copy) {
+            console.log(
+                `[SmsReconciliation] ${msg.sid} from ${msg.from} already stored as Conversations message ` +
+                `${(copy as any).messageSid} — not missed, skipping`
+            );
+            return true;
+        }
+        return false;
     }
 
     /**

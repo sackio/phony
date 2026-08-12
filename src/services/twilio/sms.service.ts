@@ -10,6 +10,31 @@ import { MongoDBService } from '../database/mongodb.service.js';
 import { WebhookDispatcher } from '../webhook-dispatcher.service.js';
 
 /**
+ * What `handleIncomingSms` actually did with a message.
+ *
+ * ⛔ Do NOT collapse these back into `void`. A caller that cannot tell "I
+ * persisted this" from "I deliberately declined it" has to guess, and the
+ * reassuring guess is the wrong one: the SMS reconciler counted every
+ * deliberate skip as a successful reconcile, so a message it could never
+ * store was re-reported as "missed" and "reconciled" every 5 minutes for
+ * hours (77 passes on one message, 2026-08-12). An early `return` is not a
+ * failure, but it is not a save either — say which.
+ */
+export type InboundSmsOutcome =
+    /** A new row was persisted. */
+    | 'saved'
+    /** Sender is a current participant in a group on this number; the
+     *  Conversations webhook owns the real message (already stored with a
+     *  CH… conversationId). Correct to skip — nothing was missed. */
+    | 'skipped-group-owned'
+    /** The Conversations-side copy of this same message is already stored
+     *  under a different SID namespace (IM… vs SM…/MM…). Correct to skip. */
+    | 'skipped-duplicate'
+    /** Threw somewhere inside. Logged, not rethrown (Twilio must not retry),
+     *  but the caller MUST NOT read this as success. */
+    | 'error';
+
+/**
  * SMS Proxy system:
  * 1. Outbound: When the system sends an SMS, proxy targets get notified
  * 2. Inbound: External senders trigger notification to proxy targets with [last4] code
@@ -396,7 +421,7 @@ export class TwilioSmsService {
         MediaUrl4?: string;
         /** When the message was actually sent (reconciler replays). Defaults to now. */
         SentAt?: Date;
-    }): Promise<void> {
+    }): Promise<InboundSmsOutcome> {
         try {
             const numMedia = data.NumMedia ? parseInt(data.NumMedia) : 0;
             const mediaUrls: string[] = [];
@@ -427,7 +452,7 @@ export class TwilioSmsService {
             }).lean();
             if (inGroup && !parsedReply) {
                 console.log(`[TwilioSMS] ${data.MessageSid} from ${data.From} is a group participant in ${inGroup.conversationSid} and doesn't parse as a reply command — Conversations webhook owns this, skipping 1-on-1 path`);
-                return;
+                return 'skipped-group-owned';
             }
 
             // Dedup against the Conversations-side copy: with autocreate, the
@@ -451,7 +476,7 @@ export class TwilioSmsService {
                 }).lean();
                 if (conversationCopy) {
                     console.log(`[TwilioSMS] ${data.MessageSid} from ${data.From} duplicates Conversations message ${(conversationCopy as any).messageSid} — skipping 1-on-1 path`);
-                    return;
+                    return 'skipped-duplicate';
                 }
             }
 
@@ -492,15 +517,24 @@ export class TwilioSmsService {
                 },
             }).catch((e) => console.error('[TwilioSMS] webhook dispatch error:', e));
 
-            if (!SMS_PROXY_ENABLED) return;
+            if (!SMS_PROXY_ENABLED) return 'saved';
 
             if (isFromProxyTarget) {
                 await this.handleProxyReply(data.From, data.To, data.Body || '', { messageSid: data.MessageSid, mediaUrls });
             } else {
                 await this.handleExternalIncoming(data.From, data.To, data.Body || '', mediaUrls);
             }
+
+            // The row is already persisted above; proxy fan-out is best-effort
+            // on top of it, so this is 'saved' regardless of notification luck.
+            return 'saved';
         } catch (error) {
+            // Deliberately not rethrown: this runs under the Twilio webhook and
+            // a throw would make Twilio retry the delivery. But the caller still
+            // needs to know it failed — returning 'saved' (or void) here is how
+            // a swallowed error becomes a phantom success upstream.
             console.error(`[TwilioSMS] Error handling incoming SMS:`, error);
+            return 'error';
         }
     }
 
