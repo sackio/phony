@@ -341,6 +341,45 @@ docker compose up -d voice-server --remove-orphans
 
 **Requirements**: Node.js >= 22
 
+### Deploy & verify on server4 — traps that have actually bitten
+
+The deploy sequence above is the whole story, but *verifying* it is where things
+go wrong. Each of these was measured, not guessed:
+
+- **The running container is `phony-server`.** `phony-voice-server-1` does not
+  exist and returns "No such container".
+- **`docker compose build` / `up` frequently print NOTHING even on success.**
+  Never conclude a deploy landed from the exit code alone — check the container's
+  `CreatedAt` and a fresh log line.
+- **Verify with an UNFILTERED `docker ps`, or `docker inspect phony-server`.**
+  `docker ps --filter name=phony-server` has returned EMPTY for a container that
+  was up and healthy, which reads exactly like "the service is down".
+- **Liveness is `curl 127.0.0.1:3004` → HTTP 200.** There is no `/health` route;
+  unknown paths hit the SPA fallback. Allow ~15s after start.
+- **`tsup` does NOT typecheck.** Run `npx tsc --noEmit` separately; it takes
+  >2 min, so background it. As of 2026-08 there are 31 pre-existing errors, 14 of
+  them in `voice.server.ts` L560-1234 — a non-zero exit is expected, so compare
+  against that baseline rather than treating any error as new.
+- **One-off `tsx` scripts run from outside the repo** cannot resolve modules —
+  set `NODE_PATH=/mnt/nas/data/code/phony/node_modules`. Build `MONGODB_URI` from
+  `.env` against `127.0.0.1:27018`, database `phony`. There is no `mongosh` on the
+  host.
+
+### Comparing Twilio against the database
+
+**Match on sender + recipient + body, never on SID.** Group-sourced rows carry
+Conversations SIDs (`IM…`) while the Messages API returns `SM…`/`MM…` for the
+same physical message, so a SID diff reports drops that did not happen.
+
+Two more artifacts that look like defects and are not:
+
+- Proxy fan-out sends the **same body to Ben and Laura as two separate
+  messages**, so a map keyed on `from|body` will flag one as a mismatch.
+- **Twilio records an inbound message on receipt**, independent of whether the
+  webhook fires or succeeds. That makes the Messages API the authority on
+  "did anything actually arrive": zero inbound there means nothing reached the
+  account at all, not merely that our webhook failed.
+
 ## Claude Desktop Integration
 
 Add to `claude_desktop_config.json`:
