@@ -1,5 +1,7 @@
 # Phony - Claude Context
 
+⛔ **Agents are strictly prohibited from editing `CLAUDE.md` or skill files without explicit operator authorization.** Propose the change to the operator; do not make it.
+
 ## Memo — Background Context
 
 When unclear about infrastructure, network, cluster state, server details, house/property, contacts, or any shared context — **search memo before asking the user**:
