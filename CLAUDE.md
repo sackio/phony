@@ -359,9 +359,10 @@ go wrong. Each of these was measured, not guessed:
 - **Liveness is `curl 127.0.0.1:3004` → HTTP 200.** There is no `/health` route;
   unknown paths hit the SPA fallback. Allow ~15s after start.
 - **`tsup` does NOT typecheck.** Run `npx tsc --noEmit` separately; it takes
-  >2 min, so background it. As of 2026-08 there are 31 pre-existing errors, 14 of
-  them in `voice.server.ts` L560-1234 — a non-zero exit is expected, so compare
-  against that baseline rather than treating any error as new.
+  >2 min, so background it. A non-zero exit is EXPECTED — there is a standing
+  baseline of pre-existing errors, concentrated in `voice.server.ts`. Measure the
+  current count before deciding an error is yours, rather than trusting a number
+  recorded here: `npx tsc --noEmit 2>&1 | grep -c "error TS"`.
 - **One-off `tsx` scripts run from outside the repo** cannot resolve modules —
   set `NODE_PATH=/mnt/nas/data/code/phony/node_modules`. Build `MONGODB_URI` from
   `.env` against `127.0.0.1:27018`, database `phony`. There is no `mongosh` on the
@@ -627,22 +628,6 @@ location /call/ {
 - ❌ Transcription retrieval incomplete (TODO in `mcp.server.ts`)
 - ❌ Basic call recording (via Twilio API only)
 
-**Recently Implemented**:
-- ✅ **True group MMS via Twilio Conversations API (April 2026)** — native group threading, slug-based reply routing, proxy-aware fan-out, reconciliation + backfill. See `docs/group-mms-architecture.md` and memo `Twilio Group MMS — Working Configuration (April 2026)`.
-- ✅ SMS reconciliation service (5-min poll, 24-hour lookback)
-- ✅ Contact slugs for proxy reply routing (`{murilo}: msg`)
-- ✅ SMS messaging (send, receive, history, conversation tracking)
-- ✅ MongoDB persistence for SMS messages
-- ✅ Frontend UI for SMS management
-
-**Planned Improvements** (from README):
-- Support for multiple AI models
-- Improved latency and response times
-- Enhanced error handling
-- More conversation templates
-- Call monitoring and analytics
-- Advanced SMS features (scheduled messages, templates, bulk sending)
-
 ## Cost Considerations
 
 - **Twilio**:
@@ -681,14 +666,16 @@ location /call/ {
 Originally created by [Popcorn](https://careers.popcorn.space) team.
 Licensed under MIT License.
 
-## Recent Changes
+## History and repo state — derive it, do not read it here
 
-- **`feature/true-group-mms` (April 2026)**: True group MMS via Twilio Conversations API. Rewired MCP group tools (`phony_create_group_conversation`, `phony_send_group_sms`, `phony_add_participant`, etc.) to use TwilioConversationsService. Added reconciliation for Conversations, backfill script, DB dedup for group participants. See `docs/group-mms-architecture.md`.
-- Earlier WIP on `feature/twilio-conversations-api` (April 13, 2026) was rolled back due to wrong participant pattern — the new branch fixed it and works.
-- Contact slug proxy system (March 2026): `{murilo}: msg` replies from proxy targets route to external contacts.
+A changelog in this file rots silently and a recorded branch or remote is wrong
+the moment either moves. Both used to live here and both were wrong.
 
----
+```bash
+git log --oneline -20          # what changed recently
+git remote -v                  # which repo this actually is
+git branch --show-current      # which branch you are on
+```
 
-**Git Info**:
-- Branch: `feature/true-group-mms` (target: main)
-- Remote: `https://github.com/lukaskai/phony.git`
+Group MMS design is documented in `docs/group-mms-architecture.md`. Anything
+older lives in git history and in memo (`memo_search(tags=["phony"])`).
