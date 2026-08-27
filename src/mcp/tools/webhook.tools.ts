@@ -133,6 +133,22 @@ export const EVENT_CATALOG: Array<{
         },
     },
     {
+        event: 'call.expiring_soon',
+        description: 'A live call is about to be hung up automatically because it is reaching its time limit. Fires ~90s ahead so the controlling agent can decide. Before this existed the cap fired as a bare Twilio endCall — mid-sentence, with nothing told to anyone. Call phony_extend_call to keep the line, or do nothing and let it end. ⚠️ The extension is NOT granted on request: the call must have proven it is still alive (someone spoke within the last 60s) and Twilio must confirm it is in-progress. A refusal usually means the call is already dead.',
+        fields: {
+            call_sid: 'Twilio Call SID',
+            seq: 'monotonic per-call counter',
+            elapsed_seconds: 'seconds since the call started',
+            remaining_seconds: 'seconds until the automatic hangup',
+            granted_duration_sec: 'the call\'s current total allowance',
+            extensions_used: 'how many extensions this call has already had',
+            extensions_remaining: 'how many more it may have',
+            from: 'E.164 or null',
+            to: 'E.164 or null',
+            note: 'what to do about it',
+        },
+    },
+    {
         event: 'call.awaiting_input',
         description: 'The AI on a live call needs something it does not have and is WAITING. The far end is listening to silence while this is unanswered, so it is unthrottled and should be treated as urgent. Answer with phony_inject_context.',
         fields: {

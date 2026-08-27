@@ -47,6 +47,40 @@ export const MAX_OUTGOING_CALL_DURATION = parseInt(process.env.MAX_OUTGOING_CALL
 // Maximum duration for incoming calls in seconds (auto-hangup after this)
 export const MAX_INCOMING_CALL_DURATION = parseInt(process.env.MAX_INCOMING_CALL_DURATION || '1800'); // 30 minutes default
 
+// ─── Live call extension ────────────────────────────────────────────────────
+// A controlling agent can push the auto-hangup back while a call is genuinely
+// still going. ⛔ THE HAZARD IS THE PHANTOM CALL — a leg that is technically up
+// while nothing is happening on it: the far end gone, dead air, or the warm
+// transfer failure electric measured on 2026-08-27 where our side rendered
+// audio perfectly and the human heard silence. An extension granted on request
+// alone would let one of those bill forever.
+//
+// So an extension is never granted because it was asked for. The call has to
+// have PROVEN it is alive, and these four bounds are the proof.
+
+// Longest single bump. Small on purpose: a call that needs more comes back and
+// re-proves it is alive, rather than buying an hour on one moment's evidence.
+export const CALL_EXTENSION_MAX_MINUTES = parseInt(process.env.CALL_EXTENSION_MAX_MINUTES || '5');
+
+// Ceiling nothing can cross, however many extensions are granted. The last
+// backstop between a wedged call and an unbounded Twilio bill.
+export const ABSOLUTE_MAX_CALL_DURATION = parseInt(process.env.ABSOLUTE_MAX_CALL_DURATION || '3600'); // 1 hour
+
+// How many times one call may be extended at all.
+export const MAX_CALL_EXTENSIONS = parseInt(process.env.MAX_CALL_EXTENSIONS || '8');
+
+// ⭐ THE GATE THAT ACTUALLY CATCHES A PHANTOM. Someone must have spoken within
+// this window. A phantom call is silent by definition, so this is the only
+// check that distinguishes "still working the problem" from "nobody is there" —
+// Twilio's own status does not, because on the warm-transfer failure Twilio
+// still considered that call perfectly healthy.
+export const CALL_LIVENESS_WINDOW_MS = parseInt(process.env.CALL_LIVENESS_WINDOW_MS || '60000'); // 60s
+
+// How long before the auto-hangup to warn the controlling agent. Until this
+// existed the cap fired as a bare Twilio endCall — mid-sentence, with nothing
+// told to anyone. Extension without a warning just moves where that happens.
+export const CALL_EXPIRY_WARNING_MS = parseInt(process.env.CALL_EXPIRY_WARNING_MS || '90000'); // 90s
+
 // Test receiver endpoint (optional for internal testing)
 export const ENABLE_TEST_RECEIVER = process.env.ENABLE_TEST_RECEIVER === 'true';
 

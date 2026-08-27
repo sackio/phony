@@ -12,11 +12,49 @@ export class TwilioCallService {
     private static DEDUP_WINDOW_MS = 15000; // 15 seconds
 
     /**
+     * The most recently constructed instance, for callers that cannot be handed
+     * one directly.
+     *
+     * ⛔ THIS EXISTS BECAUSE ITS ABSENCE WAS A LIVE BUG. `CallStateService`'s
+     * auto-hangup called `TwilioCallService.getInstance()` — a method that did
+     * not exist on this class. The call sits outside that function's try/catch,
+     * so when a call hit its duration cap the timer threw
+     * "getInstance is not a function" as an unhandled rejection and the call was
+     * NEVER TERMINATED. The safety ceiling silently did nothing, which is the
+     * worst version of this codebase's recurring defect: the reassuring outcome
+     * is the broken one, and nothing in the logs says so.
+     *
+     * Every construction here uses the same account credentials, so sharing the
+     * latest is safe. Registering in the constructor rather than lazily building
+     * from env keeps credential handling in one place — the composition root.
+     */
+    private static sharedInstance: TwilioCallService | undefined;
+
+    /**
+     * @throws if no instance has been constructed yet. ⛔ Deliberately throws
+     * rather than returning undefined: a null here would be checked with `?.`
+     * by some future caller and silently skip the hangup, restoring the exact
+     * bug this replaced.
+     */
+    public static getInstance(): TwilioCallService {
+        if (!TwilioCallService.sharedInstance) {
+            throw new Error('TwilioCallService.getInstance() called before any instance was constructed');
+        }
+        return TwilioCallService.sharedInstance;
+    }
+
+    /** For tests, so one case cannot leak a client into the next. */
+    public static resetInstance(): void {
+        TwilioCallService.sharedInstance = undefined;
+    }
+
+    /**
      * Create a new Twilio call service
      * @param twilioClient The Twilio client
      */
     constructor(twilioClient: twilio.Twilio) {
         this.twilioClient = twilioClient;
+        TwilioCallService.sharedInstance = this;
     }
 
     /**
@@ -59,6 +97,34 @@ export class TwilioCallService {
                 .update({ status: 'completed' });
         } catch (error) {
             console.error(`Failed to end call ${callSid}:`, error);
+        }
+    }
+
+    /**
+     * Ask Twilio what it thinks a call's status is, right now.
+     *
+     * ⛔ FAILS CLOSED. On any error this returns null rather than a reassuring
+     * default, and every caller must treat null as "cannot confirm" — never as
+     * "probably fine". This is used to gate call extensions, so a laundered
+     * success here would hand an unbounded extension to exactly the wedged call
+     * the check exists to stop.
+     *
+     * ⚠️ Twilio being happy is NOT proof a conversation is happening. On the
+     * 2026-08-27 warm-transfer failure Twilio reported the call in-progress
+     * throughout while the human on the other end heard nothing at all. Pair
+     * this with a transcript-liveness check; it is the weaker of the two.
+     */
+    public async getCallStatus(callSid: string): Promise<string | null> {
+        if (!callSid) {
+            return null;
+        }
+
+        try {
+            const call = await this.twilioClient.calls(callSid).fetch();
+            return call.status ?? null;
+        } catch (error: any) {
+            console.error(`[TwilioCall] Could not fetch status for ${callSid}:`, error?.message ?? error);
+            return null;
         }
     }
 

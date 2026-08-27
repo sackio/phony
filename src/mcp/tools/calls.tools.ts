@@ -204,6 +204,24 @@ export const callToolsDefinitions: MCPToolDefinition[] = [
         }
     },
     {
+        name: 'phony_extend_call',
+        description: 'Push back the automatic hangup on a live call. Use when a call is genuinely still going and about to hit its time limit — you normally get a call.expiring_soon event ~90s beforehand. The extension is NOT granted just because you asked: the call must prove it is still alive (someone must have spoken in the last 60s) and Twilio must confirm it is in-progress, with a hard ceiling and a cap on how many times one call can be extended. A refusal always says which check failed; treat it as a signal the call may be dead rather than something to retry.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                callSid: {
+                    type: 'string',
+                    description: 'Twilio call SID'
+                },
+                minutes: {
+                    type: 'number',
+                    description: 'Minutes to add, 1 to 5. Prefer small bumps — a call that needs more can extend again once it has re-proven it is alive.'
+                }
+            },
+            required: ['callSid', 'minutes']
+        }
+    },
+    {
         name: 'phony_inject_context',
         description: 'Inject additional instructions/context into an active call',
         inputSchema: {
@@ -667,6 +685,39 @@ export function createCallToolHandlers(
                 });
             } catch (error: any) {
                 return createToolError('Failed to hangup call', { message: error.message });
+            }
+        },
+
+        phony_extend_call: async (args) => {
+            try {
+                validateArgs(args, ['callSid', 'minutes']);
+
+                const result = await CallStateService.getInstance()
+                    .extendCall(args.callSid, Number(args.minutes));
+
+                if (!result.granted) {
+                    // ⛔ A refusal is a real answer, not an error to retry around.
+                    // It carries the specific gate that failed, because the most
+                    // useful case — "nobody has spoken for N seconds" — means the
+                    // call is probably already dead and the right move is to hang
+                    // up and report, not to ask again.
+                    return createToolError('Extension refused', {
+                        reason: result.reason,
+                        extensionsUsed: result.extensionsUsed,
+                        guidance: 'Do not retry immediately. If the refusal was for silence, the call is likely dead or the far end has gone — verify with phony_get_call_transcript and hang up rather than waiting for the auto-hangup.',
+                    });
+                }
+
+                return createToolResponse({
+                    success: true,
+                    message: `Call ${args.callSid} extended by ${args.minutes} min`,
+                    newDurationSec: result.newDurationSec,
+                    remainingSec: result.remainingSec,
+                    extensionsUsed: result.extensionsUsed,
+                    extensionsRemaining: result.extensionsRemaining,
+                });
+            } catch (error: any) {
+                return createToolError('Failed to extend call', { message: error.message });
             }
         },
 
