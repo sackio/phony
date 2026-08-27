@@ -65,6 +65,19 @@ export class CallStateService {
         this.clearDurationTimer(callSid);
         this.activeCalls.delete(callSid);
         console.log(`[CallState] Removed call: ${callSid}`);
+
+        // Belt and braces on top of the /call/status webhook. Twilio's callback
+        // is authoritative (it carries the real duration) but it is a NETWORK
+        // round-trip that can be delayed, misconfigured or lost — and when it
+        // failed to arrive on 2026-08-27 the push stream's heartbeat went on
+        // insisting a hung-up call was live. This local signal cannot be lost:
+        // the process that removes the call also terminates the stream. `end()`
+        // is idempotent, so whichever arrives second is a no-op.
+        import('./call-event-push.service.js')
+            .then(({ CallEventPushService }) =>
+                CallEventPushService.getInstance().end(callSid, { ended_via: 'local-teardown' })
+            )
+            .catch(err => console.error(`[CallState] push end failed for ${callSid}:`, err));
     }
 
     public getAllCalls(): ActiveCall[] {

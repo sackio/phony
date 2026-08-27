@@ -175,6 +175,17 @@ export class TwilioCallService {
                 to: toNumber,
                 from: callerNumber,
                 url: url,
+                // ⛔ WITHOUT THIS, /call/status NEVER FIRES FOR AN OUTBOUND CALL.
+                // The route existed and was only ever reached by inbound calls,
+                // so nothing marked an outbound call finished: the live-call push
+                // stream never sent call.ended, and its 30s heartbeat kept
+                // reporting "the call is still up" long after the far end had
+                // hung up. Measured 2026-08-27 on a real test call — seq 4 landed
+                // 30 seconds after hangup still claiming the call was live, which
+                // is strictly worse than having no heartbeat at all.
+                statusCallback: `${twilioCallbackUrl}/call/status`,
+                statusCallbackMethod: 'POST',
+                statusCallbackEvent: ['completed'],
             };
             // sendDigits: Twilio dials these DTMF digits at the carrier level
             // immediately after the called party answers, before any TwiML / media
