@@ -96,6 +96,20 @@ export class CallEventPushService {
     /**
      * Arm the next digest. Only ever brings the flush FORWARD — a pending
      * content flush must not be pushed back by a later heartbeat scheduling.
+     *
+     * ⛔ THE GUARD BELOW IS ONLY SOUND IF A FIRED TIMER CLEARS ITSELF. `timer`
+     * stays truthy after setTimeout fires (Node does not null the handle), and
+     * `nextFlushAt` is then a timestamp in the PAST, so `nextFlushAt <= dueAt`
+     * is true for every subsequent call — the guard reads "a flush is already
+     * due sooner than that" about a flush that already happened, returns, and
+     * arms nothing. The stream then goes permanently silent after seq 1.
+     *
+     * That is not hypothetical. On the A. Duie Pyle call (CA3923f8…, 2026-08-27)
+     * seq 1 went out at 9s and the next event was the call-ended flush at 97s:
+     * sixteen transcript lines, the whole substantive conversation, delivered
+     * only after the call was over. The controlling agent could not have
+     * intervened, and the failure was indistinguishable from a quiet line —
+     * which is the exact ambiguity this service exists to remove.
      */
     private schedule(callSid: string, delayMs: number): void {
         const state = this.calls.get(callSid);
@@ -107,10 +121,20 @@ export class CallEventPushService {
         if (state.timer) clearTimeout(state.timer);
         state.nextFlushAt = dueAt;
         state.timer = setTimeout(() => {
+            // Release the slot BEFORE flushing, so this timer can never be
+            // mistaken for one that is still pending. Anything scheduled during
+            // the await below then arms for real.
+            const fired = this.calls.get(callSid);
+            if (fired) {
+                fired.timer = undefined;
+                fired.nextFlushAt = 0;
+            }
             this.flush(callSid, 'interval')
                 .catch(err => console.error(`[CallPush] digest failed for ${callSid}:`, err))
                 // Re-arm only after the flush resolves, so a slow dispatch cannot
-                // stack digests on top of each other.
+                // stack digests on top of each other. If a line arrived mid-flush
+                // it has already armed a sooner content flush, and the guard above
+                // correctly keeps that one.
                 .finally(() => this.schedule(callSid, HEARTBEAT_MS));
         }, delayMs);
         // Do not hold the process open on account of a call timer.
@@ -164,6 +188,13 @@ export class CallEventPushService {
         const lines = state.pending;
         state.pending = [];
         const seq = ++state.seq;
+
+        // Log EVERY digest, including the empty heartbeats. Without this the only
+        // CallPush entries were "Tracking" and "Stopped tracking", so when the
+        // stream died after seq 1 on the Pyle call the 88-second hole left no
+        // trace in `docker logs` at all — the log looked exactly like a healthy
+        // short call. A cadence bug is only diagnosable if the cadence is visible.
+        console.log(`[CallPush] digest ${callSid} seq=${seq} reason=${reason} lines=${lines.length}`);
 
         // ⛔ No early return on an empty `lines`. See rule 1 at the top of this
         // file: the empty digest IS the signal.
