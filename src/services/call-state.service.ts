@@ -90,6 +90,24 @@ export class CallStateService {
                 requestedBy
             };
             console.log(`[CallState] Set pending context request for call ${callSid}: ${question}`);
+
+            // The agent on the call is now BLOCKED waiting for an answer. Until
+            // this was pushed, nothing told the controlling session — it had to
+            // happen to be polling at the right moment. Unthrottled on purpose:
+            // a held call burns real time and the far end is listening to silence.
+            // Imported lazily to keep this leaf service free of a cycle back
+            // through the dispatcher.
+            import('./call-event-push.service.js')
+                .then(({ CallEventPushService }) =>
+                    CallEventPushService.getInstance().emitNow(callSid, 'call.awaiting_input', {
+                        question,
+                        requested_by: requestedBy,
+                        to: call.toNumber,
+                        from: call.fromNumber,
+                        status: call.status,
+                    })
+                )
+                .catch(err => console.error(`[CallState] awaiting_input push failed for ${callSid}:`, err));
         }
     }
 

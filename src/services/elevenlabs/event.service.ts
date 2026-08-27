@@ -1,6 +1,7 @@
 import { CallState, ConversationMessage } from '../../types.js';
 import { SocketService } from '../socket.service.js';
 import { CallStateService } from '../call-state.service.js';
+import { CallEventPushService } from '../call-event-push.service.js';
 
 /**
  * Service for processing ElevenLabs events and managing conversation state.
@@ -108,6 +109,11 @@ export class ElevenLabsEventService {
                     content: text,
                     timestamp: new Date()
                 });
+                // Queue for the next digest to the controlling agent session.
+                // Finals only — partials would triple the volume and change
+                // under the reader.
+                CallEventPushService.getInstance()
+                    .recordLine(this.callState.callSid, 'user', text);
             }
         }
     }
@@ -150,6 +156,8 @@ export class ElevenLabsEventService {
                     content: text,
                     timestamp: new Date()
                 });
+                CallEventPushService.getInstance()
+                    .recordLine(this.callState.callSid, 'assistant', text);
             }
 
             // Reset speaking state

@@ -5,6 +5,7 @@ import { TwilioCallService } from '../../services/twilio/call.service.js';
 import { CallStateService } from '../../services/call-state.service.js';
 import { SessionManagerService } from '../../services/session-manager.service.js';
 import { NativeElevenLabsService } from '../../services/elevenlabs/native.service.js';
+import { CallEventPushService } from '../../services/call-event-push.service.js';
 
 /**
  * Singleton instance — Phase 2 native integration wrapper. Stateless; safe to share.
@@ -507,6 +508,16 @@ export function createCallToolHandlers(
                 });
 
                 callStateService.startDurationTimer(result.sid);
+
+                // Start pushing live progress to whichever session is driving
+                // this call, so it does not have to poll. Started unconditionally:
+                // the dispatcher no-ops when no webhook matches, and gating this
+                // on contextChannel would mean a mis-set channel silently yields
+                // no events at all — the failure being fixed, in a new place.
+                CallEventPushService.getInstance().start(result.sid, {
+                    toNumber,
+                    fromNumber,
+                });
 
                 return createToolResponse({
                     callSid: result.sid,

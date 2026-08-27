@@ -105,6 +105,35 @@ export const EVENT_CATALOG: Array<{
         },
     },
     {
+        event: 'call.transcript',
+        description: 'LIVE-CALL DIGEST. Fires every 30 seconds for the whole duration of a call, carrying whatever was said since the previous digest. ⛔ It fires EVEN WHEN NOTHING WAS SAID — a digest with line_count 0 is the heartbeat that tells you the call is still up and the push path is alive. Do not treat an empty digest as an error or as evidence the call is dead. The final digest carries reason "call-ended" and is guaranteed to include the last window, which is usually where the outcome is.',
+        fields: {
+            call_sid: 'Twilio Call SID',
+            seq: 'monotonic per-call counter — a gap means a delivery was lost, not that the call went quiet',
+            reason: '"interval" (routine 30s tick) | "call-ended" (final flush)',
+            elapsed_seconds: 'seconds since the call started',
+            from: 'E.164 or null',
+            to: 'E.164 or null',
+            line_count: 'number of transcript lines in this digest, may be 0',
+            lines: 'array of { role: "user"|"assistant", content, at }',
+            note: 'present only on an empty digest, explaining that it is a heartbeat',
+        },
+    },
+    {
+        event: 'call.awaiting_input',
+        description: 'The AI on a live call needs something it does not have and is WAITING. The far end is listening to silence while this is unanswered, so it is unthrottled and should be treated as urgent. Answer with phony_inject_context.',
+        fields: {
+            call_sid: 'Twilio Call SID',
+            seq: 'monotonic per-call counter',
+            elapsed_seconds: 'seconds since the call started',
+            question: 'what the agent needs to know',
+            requested_by: '"agent" | "system"',
+            from: 'E.164 or null',
+            to: 'E.164 or null',
+            status: 'current call status',
+        },
+    },
+    {
         event: 'call.failed',
         description: 'A call ended in a non-completed terminal state (busy/no-answer/canceled/failed).',
         fields: {

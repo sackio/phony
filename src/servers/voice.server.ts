@@ -14,6 +14,7 @@ import { TwilioSmsService } from '../services/twilio/sms.service.js';
 import { TwilioConversationsService } from '../services/twilio/conversations.service.js';
 import { ConversationService } from '../services/sms/conversation.service.js';
 import { SocketService } from '../services/socket.service.js';
+import { CallEventPushService } from '../services/call-event-push.service.js';
 import { CallStateService } from '../services/call-state.service.js';
 import { IncomingConfigService } from '../services/database/incoming-config.service.js';
 import { ContextService } from '../services/database/context.service.js';
@@ -1798,6 +1799,14 @@ export class VoiceServer {
         } catch (error) {
             console.error('[Voice Server] Error in /call/status:', error);
         }
+
+        // Final flush + terminal event for the live-call push stream. Must run
+        // even if markCallCompleted threw above: a controlling agent that never
+        // receives call.ended is left waiting on a call that is already over,
+        // which is worse than not having subscribed at all.
+        await CallEventPushService.getInstance()
+            .end(CallSid, { twilio_status: CallStatus, duration_seconds: duration ?? null, error: err ?? null })
+            .catch((e: unknown) => console.error('[Voice Server] call push end failed:', e));
 
         // Look up the persisted record for from/to + direction. Fall back to
         // unknowns; webhook receivers should tolerate nulls there.
