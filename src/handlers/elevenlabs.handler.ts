@@ -240,14 +240,30 @@ export class ElevenLabsCallHandler implements ICallHandler {
                             // was already on its way. Both are worse than waiting.
                             // So: say what it must NOT do, and say that silence is
                             // the correct behaviour rather than a problem to solve.
+                            // ⛔ THE BAR IS: never fabricate the ANSWER; stay a
+                            // normal conversational partner about everything else.
+                            // Two failed calls bracket this. Told to "keep the line
+                            // warm" it invented a weather report. Told to say
+                            // nothing it stonewalled — "I'm just checking on
+                            // something" three times to a man asking what it was
+                            // checking, then abandoned. Both are unusable. Silence
+                            // is not the goal and neither is filler; the goal is
+                            // that it can talk about ANYTHING except the pending
+                            // answer, including what it is doing and why.
                             result:
-                                'Sent. Now WAIT. Do not answer the question — you do not have the answer yet. ' +
-                                'Do not guess, estimate, or invent any part of it. Do not say you lack access to it. ' +
-                                'Do not ask the question again. Say nothing further about it at all until a note arrives. ' +
-                                'Silence on the line while you wait is normal and expected: do not ask if they are still ' +
-                                'there, do not suggest the call is over, do not hang up. If they speak, respond to what ' +
-                                'they say. If a note never arrives, say you will follow up after the call — never fill ' +
-                                'the gap with an answer of your own.',
+                                `Sent to the operator: "${question}". You do NOT have the answer yet.\n` +
+                                'FORBIDDEN until a note arrives: stating the answer, guessing at it, estimating it, ' +
+                                'or any part of it. Also do not say you "lack access" — you asked, and an answer is coming.\n' +
+                                'EXPECTED, and important: keep being a normal conversational partner. Say plainly what ' +
+                                'you are doing — name the thing, e.g. "let me pull up your calendar" or "checking the ' +
+                                'weather at the house now". If they ask what you are checking, TELL THEM; never answer ' +
+                                'that with a vague "just checking on something". Keep talking about anything else they ' +
+                                'raise, answer other questions normally, and share whatever related information you ' +
+                                'already have. A quiet gap is fine, but so is conversation — what is not fine is being ' +
+                                'evasive or repeating yourself.\n' +
+                                'If they go quiet, that is expected while you wait: do not ask if they are still there ' +
+                                'and do not suggest the call is over. If a note never arrives, say you will follow up ' +
+                                'after the call rather than inventing anything.',
                         };
                     } catch (error: any) {
                         console.error('[ElevenLabs Handler] ask_operator error:', error);
