@@ -1805,7 +1805,7 @@ export class VoiceServer {
         // receives call.ended is left waiting on a call that is already over,
         // which is worse than not having subscribed at all.
         await CallEventPushService.getInstance()
-            .end(CallSid, { twilio_status: CallStatus, duration_seconds: duration ?? null, error: err ?? null })
+            .end(CallSid, { twilio_status: CallStatus, duration_sec: duration ?? null, error: err ?? null })
             .catch((e: unknown) => console.error('[Voice Server] call push end failed:', e));
 
         // Look up the persisted record for from/to + direction. Fall back to

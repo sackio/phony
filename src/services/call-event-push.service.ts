@@ -39,12 +39,23 @@ interface LiveCallPushState {
     startedAt: number;
     pending: CallTranscriptLine[];
     timer?: NodeJS.Timeout;
+    nextFlushAt: number;
     toNumber?: string;
     fromNumber?: string;
 }
 
-/** How often a live call reports in. Also the heartbeat interval. */
-const DIGEST_INTERVAL_MS = 30_000;
+/**
+ * Cadence is adaptive, because the two things a digest does have opposite
+ * requirements. Carrying conversation wants to be fast — a call moves in
+ * seconds and a thirty-second window can bury an entire exchange. Proving the
+ * pipe is alive wants to be slow, because doing it often is pure noise.
+ *
+ * So: once a line is spoken the digest goes out within CONTENT_DEBOUNCE_MS,
+ * and when nobody is speaking the heartbeat falls back to HEARTBEAT_MS. A busy
+ * call produces at most ~12 messages a minute; a silent one produces 2.
+ */
+const CONTENT_DEBOUNCE_MS = 5_000;
+const HEARTBEAT_MS = 30_000;
 
 export class CallEventPushService {
     private static instance: CallEventPushService;
@@ -73,26 +84,45 @@ export class CallEventPushService {
             seq: 0,
             startedAt: Date.now(),
             pending: [],
+            nextFlushAt: 0,
             toNumber: meta?.toNumber,
             fromNumber: meta?.fromNumber,
         };
-        state.timer = setInterval(() => {
-            this.flush(callSid, 'interval').catch(err =>
-                console.error(`[CallPush] digest failed for ${callSid}:`, err)
-            );
-        }, DIGEST_INTERVAL_MS);
-        // Do not hold the process open on account of a call timer.
-        state.timer.unref?.();
-
         this.calls.set(callSid, state);
-        console.log(`[CallPush] Tracking ${callSid} — digest every ${DIGEST_INTERVAL_MS / 1000}s`);
+        this.schedule(callSid, HEARTBEAT_MS);
+        console.log(`[CallPush] Tracking ${callSid} — ${CONTENT_DEBOUNCE_MS / 1000}s after speech, ${HEARTBEAT_MS / 1000}s heartbeat`);
     }
 
-    /** Record a transcript line for the next digest. */
+    /**
+     * Arm the next digest. Only ever brings the flush FORWARD — a pending
+     * content flush must not be pushed back by a later heartbeat scheduling.
+     */
+    private schedule(callSid: string, delayMs: number): void {
+        const state = this.calls.get(callSid);
+        if (!state) return;
+
+        const dueAt = Date.now() + delayMs;
+        if (state.timer && state.nextFlushAt <= dueAt) return;
+
+        if (state.timer) clearTimeout(state.timer);
+        state.nextFlushAt = dueAt;
+        state.timer = setTimeout(() => {
+            this.flush(callSid, 'interval')
+                .catch(err => console.error(`[CallPush] digest failed for ${callSid}:`, err))
+                // Re-arm only after the flush resolves, so a slow dispatch cannot
+                // stack digests on top of each other.
+                .finally(() => this.schedule(callSid, HEARTBEAT_MS));
+        }, delayMs);
+        // Do not hold the process open on account of a call timer.
+        state.timer.unref?.();
+    }
+
+    /** Record a transcript line and bring the next digest forward. */
     public recordLine(callSid: string, role: string, content: string): void {
         const state = this.calls.get(callSid);
         if (!state || !content) return;
         state.pending.push({ role, content, at: new Date().toISOString() });
+        this.schedule(callSid, CONTENT_DEBOUNCE_MS);
     }
 
     /**
@@ -166,7 +196,7 @@ export class CallEventPushService {
                 args: { callSid },
                 description:
                     `Live call ${callSid}. To speak into it, phony_inject_context. To end it, phony_hangup_call. ` +
-                    `Digests arrive every ${DIGEST_INTERVAL_MS / 1000}s while the call is up, including when nothing was said.`,
+                    `Digests arrive ~${CONTENT_DEBOUNCE_MS / 1000}s after anything is said, and every ${HEARTBEAT_MS / 1000}s while the line is quiet — an empty one is the heartbeat, not an error.`,
             },
         }).catch(err => console.error(`[CallPush] digest dispatch failed for ${callSid}:`, err));
     }
@@ -179,7 +209,11 @@ export class CallEventPushService {
         const state = this.calls.get(callSid);
         if (!state) return;
 
-        if (state.timer) clearInterval(state.timer);
+        // clearTimeout, not clearInterval — the cadence became an adaptive
+        // self-rescheduling timeout. Leaving the old call here would have left
+        // the timer armed and the digest firing on a finished call.
+        if (state.timer) clearTimeout(state.timer);
+        state.timer = undefined;
 
         // Flush BEFORE removing the state, or the tail is lost — which is
         // usually the part that says how the call actually turned out.
@@ -189,16 +223,26 @@ export class CallEventPushService {
         const elapsed = Math.round((Date.now() - state.startedAt) / 1000);
         this.calls.delete(callSid);
 
-        await this.dispatcher.dispatch('call.ended', {
+        // ⛔ NOT `call.ended` — voice.server.ts already emits that from the Twilio
+        // status handler, and emitting a second one under the same name shipped a
+        // real duplicate on 2026-08-27: two events for one call, different shapes,
+        // with no way for a subscriber to tell which was authoritative. This marks
+        // the end of the PUSH STREAM, which is a different fact from the call
+        // ending — it also fires when the stream is torn down locally without a
+        // Twilio callback, and it is the only event carrying the seq range.
+        await this.dispatcher.dispatch('call.stream_complete', {
             call_sid: callSid,
             seq,
             elapsed_seconds: elapsed,
             to: state.toNumber ?? null,
             from: state.fromNumber ?? null,
             final_seq: seq,
-            note: `Stream complete for ${callSid}. No further events will arrive for this call; seq ran 1..${seq}. A gap in that range means a delivery was lost, not that the call was quiet.`,
+            // `duration_sec`, not `duration_seconds` — matching the name the rest
+            // of the call events already use. Mine rendered as "?s" until it did.
+            duration_sec: elapsed,
+            note: `Push stream complete for ${callSid}. No further events will arrive for this call; seq ran 1..${seq}. A gap in that range means a delivery was lost, not that the call was quiet.`,
             ...summary,
-        }).catch(err => console.error(`[CallPush] call.ended dispatch failed for ${callSid}:`, err));
+        }).catch(err => console.error(`[CallPush] call.stream_complete dispatch failed for ${callSid}:`, err));
 
         console.log(`[CallPush] Stopped tracking ${callSid} after ${elapsed}s, ${seq} events`);
     }

@@ -120,6 +120,19 @@ export const EVENT_CATALOG: Array<{
         },
     },
     {
+        event: 'call.stream_complete',
+        description: 'The live-call push stream for a call has finished. Distinct from `call.ended`, which reports the CALL ending: this reports the STREAM ending, fires even when the call was torn down without a Twilio status callback, and is the only event carrying the seq range. Once you have this, no further events will arrive for that call.',
+        fields: {
+            call_sid: 'Twilio Call SID',
+            seq: 'this event\'s sequence number, and the last one issued',
+            final_seq: 'same as seq — the highest number issued for this call; a gap in 1..final_seq means a delivery was lost, not that the call was quiet',
+            elapsed_seconds: 'seconds the stream was open',
+            duration_sec: 'call duration in seconds',
+            twilio_status: 'terminal Twilio status, when the stream ended via the status callback',
+            ended_via: '"local-teardown" when the stream ended without a Twilio callback',
+        },
+    },
+    {
         event: 'call.awaiting_input',
         description: 'The AI on a live call needs something it does not have and is WAITING. The far end is listening to silence while this is unanswered, so it is unthrottled and should be treated as urgent. Answer with phony_inject_context.',
         fields: {

@@ -10,6 +10,17 @@ import { TwilioEventService } from '../services/twilio/event.service.js';
 import { TwilioCallService } from '../services/twilio/call.service.js';
 import { CallTranscriptService } from '../services/database/call-transcript.service.js';
 import { ContextService } from '../services/context.service.js';
+
+/**
+ * The opening utterance from a block of call instructions: everything up to the
+ * first blank line. Returns undefined for empty input so the caller can omit
+ * `first_message` entirely rather than sending an empty string.
+ */
+function firstParagraph(text?: string | null): string | undefined {
+    if (!text) return undefined;
+    const opening = text.split(/\n\s*\n/)[0]?.trim();
+    return opening ? opening : undefined;
+}
 import { ICallHandler } from './call.handler.js';
 
 dotenv.config();
@@ -206,6 +217,47 @@ export class ElevenLabsCallHandler implements ICallHandler {
                         return { result: `Failed to send DTMF: ${error.message}`, isError: true };
                     }
                 }
+                if (toolName === 'ask_operator') {
+                    const question = String(parameters.question ?? '').trim();
+                    if (!question) return { result: 'No question provided', isError: true };
+                    const callSid = this.callState.callSid;
+                    if (!callSid) return { result: 'No active call to ask about', isError: true };
+                    try {
+                        // Setting this fires call.awaiting_input to the controlling
+                        // session immediately (see call-state.service.ts). The answer
+                        // comes back through phony_inject_context, which reaches the
+                        // agent as a contextual update on the live socket.
+                        const { CallStateService } = await import('../services/call-state.service.js');
+                        CallStateService.getInstance().setPendingContextRequest(callSid, question, 'agent');
+                        console.log(`[ElevenLabs Handler] ask_operator on ${callSid}: ${question}`);
+                        return {
+                            // ⛔ WORDING IS THE FIX HERE. The first version said
+                            // "keep the line warm", and the agent read that as
+                            // licence to fill the silence — it invented a weather
+                            // report ("sunny, 72 degrees"; it was 79 and not
+                            // raining) and, on another question, deflected twice
+                            // with "I don't have access to that" while the answer
+                            // was already on its way. Both are worse than waiting.
+                            // So: say what it must NOT do, and say that silence is
+                            // the correct behaviour rather than a problem to solve.
+                            result:
+                                'Sent. Now WAIT. Do not answer the question — you do not have the answer yet. ' +
+                                'Do not guess, estimate, or invent any part of it. Do not say you lack access to it. ' +
+                                'Do not ask the question again. Say nothing further about it at all until a note arrives. ' +
+                                'Silence on the line while you wait is normal and expected: do not ask if they are still ' +
+                                'there, do not suggest the call is over, do not hang up. If they speak, respond to what ' +
+                                'they say. If a note never arrives, say you will follow up after the call — never fill ' +
+                                'the gap with an answer of your own.',
+                        };
+                    } catch (error: any) {
+                        console.error('[ElevenLabs Handler] ask_operator error:', error);
+                        // ⛔ Report the failure to the agent rather than returning a
+                        // bland success. If it believes the question was sent when it
+                        // was not, it will wait for an answer that can never arrive
+                        // and the other party hears dead air.
+                        return { result: `Could not reach the operator: ${error.message}. Do not wait for an answer.`, isError: true };
+                    }
+                }
                 return { result: `Unknown tool: ${toolName}`, isError: true };
             },
             onReady: async (negotiatedAgentOutputFormat) => {
@@ -342,7 +394,15 @@ export class ElevenLabsCallHandler implements ICallHandler {
                 to_number: this.callState.toNumber
             },
             this.callState.elevenLabsVoiceId,
-            this.callState.callInstructions || undefined,
+            // ⛔ ONLY THE OPENING PARAGRAPH. `first_message` is spoken verbatim,
+            // and callInstructions typically continues with directions meant for
+            // the agent, not the person answering. Passing the whole block also
+            // recorded every word of it as an `assistant` transcript line, so the
+            // controlling agent saw instructions rendered as things the AI had
+            // said out loud — measured on the 2026-08-27 test call. The full text
+            // still reaches the agent: context.service.ts already appends it to
+            // the system prompt under "SPECIFIC INSTRUCTIONS FOR THIS CALL".
+            firstParagraph(this.callState.callInstructions),
         );
 
         if (!this.elevenLabsService.isConnected()) {
@@ -464,10 +524,29 @@ export class ElevenLabsCallHandler implements ICallHandler {
 
         console.log('[ElevenLabs Handler] Conversation summary:\n', conversationSummary);
 
-        // Use ElevenLabs contextual_update to inject context
+        // Use ElevenLabs contextual_update to inject context.
+        //
+        // ⛔ The framing matters as much as the content. Labelled only
+        // "OPERATOR INSTRUCTION", the agent read notes out to the person on the
+        // phone verbatim — announcing that "my request reached the operator
+        // within a second" and, later, "the operator looked it up for me".
+        // Whoever we called should never hear about operators, tools or round
+        // trips; they asked a question and want an answer. Measured on the
+        // 2026-08-27 test calls.
+        //
+        // It also re-delivered older notes on subsequent turns, apologising for
+        // the same mistake three times until Ben told it to stop — hence the
+        // instruction to use a note once and then let it go.
+        const PRIVATE_NOTE_RULES = [
+            'PRIVATE NOTE — the person on the call CANNOT see this and must never hear it read out.',
+            'Use the information naturally, in your own words, as part of the conversation.',
+            'Do NOT quote this note, do NOT mention an operator, a system, a tool, a lookup or a delay, and do NOT explain how you came by the information.',
+            'Use it ONCE. Do not repeat it on later turns, and do not re-apologise for something you have already addressed.',
+        ].join(' ');
+
         const fullContext = conversationSummary
-            ? `OPERATOR INSTRUCTION:\n${context}\n\nCONVERSATION SUMMARY:\n${conversationSummary}`
-            : `OPERATOR INSTRUCTION:\n${context}`;
+            ? `${PRIVATE_NOTE_RULES}\n\n${context}\n\nCONVERSATION SUMMARY:\n${conversationSummary}`
+            : `${PRIVATE_NOTE_RULES}\n\n${context}`;
 
         this.elevenLabsService.injectContext(fullContext);
     }

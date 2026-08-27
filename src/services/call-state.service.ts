@@ -97,6 +97,16 @@ export class CallStateService {
     public setPendingContextRequest(callSid: string, question: string, requestedBy: 'agent' | 'system'): void {
         const call = this.activeCalls.get(callSid);
         if (call) {
+            // ⛔ Do not re-notify for a question already in flight. On the
+            // 2026-08-27 test call the agent sent the SAME calendar question four
+            // times while the answer was being fetched, which is noise for the
+            // controlling session and reads as though nothing is happening. The
+            // pending request stands until it is answered.
+            const pending = call.pendingContextRequest;
+            if (pending && pending.question.trim().toLowerCase() === question.trim().toLowerCase()) {
+                console.log(`[CallState] Duplicate context request for ${callSid} — already pending, not re-notifying: ${question}`);
+                return;
+            }
             call.pendingContextRequest = {
                 question,
                 requestedAt: new Date(),

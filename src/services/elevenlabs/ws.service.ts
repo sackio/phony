@@ -318,6 +318,39 @@ export class ElevenLabsWsService {
                         required: ['digit'],
                     },
                 },
+                {
+                    // Turns "I don't know that" into "one moment, let me check".
+                    // The agent on the phone has no access to anything outside
+                    // this call, so before this tool existed it simply improvised
+                    // — asked for the local weather on a test call it answered
+                    // "I don't have access to live weather information" rather
+                    // than asking anyone. Calling this notifies the controlling
+                    // agent (a call.awaiting_input event fires immediately) and
+                    // the answer comes back as injected context mid-call.
+                    name: 'ask_operator',
+                    // ⚠️ Declaring a tool here does NOT register it. ElevenLabs
+                    // takes the callable tool list from the AGENT's own config —
+                    // measured 2026-08-27, when an agent told to call this said
+                    // "one moment, let me check that" and then had nothing to
+                    // call, leaving the other party waiting on an answer that was
+                    // never coming. `ask_operator` now lives on the agent
+                    // (agent_3601kgqs…) alongside send_dtmf; this declaration is
+                    // kept to mirror how play_keypad_touch_tone is handled and to
+                    // keep the definition visible in the repo. Keep the two
+                    // descriptions in step.
+                    description:
+                        'Ask the person or agent who placed this call for information you do not have. Use whenever you are asked something you cannot answer from the instructions you were given — a detail about the caller, a decision you are not authorised to make, an address, a date, a preference. Say a natural holding phrase out loud first ("one moment, let me check that") and then call this. The answer arrives shortly and you continue the conversation with it. IMPORTANT: while you wait the line will be quiet. That is expected. Do NOT ask if the person is still there, do NOT suggest the conversation has ended, and do NOT hang up. Prefer this over guessing, and strongly prefer it over telling the other party you have no access to something.',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            question: {
+                                type: 'string',
+                                description: 'What you need to know, phrased as a plain question, including any context that makes it answerable.',
+                            },
+                        },
+                        required: ['question'],
+                    },
+                },
             ],
         };
 
