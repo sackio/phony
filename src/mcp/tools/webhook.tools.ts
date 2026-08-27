@@ -133,6 +133,19 @@ export const EVENT_CATALOG: Array<{
         },
     },
     {
+        event: 'call.answered_by',
+        description: 'Answering-machine detection has decided who picked up an outbound call. Fires once, separately from call status. ⛔ Nothing is done automatically — AMD misfires on a slow human greeting, so auto-hanging-up would drop real people. If `is_machine` is true the agent is talking to a recording and being billed: either phony_hangup_call, or let it leave a message. ⚠️ `unknown` means detection RAN and could not decide, which is not the same as detection not running.',
+        fields: {
+            call_sid: 'Twilio Call SID',
+            answered_by: '"human" | "machine_start" | "machine_end_beep" | "machine_end_silence" | "machine_end_other" | "fax" | "unknown"',
+            is_machine: 'true when answered_by starts with "machine"',
+            detection_ms: 'how long detection took, or null',
+            seq: 'monotonic per-call counter',
+            elapsed_seconds: 'seconds since the call started',
+            note: 'what to do about it',
+        },
+    },
+    {
         event: 'call.expiring_soon',
         description: 'A live call is about to be hung up automatically because it is reaching its time limit. Fires ~90s ahead so the controlling agent can decide. Before this existed the cap fired as a bare Twilio endCall — mid-sentence, with nothing told to anyone. Call phony_extend_call to keep the line, or do nothing and let it end. ⚠️ The extension is NOT granted on request: the call must have proven it is still alive (someone spoke within the last 60s) and Twilio must confirm it is in-progress. A refusal usually means the call is already dead.',
         fields: {

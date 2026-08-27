@@ -197,6 +197,7 @@ export class VoiceServer {
         this.app.post('/voicemail/recording', this.handleVoicemailRecording.bind(this));
         this.app.post('/voicemail/transcription', this.handleVoicemailTranscription.bind(this));
         this.app.post('/call/status', this.handleCallStatus.bind(this));
+        this.app.post('/call/amd-status', this.handleAmdStatus.bind(this));
 
         // Twilio Conversations webhook (for saving group MMS messages to MongoDB)
         this.app.post('/conversations/webhook', this.handleConversationsWebhook.bind(this));
@@ -1764,6 +1765,47 @@ export class VoiceServer {
         } catch (error) {
             console.error('[Voice Server] Error handling voicemail recording:', error);
             res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Async answering-machine detection result from Twilio.
+     *
+     * Fires once, separately from the call's own status, carrying `AnsweredBy`:
+     * `human`, `machine_start`, `machine_end_beep`, `machine_end_silence`,
+     * `machine_end_other`, `fax`, or `unknown`.
+     *
+     * ⛔ THIS DOES NOT HANG UP, AND DELIBERATELY SO. A wrong guess is expensive
+     * in the direction nobody notices: AMD misfires on a slow "…hello?" from a
+     * real person, and auto-terminating would drop a human mid-greeting with no
+     * way to tell that it had happened. So this reports and lets the controlling
+     * agent decide — the same division of labour as call.expiring_soon, where the
+     * system supplies the fact and the agent supplies the judgement.
+     *
+     * ⚠️ `unknown` is a real and common verdict, not an error. It means detection
+     * ran and could not decide, which is different from detection not running —
+     * and those two must not collapse into the same signal for whoever is reading.
+     */
+    private async handleAmdStatus(req: express.Request, res: Response): Promise<void> {
+        res.status(200).send('OK'); // always ack fast
+        const { CallSid, AnsweredBy, MachineDetectionDuration } = req.body;
+        if (!CallSid || !AnsweredBy) return;
+
+        const isMachine = typeof AnsweredBy === 'string' && AnsweredBy.startsWith('machine');
+        const detectionMs = MachineDetectionDuration ? parseInt(MachineDetectionDuration) : undefined;
+        console.log(`[Voice Server] /call/amd-status ${CallSid} → ${AnsweredBy}${detectionMs ? ` (${detectionMs}ms)` : ''}`);
+
+        try {
+            await CallEventPushService.getInstance().emitNow(CallSid, 'call.answered_by', {
+                answered_by: AnsweredBy,
+                is_machine: isMachine,
+                detection_ms: detectionMs ?? null,
+                note: isMachine
+                    ? `Voicemail or an automated system answered ("${AnsweredBy}"), not a person. The agent is talking to a recording and being billed for it. Decide: phony_hangup_call, or let it leave a message. Nothing is done automatically — AMD does misfire on a slow human greeting.`
+                    : `A human answered ("${AnsweredBy}").`,
+            });
+        } catch (error) {
+            console.error('[Voice Server] Error in /call/amd-status:', error);
         }
     }
 

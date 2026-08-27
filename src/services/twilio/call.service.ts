@@ -170,6 +170,14 @@ export class TwilioCallService {
         dtmfScriptJson?: string,
         dtmfPreflight?: string,
         recordingEnabled?: boolean,
+        /**
+         * Answering-machine detection mode. Defaults to 'Enable' — decide
+         * human-vs-machine at answer and report it. Pass 'DetectMessageEnd' only
+         * when the caller intends to LEAVE a message: it holds the line through
+         * the entire outgoing greeting waiting for the beep, which is dead air
+         * to a human who picked up.
+         */
+        amdMode: 'Enable' | 'DetectMessageEnd' = 'Enable',
     ): Promise<string> {
         try {
             // Deduplication: prevent placing two calls to the same number within the window
@@ -252,6 +260,30 @@ export class TwilioCallService {
                 statusCallback: `${twilioCallbackUrl}/call/status`,
                 statusCallbackMethod: 'POST',
                 statusCallbackEvent: ['completed'],
+
+                // ⛔ ANSWERING-MACHINE DETECTION. Until this, an outbound call
+                // that reached voicemail was indistinguishable from one a person
+                // picked up: the agent delivered its pitch to a recording, paid
+                // for the minutes, left a mangled half-message that started
+                // mid-greeting, and nothing told the controlling agent any of it
+                // had happened. Most numbers this system dials — carriers,
+                // contractors, claims desks — go to voicemail routinely.
+                //
+                // `asyncAmd` is what makes this safe to switch on: detection runs
+                // ALONGSIDE the call rather than delaying the connection, so a
+                // human who answers is not left listening to silence while Twilio
+                // makes up its mind. The verdict arrives separately on
+                // /call/amd-status.
+                //
+                // 'Enable' decides human-vs-machine at answer. 'DetectMessageEnd'
+                // additionally waits for the beep, which is the only mode that
+                // supports leaving a message — but it holds the line through the
+                // whole outgoing greeting, so it is opt-in per call rather than
+                // the default.
+                machineDetection: amdMode,
+                asyncAmd: 'true',
+                asyncAmdStatusCallback: `${twilioCallbackUrl}/call/amd-status`,
+                asyncAmdStatusCallbackMethod: 'POST',
             };
             // sendDigits: Twilio dials these DTMF digits at the carrier level
             // immediately after the called party answers, before any TwiML / media

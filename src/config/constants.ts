@@ -81,6 +81,29 @@ export const CALL_LIVENESS_WINDOW_MS = parseInt(process.env.CALL_LIVENESS_WINDOW
 // told to anyone. Extension without a warning just moves where that happens.
 export const CALL_EXPIRY_WARNING_MS = parseInt(process.env.CALL_EXPIRY_WARNING_MS || '90000'); // 90s
 
+// ─── Per-call spend ceiling ─────────────────────────────────────────────────
+// Duration was always a PROXY for cost. A minute-based cap silently means a
+// different amount of money whenever the voice provider, model or destination
+// changes, so this meters the real quantity underneath it.
+//
+// ⛔ It does NOT replace the duration cap. A wedged call is cheap and endless —
+// it accrues almost nothing per minute, so a dollar ceiling would never fire on
+// exactly the phantom the duration cap exists to kill. Busy-and-expensive and
+// silent-and-endless are different failures and each needs its own gate.
+
+// Blended rate is split so either leg can be repriced alone when a contract
+// changes. Twilio US outbound long-code voice, and the ElevenLabs conversational
+// leg (~$0.08-0.10/min per the project's own cost notes; take the pessimistic
+// end, since a ceiling built on the optimistic number is not a ceiling).
+export const CALL_COST_TELEPHONY_USD_PER_MIN = parseFloat(process.env.CALL_COST_TELEPHONY_USD_PER_MIN || '0.014');
+export const CALL_COST_VOICE_AI_USD_PER_MIN = parseFloat(process.env.CALL_COST_VOICE_AI_USD_PER_MIN || '0.10');
+
+// ~$0.114/min blended ⇒ the 1200s default allowance is ~$2.28 and the 3600s
+// absolute ceiling is ~$6.84. $5.00 therefore binds at ~44 min: inside the hard
+// duration ceiling, but far outside any normal call, so it acts as a backstop on
+// a long chain of granted extensions rather than interrupting ordinary work.
+export const CALL_BUDGET_USD = parseFloat(process.env.CALL_BUDGET_USD || '5.00');
+
 // Test receiver endpoint (optional for internal testing)
 export const ENABLE_TEST_RECEIVER = process.env.ENABLE_TEST_RECEIVER === 'true';
 

@@ -86,9 +86,18 @@ export class CallStateService {
 
     public removeCall(callSid: string): void {
         // Production Safety Control: Clear duration timer before removing call
+        const call = this.activeCalls.get(callSid);
+        const elapsedSec = call ? (Date.now() - call.startedAt.getTime()) / 1000 : 0;
         this.clearDurationTimer(callSid);
         this.activeCalls.delete(callSid);
         console.log(`[CallState] Removed call: ${callSid}`);
+
+        // Book what the call actually cost. Must happen on teardown: the meter is
+        // keyed on the call and there is no later opportunity — an unbooked call
+        // is a hole in the ledger that reads as $0 rather than as missing.
+        import('./call-budget.service.js')
+            .then(({ CallBudgetService }) => CallBudgetService.getInstance().finish(callSid, elapsedSec))
+            .catch(err => console.error(`[CallState] budget finish failed for ${callSid}:`, err));
 
         // Belt and braces on top of the /call/status webhook. Twilio's callback
         // is authoritative (it carries the real duration) but it is a NETWORK
@@ -232,6 +241,13 @@ export class CallStateService {
         call.grantedDurationSec = maxDuration;
         call.extensionCount = 0;
         this.armTimers(callSid, maxDuration);
+
+        // Start the money meter alongside the clock. Lazy import keeps this leaf
+        // service free of a cycle; a metering failure must never stop a call from
+        // starting, so it is caught and logged rather than thrown.
+        import('./call-budget.service.js')
+            .then(({ CallBudgetService }) => CallBudgetService.getInstance().start(callSid))
+            .catch(err => console.error(`[CallState] budget start failed for ${callSid}:`, err));
     }
 
     /**
@@ -283,6 +299,17 @@ export class CallStateService {
         const used = call.extensionCount ?? 0;
         console.log(`[CallState] ⏳ ${callSid} expiring in ${remainingSec}s (extensions used ${used}/${MAX_CALL_EXTENSIONS})`);
 
+        let spentUsd: number | null = null;
+        try {
+            const { CallBudgetService } = await import('./call-budget.service.js');
+            const elapsed = (Date.now() - call.startedAt.getTime()) / 1000;
+            spentUsd = Number(CallBudgetService.getInstance().spendSoFar(callSid, elapsed).toFixed(4));
+        } catch {
+            // Reported as null rather than 0 — "not measured" and "cost nothing"
+            // must not render identically to whoever is deciding.
+            spentUsd = null;
+        }
+
         try {
             const { CallEventPushService } = await import('./call-event-push.service.js');
             await CallEventPushService.getInstance().emitNow(callSid, 'call.expiring_soon', {
@@ -290,6 +317,7 @@ export class CallStateService {
                 granted_duration_sec: grantedSec,
                 extensions_used: used,
                 extensions_remaining: Math.max(0, MAX_CALL_EXTENSIONS - used),
+                spent_usd: spentUsd,
                 to: call.toNumber,
                 from: call.fromNumber,
                 note: `This call will be hung up by Twilio in ~${remainingSec}s. To keep it, call phony_extend_call — it is granted only if the call has proven it is still alive (someone spoke in the last ${Math.round(CALL_LIVENESS_WINDOW_MS / 1000)}s). Doing nothing lets it end.`,
@@ -380,6 +408,16 @@ export class CallStateService {
         const silentForMs = Date.now() - lastSpokeAt;
         if (silentForMs > CALL_LIVENESS_WINDOW_MS) {
             return refuse(`Nothing has been said for ${Math.round(silentForMs / 1000)}s (limit ${Math.round(CALL_LIVENESS_WINDOW_MS / 1000)}s). This call cannot demonstrate it is still alive, so it will be allowed to end.`);
+        }
+
+        // Gate 5 — money. Duration is only a proxy for this, and the exchange
+        // rate moves whenever the provider or destination does. Local and cheap,
+        // so it runs before the network round-trip below.
+        const { CallBudgetService } = await import('./call-budget.service.js');
+        const elapsedSec = (Date.now() - call.startedAt.getTime()) / 1000;
+        const money = CallBudgetService.getInstance().canAfford(callSid, elapsedSec, minutes * 60);
+        if (!money.affordable) {
+            return refuse(money.reason ?? 'Extension would cross this call\'s spend ceiling.');
         }
 
         // Gate 2 — Twilio's own view. Weaker than gate 1 and deliberately last:
