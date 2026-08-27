@@ -18,6 +18,7 @@ export const ivrToolsDefinitions: MCPToolDefinition[] = [
             type: 'object',
             properties: {
                 phoneNumber: { type: 'string', description: 'Target phone number in E.164 format (e.g. +16035550108)' },
+                dtmfPreflight: { type: 'string', description: 'Alias for `preflight`, matching the parameter name on phony_create_call. Supply either.' },
                 preflight: { type: 'string', description: 'Twilio sendDigits string. Digits 0-9 * # A-D. `w` = 0.5s pause, `W` = 1s pause. Example: "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww0w0w0w0w0w0" (38w pause then 6×0 spaced ~700ms apart, aimed at a 19-25s IVR operator-accept window).' },
                 notes: { type: 'string', description: 'Free-text rationale / IVR map description (optional)' },
                 generation: { type: 'number', description: 'Optional explicit generation number; defaults to incrementing the current one.' },
@@ -70,8 +71,18 @@ export function createIvrToolHandlers(): Record<string, MCPToolHandler> {
         phony_ivr_preflight_set: async (args) => {
             try {
                 const phoneNumber = sanitizePhoneNumber(args.phoneNumber);
-                const preflight = String(args.preflight ?? '');
-                if (!preflight) return createToolError('preflight is required');
+                // `dtmfPreflight` is what the SAME string is called on
+                // phony_create_call. Callers reasonably use that name here and
+                // used to get "preflight is required", which reads like a
+                // missing-argument bug rather than a name mismatch — so accept
+                // both rather than making anyone discover the difference.
+                const preflight = String(args.preflight ?? args.dtmfPreflight ?? '');
+                if (!preflight) {
+                    return createToolError(
+                        'preflight is required — the DTMF string to dial on connect, e.g. "wwwwwwwwwwww1". ' +
+                        '(On phony_create_call the same value is called `dtmfPreflight`; both names work here.)'
+                    );
+                }
                 if (!/^[0-9*#A-Dwa-d]+$/i.test(preflight)) {
                     return createToolError(`preflight contains invalid characters. Allowed: 0-9 * # A-D w W (got: "${preflight.slice(0, 80)}…")`);
                 }

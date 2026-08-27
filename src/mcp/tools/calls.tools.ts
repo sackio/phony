@@ -12,6 +12,54 @@ import { NativeElevenLabsService } from '../../services/elevenlabs/native.servic
 const nativeElevenLabs = new NativeElevenLabsService();
 
 /**
+ * Merge the in-memory transcript of a still-running call over the stored one.
+ *
+ * ⛔ Do NOT go back to reading Mongo alone here. Transcript lines accumulate in
+ * CallStateService's in-memory Map (call-state.service.ts:74) and are flushed to
+ * Mongo only on hold and at call end — so for the whole duration of a healthy
+ * call the stored `conversationHistory` is `[]`. That empty array is BYTE-
+ * IDENTICAL to the one a failed call returns, and on 2026-08-27 a caller read it
+ * as "the call is dead" and hung up on a live conversation with a rep who was
+ * actioning the request. The tool did not merely hide the work; it induced the
+ * caller to destroy it.
+ *
+ * So: return the live lines when they exist, and — just as important — say which
+ * source answered and whether the call is still running, so that "nothing yet"
+ * can never again be mistaken for "nothing ever".
+ */
+function resolveLiveTranscript(
+    callSid: string,
+    stored: Array<{ role: string; content: string; timestamp?: Date }> | undefined
+): {
+    messages: Array<{ role: string; content: string; timestamp?: Date }>;
+    source: 'live' | 'stored';
+    isLive: boolean;
+    note?: string;
+} {
+    const storedMessages = stored || [];
+    const active = CallStateService.getInstance().getCall(callSid);
+
+    if (!active) {
+        return { messages: storedMessages, source: 'stored', isLive: false };
+    }
+
+    const liveMessages = active.conversationHistory || [];
+    // The live buffer is authoritative while the call runs; a flush (hold) can
+    // make the stored copy briefly longer, so take whichever has more.
+    const useLive = liveMessages.length >= storedMessages.length;
+    const messages = useLive ? liveMessages : storedMessages;
+
+    return {
+        messages,
+        source: useLive ? 'live' : 'stored',
+        isLive: true,
+        note: messages.length === 0
+            ? `Call ${callSid} is ACTIVE (status: ${active.status}) and has produced no transcript lines yet. This is the normal state of a call that is ringing, sitting in an IVR, or waiting on hold — it is NOT evidence the call failed. Judge liveness by status and duration, and do not hang up on an empty transcript.`
+            : `Live transcript from the in-progress call (status: ${active.status}). It is not written to the database until the call ends.`
+    };
+}
+
+/**
  * Call Management Tools
  */
 
@@ -28,11 +76,11 @@ export const callToolsDefinitions: MCPToolDefinition[] = [
                 },
                 systemInstructions: {
                     type: 'string',
-                    description: 'Base system instructions defining the AI assistant role and behavior'
+                    description: 'Base system instructions defining the AI assistant role and behavior. LENGTH: this and callInstructions travel in the Twilio webhook URL, which is capped at 4000 characters AFTER percent-encoding (~40% inflation on prose). Keep the two together under ~1,700-1,800 raw characters or the call is rejected before it dials.'
                 },
                 callInstructions: {
                     type: 'string',
-                    description: 'Specific instructions for this particular call. In native mode this becomes the agent\'s first_message override (what it says when the call connects).'
+                    description: 'Specific instructions for this particular call. In native mode this becomes the agent\'s first_message override (what it says when the call connects). ⚠️ LINE 1 IS SPOKEN VERBATIM as the opening utterance — including any label or quotation marks you put around it. Writing `Open: "Hi, I\'m calling on behalf of Ben"` makes the agent say the word "Open" and the quotes out loud. Put the literal first sentence on line 1, unlabelled and unquoted, and keep directions to the agent on later lines. Also: read reference and confirmation numbers ONE DIGIT AT A TIME — reps routinely cannot take them spoken as whole numbers.'
                 },
                 mode: {
                     type: 'string',
@@ -514,6 +562,8 @@ export function createCallToolHandlers(
                     return createToolError(`Call not found: ${args.callSid}`);
                 }
 
+                const live = resolveLiveTranscript(args.callSid, call.conversationHistory);
+
                 return createToolResponse({
                     call: {
                         _id: call._id,
@@ -522,8 +572,18 @@ export function createCallToolHandlers(
                         toNumber: call.toNumber,
                         callType: call.callType,
                         status: call.status,
-                        conversationHistory: call.conversationHistory,
+                        conversationHistory: live.messages,
+                        transcriptSource: live.source,
+                        isLive: live.isLive,
+                        transcriptNote: live.note,
+                        // ⚠️ twilioEvents are NOT buffered in memory — they are written
+                        // only when the call ends. Mid-call this is legitimately empty,
+                        // and saying so is the whole point: an empty array here used to
+                        // be indistinguishable from a call that produced nothing.
                         twilioEvents: call.twilioEvents,
+                        twilioEventsNote: live.isLive
+                            ? 'Not available until the call ends; this emptiness says nothing about the call.'
+                            : undefined,
                         systemInstructions: call.systemInstructions,
                         callInstructions: call.callInstructions,
                         startedAt: call.startedAt,
@@ -708,11 +768,16 @@ export function createCallToolHandlers(
                     return createToolError(`Call not found: ${args.callSid}`);
                 }
 
+                const live = resolveLiveTranscript(args.callSid, call.conversationHistory);
+
                 return createToolResponse({
                     callSid: call.callSid,
                     status: call.status,
-                    messages: call.conversationHistory || [],
-                    messageCount: call.conversationHistory?.length || 0
+                    messages: live.messages,
+                    messageCount: live.messages.length,
+                    transcriptSource: live.source,
+                    isLive: live.isLive,
+                    note: live.note
                 });
             } catch (error: any) {
                 return createToolError('Failed to get transcript', { message: error.message });

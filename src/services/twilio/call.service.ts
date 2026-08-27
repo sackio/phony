@@ -146,6 +146,31 @@ export class TwilioCallService {
                 url += `&dtmfScript=${encodeURIComponent(dtmfScriptJson)}`;
             }
 
+            // The instructions ride in the webhook URL, so Twilio's 4000-char URL
+            // cap is really an instruction-length cap — and it applies to the
+            // PERCENT-ENCODED form, which inflates ordinary prose by roughly 40%.
+            // Twilio's own rejection ("Url must be 4000 characters or less") names
+            // neither the real limit nor which argument to shorten, so check here
+            // and say what to cut. Measured 2026-08-27: 1,768 raw chars → 2,494
+            // encoded, which fits; the practical raw budget is ~1,700-1,800.
+            const TWILIO_URL_LIMIT = 4000;
+            if (url.length > TWILIO_URL_LIMIT) {
+                const overBy = url.length - TWILIO_URL_LIMIT;
+                const rawTotal = systemInstructions.length + callInstructions.length;
+                const inflation = rawTotal > 0
+                    ? (systemInstructionsEncoded.length + callInstructionsEncoded.length) / rawTotal
+                    : 1;
+                const rawToCut = Math.ceil(overBy / Math.max(inflation, 1));
+                throw new Error(
+                    `Call instructions are too long for Twilio's 4000-character URL limit. ` +
+                    `The assembled URL is ${url.length} chars (${overBy} over). ` +
+                    `systemInstructions (${systemInstructions.length}) + callInstructions (${callInstructions.length}) ` +
+                    `= ${rawTotal} raw chars, which percent-encodes to ${Math.round(rawTotal * inflation)}. ` +
+                    `Cut at least ~${rawToCut} raw characters. Encoding inflates by about ` +
+                    `${Math.round((inflation - 1) * 100)}% on this text, so aim for ~1,700-1,800 raw total.`
+                );
+            }
+
             const createParams: any = {
                 to: toNumber,
                 from: callerNumber,
