@@ -76,6 +76,16 @@ services:
       # Optional settings
       RECORD_CALLS: ${RECORD_CALLS:-false}
 
+      # Hard auto-hangup ceilings (constants.ts defaults are 600/1800).
+      # Outgoing raised to 1200s on 2026-08-27: the ElevenLabs agent's
+      # turn_timeout is now -1, so it waits indefinitely rather than filling
+      # silence, and a call spent on hold or on a slow lookup runs much longer.
+      # A Pyle call had already reached 532s against the old 600s cap, and the
+      # cap fires as a bare Twilio endCall — no warning to either party, mid
+      # sentence. Approved by Ben.
+      MAX_OUTGOING_CALL_DURATION: ${MAX_OUTGOING_CALL_DURATION:-1200}
+      MAX_INCOMING_CALL_DURATION: ${MAX_INCOMING_CALL_DURATION:-1800}
+
       # Webhook health sweep — reports broken configs to the ATC broker
       # via POST /messages (out-of-band from the webhook dispatcher).
       ATC_BROKER_URL: ${ATC_BROKER_URL:-http://host.docker.internal:3030}
