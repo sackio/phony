@@ -9,6 +9,7 @@ import { MongoDBService } from './services/database/mongodb.service.js';
 import { CallTranscriptService } from './services/database/call-transcript.service.js';
 import { SmsReconciliationService } from './services/sms/reconciliation.service.js';
 import { WebhookHealthSweepService } from './services/webhook-health-sweep.service.js';
+import { CallWatchdogService } from './services/call-watchdog.service.js';
 
 // Load environment variables
 dotenv.config();
@@ -141,6 +142,13 @@ async function main(): Promise<void> {
         // (unsigned, dead route, auto-disabled). Reports go straight to the
         // ATC broker's /messages endpoint, not through the dispatcher.
         WebhookHealthSweepService.getInstance().start();
+
+        // ⛔ Call watchdog. The per-call duration cap is a setTimeout in THIS
+        // process and dies with it, so a restart silently removes the ceiling
+        // from any call that was up. This reconciles against Twilio — whose
+        // startTime survives our restarts — and kills anything past its
+        // allowance, tracked or not.
+        CallWatchdogService.getInstance().start();
 
         // Set up graceful shutdown
         setupShutdownHandlers();

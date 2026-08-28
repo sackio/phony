@@ -129,6 +129,49 @@ export class TwilioCallService {
     }
 
     /**
+     * Every call Twilio currently considers on the phone, across the account.
+     *
+     * ⭐ This is the authority for "what is actually billing right now". Our own
+     * ActiveCall map is a claim about that, and the two drift: a container
+     * restart loses our state while the leg stays up, and a missed status
+     * webhook leaves us tracking a call that ended.
+     *
+     * ⚠️ `startTime` comes from Twilio, so call age survives our restarts — the
+     * one clock a watchdog can trust after losing its own timers.
+     *
+     * ⛔ THROWS on failure rather than returning []. An empty array means "no
+     * calls are up", and a caller that kills or reaps on that basis must never
+     * be handed it because the API was unreachable.
+     */
+    public async listLiveCalls(): Promise<Array<{
+        sid: string;
+        startedAt: Date;
+        to: string;
+        from: string;
+        status: string;
+    }>> {
+        const statuses: Array<'queued' | 'ringing' | 'in-progress'> = ['queued', 'ringing', 'in-progress'];
+        const out: Array<{ sid: string; startedAt: Date; to: string; from: string; status: string }> = [];
+
+        for (const status of statuses) {
+            const calls = await this.twilioClient.calls.list({ status, limit: 100 });
+            for (const c of calls) {
+                out.push({
+                    sid: c.sid,
+                    // A queued call may have no startTime yet; treat it as
+                    // just-started so age never reads as enormous and triggers
+                    // an immediate kill.
+                    startedAt: c.startTime ? new Date(c.startTime) : new Date(),
+                    to: c.to ?? '',
+                    from: c.from ?? '',
+                    status: c.status ?? status,
+                });
+            }
+        }
+        return out;
+    }
+
+    /**
      * List all incoming phone numbers in the Twilio account
      * @returns Array of phone numbers with their details
      */
