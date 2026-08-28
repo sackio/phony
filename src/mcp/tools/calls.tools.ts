@@ -6,6 +6,7 @@ import { CallStateService } from '../../services/call-state.service.js';
 import { SessionManagerService } from '../../services/session-manager.service.js';
 import { NativeElevenLabsService } from '../../services/elevenlabs/native.service.js';
 import { CallEventPushService } from '../../services/call-event-push.service.js';
+import { spokenOpening } from '../../config/prompts.js';
 
 /**
  * Singleton instance — Phase 2 native integration wrapper. Stateless; safe to share.
@@ -418,7 +419,11 @@ export function createCallToolHandlers(
                     const result = await nativeElevenLabs.createOutboundCall({
                         toNumber,
                         systemInstructions: args.systemInstructions,
-                        firstMessage: args.callInstructions,
+                        // ⛔ Spoken verbatim — opening line only. The native
+                        // path passed the RAW block here and never had the
+                        // guard the WS path did. Full instructions still reach
+                        // the agent via systemInstructions.
+                        firstMessage: spokenOpening(args.callInstructions),
                         voiceId: args.elevenLabsVoiceId,
                         agentId: args.elevenLabsAgentId,
                         dynamicVariables,

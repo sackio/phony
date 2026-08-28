@@ -11,16 +11,7 @@ import { TwilioCallService } from '../services/twilio/call.service.js';
 import { CallTranscriptService } from '../services/database/call-transcript.service.js';
 import { ContextService } from '../services/context.service.js';
 
-/**
- * The opening utterance from a block of call instructions: everything up to the
- * first blank line. Returns undefined for empty input so the caller can omit
- * `first_message` entirely rather than sending an empty string.
- */
-function firstParagraph(text?: string | null): string | undefined {
-    if (!text) return undefined;
-    const opening = text.split(/\n\s*\n/)[0]?.trim();
-    return opening ? opening : undefined;
-}
+import { spokenOpening } from '../config/prompts.js';
 import { ICallHandler } from './call.handler.js';
 
 dotenv.config();
@@ -410,15 +401,17 @@ export class ElevenLabsCallHandler implements ICallHandler {
                 to_number: this.callState.toNumber
             },
             this.callState.elevenLabsVoiceId,
-            // ⛔ ONLY THE OPENING PARAGRAPH. `first_message` is spoken verbatim,
-            // and callInstructions typically continues with directions meant for
-            // the agent, not the person answering. Passing the whole block also
-            // recorded every word of it as an `assistant` transcript line, so the
-            // controlling agent saw instructions rendered as things the AI had
-            // said out loud — measured on the 2026-08-27 test call. The full text
-            // still reaches the agent: context.service.ts already appends it to
-            // the system prompt under "SPECIFIC INSTRUCTIONS FOR THIS CALL".
-            firstParagraph(this.callState.callInstructions),
+            // ⛔ ONLY THE OPENING LINE. `first_message` is spoken verbatim, and
+            // callInstructions continues with directions meant for the agent,
+            // not the person answering. The full text still reaches the agent:
+            // context.service.ts appends it to the system prompt under
+            // "SPECIFIC INSTRUCTIONS FOR THIS CALL".
+            //
+            // ⚠️ This used to take the first blank-line-delimited PARAGRAPH,
+            // which failed open on instructions written one-per-line with no
+            // blank line — the whole brief came back and was read aloud. See
+            // spokenOpening() for the measured case.
+            spokenOpening(this.callState.callInstructions),
         );
 
         if (!this.elevenLabsService.isConnected()) {

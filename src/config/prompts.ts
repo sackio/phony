@@ -105,3 +105,37 @@ ${instructions}
 - Don't end calls prematurely - if someone says "bye" casually, continue helping them
 - Only truly end when the caller's needs are met AND you've exchanged proper farewells`;
 };
+
+/**
+ * The single utterance to speak when a call connects, taken from a block of
+ * call instructions.
+ *
+ * ⛔ FIRST LINE, NOT FIRST PARAGRAPH. `first_message` is spoken VERBATIM by
+ * ElevenLabs, and callInstructions continues with directions addressed to the
+ * agent, not to the person answering.
+ *
+ * This was previously "everything up to the first BLANK line", which looks
+ * equivalent and is not: a caller writing one direction per line with no blank
+ * line anywhere gets the ENTIRE block back, and the agent reads the whole brief
+ * out loud. Measured 2026-08-28 on CA318bfde8de… — the agent spent ~40s
+ * reciting "At a menu, choose customer service or tracing", "Goal: HOLD IT AT
+ * THE PYLE TERMINAL…" and all five numbered asks into A. Duie Pyle's phone
+ * tree, which then dropped the call. Third failed call to that carrier in 48h.
+ *
+ * ⚠️ The blank-line version FAILED OPEN: the more instructions a caller wrote,
+ * and the more carefully they separated them one per line, the more of their
+ * private brief got read aloud to the other party. On a human-answered call
+ * that is the whole strategy recited to the person it concerns.
+ *
+ * First line is also exactly what `phony_create_call`'s own parameter
+ * description has always promised ("LINE 1 IS SPOKEN VERBATIM"), so this makes
+ * the behaviour match the documented contract rather than inventing a new one.
+ *
+ * Returns undefined for empty input so callers omit `first_message` entirely
+ * rather than sending an empty string.
+ */
+export function spokenOpening(text?: string | null): string | undefined {
+    if (!text) return undefined;
+    const opening = text.split(/\r?\n/)[0]?.trim();
+    return opening ? opening : undefined;
+}
