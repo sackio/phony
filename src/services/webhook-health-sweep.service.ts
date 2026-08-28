@@ -159,7 +159,14 @@ export class WebhookHealthSweepService {
             `Riders (never page alone): auto_disabled = gave up after 5 straight failures (real-time alerting owned by the webhook.auto_disabled event); ` +
             `born_silent = ok:0/fail:0 for >24h with a live route — quiet or dead, verify with phony_webhook_test if in doubt. ` +
             `Route check ${routeTargets ? 'ACTIVE' : 'SKIPPED (broker /phony/routes unreachable this pass)'}. ` +
-            `Each name re-alerts only when its bucket changes (or the server restarts).`;
+            `Each name re-alerts only when its bucket changes (or the server restarts) — so a burst of ` +
+            `identical alerts with unchanged counts means deploys, not flapping.` +
+            // ⛔ This sends from `phony-server`, which is NOT an ATC subscriber.
+            // A reply addressed to it returned `sent:0, drop_reason:"no_resolution"`
+            // — a silent drop that reads like an ordinary result (atc, 2026-08-28).
+            // `phony` is now also subscribed to a ZONE of that name so replies do
+            // land, but say the seat outright rather than relying on that.
+            `\n\n⇒ Reply to \`phony\` (this alert sends from \`phony-server\`, which is not a subscriber id).`;
 
         try {
             const res = await fetch(`${this.brokerUrl}/messages`, {
