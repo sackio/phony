@@ -204,6 +204,7 @@ export class VoiceServer {
         // DTMF self-test IVR — always on. See handleDtmfSelfTest for why.
         this.app.post('/call/dtmf-selftest', this.handleDtmfSelfTest.bind(this));
         this.app.post('/call/dtmf-selftest/result', this.handleDtmfSelfTestResult.bind(this));
+        this.app.post('/call/dtmf-selftest/timeout', this.handleDtmfSelfTestTimeout.bind(this));
         this.app.get('/call/dtmf-selftest/last', this.handleDtmfSelfTestLast.bind(this));
 
         // SMS webhook routes
@@ -495,20 +496,37 @@ export class VoiceServer {
             'To speak with a representative, press 3. To repeat this menu, press 9.'
         );
 
-        // Reached only if Gather times out with no digits — which is itself the
-        // finding we are looking for, so record it as a result rather than
-        // letting it look like a call that merely ended.
-        VoiceServer.dtmfSelfTestResults.unshift({
-            callSid,
-            digits: null,
-            at: new Date().toISOString(),
-            outcome: 'NO_DIGITS — gather timed out, nothing was pressed',
-        });
-        VoiceServer.dtmfSelfTestResults.length = Math.min(VoiceServer.dtmfSelfTestResults.length, 20);
-        console.log(`[DTMFSelfTest] ⛔ callSid=${callSid} — no digits received before the 12s gather timeout`);
+        // ⛔ DO NOT RECORD THE TIMEOUT HERE. TwiML after a <Gather> is RENDERED
+        // now and only EXECUTED if the gather times out, so anything written at
+        // this point fires on every menu serve — before a digit could possibly
+        // have arrived. The first version of this handler did exactly that and
+        // stamped "NO_DIGITS — gather timed out" on a call in the same
+        // millisecond it answered, which is a verdict manufactured before the
+        // measurement. Redirect instead: that request only happens on a real
+        // timeout.
+        twiml.redirect(`${this.callbackUrl}/call/dtmf-selftest/timeout`);
+
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        res.end(twiml.toString());
+    }
+
+    /** Reached ONLY when the Gather genuinely expired with no input. */
+    private async handleDtmfSelfTestTimeout(req: express.Request, res: Response): Promise<void> {
+        const callSid = req.body?.CallSid ?? '(no CallSid)';
+        if (!VoiceServer.dtmfSelfTestResults.some(r => r.callSid === callSid)) {
+            VoiceServer.dtmfSelfTestResults.unshift({
+                callSid,
+                digits: null,
+                at: new Date().toISOString(),
+                outcome: 'NO_DIGITS — gather expired with no input',
+            });
+            VoiceServer.dtmfSelfTestResults.length = Math.min(VoiceServer.dtmfSelfTestResults.length, 20);
+        }
+        console.log(`[DTMFSelfTest] ⛔ callSid=${callSid} — gather expired, no digits pressed`);
+
+        const twiml = new VoiceResponse();
         twiml.say({ voice: 'Polly.Matthew' }, 'No digits were received. Goodbye.');
         twiml.hangup();
-
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         res.end(twiml.toString());
     }
@@ -1961,6 +1979,27 @@ export class VoiceServer {
 
         const status = CallStatus === 'completed' ? 'completed' : 'failed';
         const err = CallStatus !== 'completed' ? `Twilio status: ${CallStatus}${ErrorMessage ? ` — ${ErrorMessage}` : ''}` : undefined;
+
+        // ⛔ TEAR DOWN CALL STATE FOR EVERY TERMINAL STATUS, NOT JUST COMPLETED.
+        // Teardown normally rides on the media stream closing — but a call that
+        // ends `busy`, `no-answer`, `canceled` or `failed` NEVER OPENS one, so
+        // nothing ever called removeCall() and the ActiveCall leaked with its
+        // timers armed and its budget meter running.
+        //
+        // Measured 2026-08-28: CAa5cdb0cd ended `busy` with duration 0, and 18
+        // minutes later still emitted `call.expiring_soon` claiming
+        // spent_usd 2.109 — an expiry warning, and accrued spend, for a call
+        // that never connected to anything.
+        //
+        // ⚠️ Worse than noise: this is the phantom-call failure leaking INSIDE
+        // the guard built to catch it. Phantom spend counts against the per-call
+        // ceiling, so a leaked ghost can make a real call's budget check refuse
+        // an extension it should have granted.
+        //
+        // removeCall is safe on an unknown sid: no entry means no timers, a
+        // no-op delete, a 0 booking, and an idempotent push-stream end.
+        CallStateService.getInstance().removeCall(CallSid);
+
         try {
             await this.transcriptService.markCallCompleted(CallSid, status, duration, err);
             console.log(`[Voice Server] /call/status ${CallSid} → ${CallStatus}${duration ? ` (${duration}s)` : ''}`);
