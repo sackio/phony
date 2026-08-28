@@ -27,6 +27,18 @@ import { WebhookDispatcher } from '../services/webhook-dispatcher.service.js';
 dotenv.config();
 
 export class VoiceServer {
+    /**
+     * Ring buffer of DTMF self-test outcomes. In memory on purpose — this is a
+     * diagnostic, and a restart clearing it is correct: results describe the
+     * build that produced them.
+     */
+    private static dtmfSelfTestResults: Array<{
+        callSid: string;
+        digits: string | null;
+        at: string;
+        outcome: string;
+    }> = [];
+
     private app: express.Application & { ws: any };
     private port: number;
     private sessionManager: CallSessionManager;
@@ -188,6 +200,11 @@ export class VoiceServer {
             this.app.post('/call/test-receiver', this.handleTestReceiver.bind(this));
             console.log('[Voice Server] Test receiver endpoint enabled at /call/test-receiver');
         }
+
+        // DTMF self-test IVR — always on. See handleDtmfSelfTest for why.
+        this.app.post('/call/dtmf-selftest', this.handleDtmfSelfTest.bind(this));
+        this.app.post('/call/dtmf-selftest/result', this.handleDtmfSelfTestResult.bind(this));
+        this.app.get('/call/dtmf-selftest/last', this.handleDtmfSelfTestLast.bind(this));
 
         // SMS webhook routes
         this.app.post('/sms/incoming', this.handleIncomingSms.bind(this));
@@ -434,6 +451,115 @@ export class VoiceServer {
 
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         res.end(twiml.toString());
+    }
+
+    /**
+     * A real IVR menu, hosted on our own number, for testing DTMF end to end.
+     *
+     * ⛔ WHY THIS EXISTS. Before it, the only way to answer "can the agent press
+     * a key" was to call a real company and watch what happened. We did that
+     * four times to A. Duie Pyle on 2026-08-27/28 and learned nothing about
+     * DTMF either way, because that line has no menu.
+     *
+     * ⚠️ And the question is not academic. Phony has THREE DTMF paths, and they
+     * do not all work on all call modes:
+     *   1. `phony_send_dtmf` (MCP) → Twilio `<Play digits>` on the call leg.
+     *   2. `send_dtmf` (ElevenLabs CLIENT tool) → forwarded to us → we generate
+     *      in-band µ-law into the media stream. Advanced mode only.
+     *   3. `play_keypad_touch_tone` (ElevenLabs SYSTEM tool) → handled on
+     *      ElevenLabs' own telephony leg, which does not exist in advanced mode
+     *      because Phony bridges the audio.
+     * A tool that silently does nothing is indistinguishable from a menu that
+     * ignored us — the standing failure shape in this codebase. Only a menu
+     * that REPORTS what it received can tell those apart.
+     *
+     * Point a Phony number's voice webhook here, call it from another Phony
+     * number, and read the outcome from `/call/dtmf-selftest/last` or the
+     * `[DTMFSelfTest]` log lines.
+     */
+    private async handleDtmfSelfTest(req: express.Request, res: Response): Promise<void> {
+        const callSid = req.body?.CallSid ?? '(no CallSid)';
+        console.log(`[DTMFSelfTest] Menu answered — callSid=${callSid} from=${req.body?.From} to=${req.body?.To}`);
+
+        const twiml = new VoiceResponse();
+        const gather = twiml.gather({
+            numDigits: 1,
+            timeout: 12,
+            action: `${this.callbackUrl}/call/dtmf-selftest/result`,
+            method: 'POST',
+        });
+        // Deliberately phrased like a real menu so the agent treats it as one.
+        gather.say(
+            { voice: 'Polly.Matthew' },
+            'Thank you for calling. For billing, press 1. For shipping, press 2. ' +
+            'To speak with a representative, press 3. To repeat this menu, press 9.'
+        );
+
+        // Reached only if Gather times out with no digits — which is itself the
+        // finding we are looking for, so record it as a result rather than
+        // letting it look like a call that merely ended.
+        VoiceServer.dtmfSelfTestResults.unshift({
+            callSid,
+            digits: null,
+            at: new Date().toISOString(),
+            outcome: 'NO_DIGITS — gather timed out, nothing was pressed',
+        });
+        VoiceServer.dtmfSelfTestResults.length = Math.min(VoiceServer.dtmfSelfTestResults.length, 20);
+        console.log(`[DTMFSelfTest] ⛔ callSid=${callSid} — no digits received before the 12s gather timeout`);
+        twiml.say({ voice: 'Polly.Matthew' }, 'No digits were received. Goodbye.');
+        twiml.hangup();
+
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        res.end(twiml.toString());
+    }
+
+    /** Twilio posts here with whatever digit the caller actually pressed. */
+    private async handleDtmfSelfTestResult(req: express.Request, res: Response): Promise<void> {
+        const callSid = req.body?.CallSid ?? '(no CallSid)';
+        const digits: string | undefined = req.body?.Digits;
+
+        const entry = {
+            callSid,
+            digits: digits ?? null,
+            at: new Date().toISOString(),
+            outcome: digits
+                ? `RECEIVED "${digits}" — DTMF reached the line`
+                : 'NO_DIGITS — result posted with an empty Digits field',
+        };
+        // Replace the pessimistic NO_DIGITS row this call may already have
+        // written, so one call yields one verdict.
+        const existing = VoiceServer.dtmfSelfTestResults.findIndex(r => r.callSid === callSid);
+        if (existing >= 0) VoiceServer.dtmfSelfTestResults.splice(existing, 1);
+        VoiceServer.dtmfSelfTestResults.unshift(entry);
+        VoiceServer.dtmfSelfTestResults.length = Math.min(VoiceServer.dtmfSelfTestResults.length, 20);
+
+        console.log(`[DTMFSelfTest] ${digits ? '✅' : '⛔'} callSid=${callSid} digits=${JSON.stringify(digits ?? null)} — ${entry.outcome}`);
+
+        const twiml = new VoiceResponse();
+        twiml.say(
+            { voice: 'Polly.Matthew' },
+            digits
+                ? `You pressed ${digits.split('').join(' ')}. Recorded. Goodbye.`
+                : 'No digits were received. Goodbye.'
+        );
+        twiml.hangup();
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        res.end(twiml.toString());
+    }
+
+    /**
+     * Read back what the menu heard. ⚠️ An empty list means NO TEST HAS RUN —
+     * it does not mean DTMF failed. Stated explicitly because "empty result
+     * read as a negative" is exactly the mistake this endpoint exists to stop.
+     */
+    private async handleDtmfSelfTestLast(_req: express.Request, res: Response): Promise<void> {
+        res.json({
+            count: VoiceServer.dtmfSelfTestResults.length,
+            note: VoiceServer.dtmfSelfTestResults.length === 0
+                ? 'No self-test has run since this server started. This is NOT a DTMF failure — it means nothing has been measured yet.'
+                : 'Most recent first. `digits: null` means the menu genuinely received nothing.',
+            results: VoiceServer.dtmfSelfTestResults,
+        });
     }
 
     private handleOutgoingConnection(ws: WebSocket, req: express.Request): void {
