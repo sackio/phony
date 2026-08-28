@@ -9,6 +9,13 @@ import { TempMediaService } from '../temp-media.service.js';
 import { SMS_ENABLED_NUMBERS } from '../../config/constants.js';
 
 /**
+ * How many Conversations to enumerate per reconciliation pass. Every one costs
+ * a `messages.list` call, so this bounds the pass — but exceeding it means
+ * incomplete coverage, which is logged rather than absorbed.
+ */
+const CONVERSATION_PAGE_LIMIT = 200;
+
+/**
  * Reconciliation service that periodically checks Twilio for inbound SMS
  * messages that may have been missed by the webhook (e.g., due to downtime,
  * network issues, or webhook failures).
@@ -349,14 +356,38 @@ export class SmsReconciliationService {
 
         let conversations: Array<{ sid: string; dateUpdated: Date | null }> = [];
         try {
-            // Twilio Conversations API doesn't support server-side date
-            // filtering on list(); pull recent pages newest-first and stop
-            // once we see ones older than the window (default ordering is
-            // by dateUpdated desc).
-            const raw = await this.twilioClient.conversations.v1.conversations.list({ limit: 200 });
-            conversations = raw
-                .map(c => ({ sid: c.sid, dateUpdated: c.dateUpdated }))
-                .filter(c => !c.dateUpdated || c.dateUpdated >= dateSentAfter);
+            // ⛔ DO NOT FILTER CONVERSATIONS BY `dateUpdated`. This code used to
+            // do exactly that, on two assumptions written into a comment here,
+            // and BOTH are false — measured 2026-08-28:
+            //
+            //   1. "Conversation.dateUpdated tracks activity." It does not.
+            //      CHc240213de36a48fc… reported dateUpdated 2026-07-29T21:21:47Z
+            //      while carrying an inbound message from 2026-08-28T13:15:26Z.
+            //      Adding a message does not touch the parent resource.
+            //   2. "Default ordering is by dateUpdated desc." It is not sorted
+            //      at all: the returned page ran 07-29, 06-03, 04-20, … and
+            //      ended on 08-13.
+            //
+            // Consequence: the filter passed ZERO of 71 conversations, so this
+            // entire pass had been examining nothing since 2026-07-30 — and
+            // reporting "no missed messages" over it, which is the reassuring
+            // reading of a pass that never looked. Group outbound history
+            // froze account-wide on that date and nothing flagged it.
+            //
+            // ⇒ Enumerate every conversation and filter on `msg.dateCreated`,
+            // which is the timestamp that actually moves. The per-message
+            // window check below is what bounds the work.
+            const raw = await this.twilioClient.conversations.v1.conversations.list({ limit: CONVERSATION_PAGE_LIMIT });
+            conversations = raw.map(c => ({ sid: c.sid, dateUpdated: c.dateUpdated }));
+
+            // No silent caps: hitting the page limit means coverage may be
+            // partial, and that must not read as a clean pass.
+            if (raw.length >= CONVERSATION_PAGE_LIMIT) {
+                console.warn(
+                    `[SmsReconciliation] Conversations page hit the ${CONVERSATION_PAGE_LIMIT} cap — ` +
+                    `older conversations were NOT examined this pass.`
+                );
+            }
         } catch (err) {
             // Could not enumerate Conversations at all — this pass covered
             // nothing on the group side. Report it as a failure so the caller
@@ -404,6 +435,14 @@ export class SmsReconciliationService {
                 console.error(`[SmsReconciliation] Failed to fetch messages for ${conv.sid}:`, err);
             }
         }
+
+        // State the denominator. "0 missed" is only meaningful next to how many
+        // conversations and messages were actually examined — the previous
+        // version of this pass reported success while looking at nothing.
+        console.log(
+            `[SmsReconciliation] Conversations pass: ${conversations.length} conversation(s) enumerated, ` +
+            `${checked} message(s) in window, ${reconciled} replayed, ${failures} failure(s)`
+        );
 
         return { checked, reconciled, failures };
     }
@@ -551,7 +590,7 @@ export class SmsReconciliationService {
                         msg.body || '',
                         mediaUrls,
                         msg.dateCreated ?? undefined,
-                        { skipNotify: true }
+                        { skipNotify: true, historical: true }
                     )
                     .catch(err => {
                         console.error(`[SmsReconciliation] Backfill replay ${msg.sid} failed:`, err);

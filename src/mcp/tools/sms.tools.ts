@@ -728,7 +728,9 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
 
                 let initialMessageSid: string | undefined;
                 if (initialMessage && initialMessage.trim()) {
-                    initialMessageSid = await conversationsService.postMessage(convSid, initialMessage.trim());
+                    const postedSids = await conversationsService.postMessage(convSid, initialMessage.trim());
+                    initialMessageSid = postedSids[0];
+                    await smsService.persistOutboundGroupMessages(convSid, postedSids, initialMessage.trim());
                     // Outbound proxy echo so Ben/Laura see the kickoff message
                     // even when they aren't in the group themselves.
                     smsService.notifyOutboundGroupMessage(convSid, initialMessage.trim())
@@ -1168,8 +1170,20 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
                     }
                 }
 
-                const messageSid = await conversationsService.postMessage(groupSid, body.trim(), mediaSids.length ? mediaSids : undefined);
+                const postedSids = await conversationsService.postMessage(groupSid, body.trim(), mediaSids.length ? mediaSids : undefined);
+                const messageSid = postedSids[0];
                 const slug = TwilioSmsService.getGroupSlug(groupSid);
+
+                // Record what we just sent. The onMessageAdded webhook does NOT
+                // fire for REST-created messages, so without this the group
+                // thread in SmsModel has inbound only and a read-back check
+                // reports a successful send as missing.
+                await smsService.persistOutboundGroupMessages(
+                    groupSid,
+                    postedSids,
+                    body.trim(),
+                    mediaUrls && mediaUrls.length ? mediaUrls : [],
+                );
 
                 // Fire-and-forget proxy echo so Ben/Laura (who aren't members
                 // of vendor groups) can see what we just sent on their phones.

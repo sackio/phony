@@ -849,6 +849,143 @@ export class TwilioSmsService {
     }
 
     /**
+     * Record a group message that WE posted, and announce it as `sms.outgoing`.
+     *
+     * ⛔ CALL THIS FROM EVERY SEND PATH, immediately after postMessage(). It is
+     * the only thing that puts an outbound group message into SmsModel at the
+     * time it is sent, and `phony_get_conversation_messages` reads SmsModel.
+     *
+     * Why the send path has to do this itself: Twilio does NOT fire
+     * Conversations webhooks for messages created through the REST API unless
+     * the request carries `X-Twilio-Webhook-Enabled: true`, and ours do not. So
+     * `onMessageAdded` never fires for our own posts — the "self-authored echo"
+     * that the inbound handler was written to catch does not exist. Until
+     * 2026-08-28 the ONLY writer of outbound group rows was the 5-minute
+     * reconciler replay, and when that pass silently stopped covering anything
+     * (it narrowed on Conversation.dateUpdated, which Twilio does not bump when
+     * a message is added) outbound history froze account-wide on 2026-07-30
+     * while inbound kept flowing — because inbound is genuinely webhook-driven.
+     *
+     * ⚠️ That combination made the conversation view answer "no" for sends that
+     * had demonstrably gone out. It is the standing phony failure: a gap
+     * rendered as a legitimate-looking empty result, in the one instrument
+     * someone would use to check whether a message was delivered.
+     *
+     * Idempotent: a duplicate key from a reconciler replay is not an error.
+     * Returns true if this call is what persisted the row.
+     */
+    public async persistOutboundGroupMessage(
+        conversationSid: string,
+        messageSid: string,
+        body: string,
+        mediaUrls: string[] = [],
+        options?: { emitEvent?: boolean },
+    ): Promise<boolean> {
+        if (!messageSid) return false;
+
+        const existing = await SmsModel.findOne({ messageSid }).lean();
+        if (existing) return false;
+
+        const slug = TwilioSmsService.getGroupSlug(conversationSid) ?? '';
+        const to = slug ? `group:${slug}` : conversationSid;
+
+        // ⚠️ Phony owns several numbers and a group can be hosted on any of
+        // them — a group autocreated from inbound MMS lives on whichever number
+        // was texted, not TWILIO_NUMBER. Use the number this group is actually
+        // registered against; fall back only when we have no record of it.
+        const group = await GroupConversationModel.findOne({ conversationSid }).lean().catch(() => null);
+        const from = (group as any)?.twilioNumber || process.env.TWILIO_NUMBER!;
+
+        try {
+            await this.storageService.saveSms({
+                messageSid,
+                fromNumber: from,
+                toNumber: to,
+                direction: SmsDirection.OUTBOUND,
+                body,
+                status: SmsStatus.SENT,
+                twilioStatus: 'sent',
+                numMedia: mediaUrls.length,
+                mediaUrls,
+                conversationSid,
+            });
+        } catch (err: any) {
+            if (err.code === 11000) return false;
+            throw err;
+        }
+
+        // ⛔ A HISTORICAL REPLAY MUST NOT EMIT LIVE EVENTS. backfillConversation
+        // walks a group's entire history; announcing each row as `sms.outgoing`
+        // would fire weeks-old messages at every subscriber as if they had just
+        // been sent. `skipNotify` already suppresses the proxy SMS fan-out for
+        // exactly this reason — it just never reached the webhook dispatch.
+        if (options?.emitEvent === false) return true;
+
+        // Without this, an agent watching a group through a
+        // conversationSid-filtered webhook sees inbound only — its own sends
+        // (and proxy-routed posts) vanish from the event stream, because
+        // Conversations fan-out never touches sendSms().
+        this.webhookDispatcher.dispatch('sms.outgoing', {
+            message_sid: messageSid,
+            conversation_sid: conversationSid,
+            conversation_label: slug || null,
+            from,
+            to,
+            body,
+            media_urls: mediaUrls,
+            direction: 'outbound',
+            initiator: 'mcp',
+            twilio_status: 'sent',
+        }, {
+            eventId: `phony-msg-${messageSid}`,
+            reply: {
+                kind: 'group',
+                tool: 'phony_send_group_sms',
+                args: { conversationSid, ...(slug ? { slug } : {}) },
+                description: `This was a GROUP post to ${conversationSid}${slug ? ` (slug "${slug}")` : ''}. To post again, call phony_send_group_sms with conversationSid="${conversationSid}" — not phony_send_sms.`,
+            },
+        }).catch(e => console.error('[TwilioSMS] group sms.outgoing dispatch error:', e));
+
+        return true;
+    }
+
+    /**
+     * Persist every SID returned by postMessage(). Never throws — a send that
+     * reached Twilio must not be reported as failed because our own bookkeeping
+     * did, but the gap is logged loudly rather than swallowed.
+     */
+    public async persistOutboundGroupMessages(
+        conversationSid: string,
+        messageSids: string[],
+        body: string,
+        mediaUrls: string[] = [],
+    ): Promise<void> {
+        // postMessage splits body and media into separate Twilio messages: the
+        // body rides the first SID when present, then one SID per media. Mirror
+        // that split so each row's mediaUrls match the message it represents.
+        const hasBody = !!body;
+        for (let i = 0; i < messageSids.length; i++) {
+            const isBodyRow = hasBody && i === 0;
+            const mediaIndex = hasBody ? i - 1 : i;
+            const rowMedia = isBodyRow ? [] : mediaUrls.slice(mediaIndex, mediaIndex + 1);
+            try {
+                await this.persistOutboundGroupMessage(
+                    conversationSid,
+                    messageSids[i],
+                    isBodyRow ? body : '',
+                    rowMedia,
+                );
+            } catch (err) {
+                console.error(
+                    `[TwilioSMS] ⛔ Posted ${messageSids[i]} to ${conversationSid} but FAILED to record it — ` +
+                    `it will be missing from phony_get_conversation_messages until the reconciler replays it:`,
+                    err
+                );
+            }
+        }
+    }
+
+    /**
      * Full inbound-pipeline for a Conversation message: idempotent persist
      * into SmsModel + register group if unknown + fan out proxy notifications.
      * Safe to call from both the live webhook and the periodic reconciler.
@@ -863,7 +1000,7 @@ export class TwilioSmsService {
         body: string,
         mediaUrls: string[],
         messageDate?: Date,
-        options?: { skipNotify?: boolean }
+        options?: { skipNotify?: boolean; historical?: boolean }
     ): Promise<boolean> {
         if (!author) return false;
         if (!body && mediaUrls.length === 0) return false;
@@ -875,56 +1012,16 @@ export class TwilioSmsService {
             if (existing) return false;
         }
 
-        // Self-authored group message: Phony posted via phony_send_group_sms,
-        // Twilio fanned out to externals, and the same message echoes back to
-        // us via onMessageAdded. Persist as outbound so the group thread has
-        // full history — but skip inbound fan-out (notifyOutboundGroupMessage
-        // already handled proxy echo on the send path).
+        // Self-authored group message. Reached only via the RECONCILER replay —
+        // see persistOutboundGroupMessage for why the webhook never brings one
+        // of these in. Idempotent with the send path, whichever gets there
+        // first.
         if (this.conversationsService.isSelfAuthor(author)) {
             if (!messageSid) return false;
-            const slug = TwilioSmsService.getGroupSlug(conversationSid) ?? '';
-            try {
-                await this.storageService.saveSms({
-                    messageSid,
-                    fromNumber: process.env.TWILIO_NUMBER!,
-                    toNumber: slug ? `group:${slug}` : conversationSid,
-                    direction: SmsDirection.OUTBOUND,
-                    body,
-                    status: SmsStatus.SENT,
-                    twilioStatus: 'sent',
-                    numMedia: mediaUrls.length,
-                    mediaUrls,
-                    conversationSid,
-                });
-            } catch (err: any) {
-                if (err.code === 11000) return false;
-                throw err;
-            }
-            // Send confirmation for group posts. Without this, agents watching
-            // a group via a conversationSid-filtered webhook see inbound only —
-            // their own sends (and proxy-routed posts) vanish from the event
-            // stream, because Conversations fan-out never touches sendSms().
-            this.webhookDispatcher.dispatch('sms.outgoing', {
-                message_sid: messageSid,
-                conversation_sid: conversationSid,
-                conversation_label: slug || null,
-                from: process.env.TWILIO_NUMBER!,
-                to: slug ? `group:${slug}` : conversationSid,
-                body,
-                media_urls: mediaUrls,
-                direction: 'outbound',
-                initiator: 'mcp',
-                twilio_status: 'sent',
-            }, {
-                eventId: `phony-msg-${messageSid}`,
-                reply: {
-                    kind: 'group',
-                    tool: 'phony_send_group_sms',
-                    args: { conversationSid, ...(slug ? { slug } : {}) },
-                    description: `This was a GROUP post to ${conversationSid}${slug ? ` (slug "${slug}")` : ''}. To post again, call phony_send_group_sms with conversationSid="${conversationSid}" — not phony_send_sms.`,
-                },
-            }).catch(e => console.error('[TwilioSMS] group sms.outgoing dispatch error:', e));
-            return true;
+            return await this.persistOutboundGroupMessage(
+                conversationSid, messageSid, body, mediaUrls,
+                { emitEvent: !options?.historical },
+            );
         }
 
         // Resolve this Conversation's actual participants + Phony number once.
@@ -1190,8 +1287,13 @@ export class TwilioSmsService {
     ): Promise<string | undefined> {
         let deliveredSid: string | undefined;
         try {
-            deliveredSid = await this.conversationsService.postMessage(conversationSid, message);
+            const postedSids = await this.conversationsService.postMessage(conversationSid, message);
+            deliveredSid = postedSids[0];
             console.log(`[TwilioSMS Proxy] Routed {${slug}} reply from ${from} → ${conversationSid}`);
+            // Same reason as the MCP send path: nothing echoes back to us for a
+            // REST-created message, so a proxy-routed post is invisible in the
+            // group thread unless we record it here.
+            await this.persistOutboundGroupMessages(conversationSid, postedSids, message);
         } catch (err: any) {
             console.error(`[TwilioSMS Proxy] Failed to post into group {${slug}}:`, err);
             await this.sendSms(from, `Failed to post into {${slug}}: ${err.message}`, twilioNumber, undefined, { skipNotification: true }).catch(() => {});

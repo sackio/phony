@@ -163,7 +163,7 @@ export class TwilioConversationsService {
         conversationSid: string,
         body: string,
         mediaSids?: string[]
-    ): Promise<string> {
+    ): Promise<string[]> {
         // Twilio Conversations Messages support AT MOST ONE mediaSid per
         // message. Passing an array via the SDK silently coerces to the last
         // one AND drops the body during MMS fan-out. Split into separate
@@ -171,10 +171,22 @@ export class TwilioConversationsService {
         //   - If only body: 1 message (body).
         //   - If only media: N messages (1 media each, no body).
         //   - If both: 1 message body-only, then N messages media-only.
-        // Returns the SID of the FIRST posted message (body if present, else
-        // first media) — that's what gets surfaced as the "primary" SID. The
-        // onMessageAdded webhook fires for each individual message, and the
-        // Fix-A self-author persistence will record each as a row.
+        // Returns EVERY posted SID in order (body first when present). The
+        // caller persists each one.
+        //
+        // ⛔ This used to return only the first SID, on the stated assumption
+        // that "the onMessageAdded webhook fires for each individual message,
+        // and the self-author persistence will record each as a row". THAT IS
+        // FALSE and it was never true. Twilio does NOT fire Conversations
+        // webhooks for actions taken through the REST API unless the request
+        // carries `X-Twilio-Webhook-Enabled: true` — which these creates do
+        // not. Measured 2026-08-28: posting IM94cce5c6… produced a
+        // `[Conversations] Posted` line and NO `onMessageAdded` line at all,
+        // while a genuine inbound message minutes earlier produced both.
+        //
+        // ⇒ Nothing we post here ever comes back to us. The send path is the
+        // ONLY place that can record an outbound group message at the moment
+        // it happens, so it must be handed every SID, not just the first.
         const author = await this.resolveSelfAuthor(conversationSid);
         const hasBody = !!(body && body.length > 0);
         const medias = mediaSids ?? [];
@@ -191,7 +203,7 @@ export class TwilioConversationsService {
         const SUBMSG_DELAY_MS = 1500;
         const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-        let firstSid: string | undefined;
+        const sids: string[] = [];
 
         if (hasBody) {
             const msg = await this.withRetry(
@@ -201,7 +213,7 @@ export class TwilioConversationsService {
                 `postMessage(body) to ${conversationSid}`
             );
             console.log(`[Conversations] Posted ${msg.sid} (body) to ${conversationSid} (author=${author})`);
-            firstSid = msg.sid;
+            sids.push(msg.sid);
             if (medias.length > 0) await sleep(SUBMSG_DELAY_MS);
         }
 
@@ -214,11 +226,11 @@ export class TwilioConversationsService {
                 `postMessage(media ${i + 1}/${medias.length}) to ${conversationSid}`
             );
             console.log(`[Conversations] Posted ${msg.sid} (media ${mediaSid}) to ${conversationSid}`);
-            if (!firstSid) firstSid = msg.sid;
+            sids.push(msg.sid);
             if (i < medias.length - 1) await sleep(SUBMSG_DELAY_MS);
         }
 
-        return firstSid!;
+        return sids;
     }
 
     /**
