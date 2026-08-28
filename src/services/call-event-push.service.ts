@@ -217,9 +217,16 @@ export class CallEventPushService {
             from: state.fromNumber ?? null,
             line_count: lines.length,
             lines,
-            note: lines.length === 0
-                ? 'No new transcript lines in this window. The call is still up — this digest is the heartbeat, not an error.'
-                : undefined,
+            // ⛔ The note must agree with `reason`. An empty digest means two
+            // completely different things depending on why it fired, and this
+            // used to key on line_count alone — so a `call-ended` digest went
+            // out saying "The call is still up", telling a reader the opposite
+            // of what had just happened. Observed on CA266b57f2 seq 17.
+            note: lines.length > 0
+                ? undefined
+                : reason === 'call-ended'
+                    ? 'The call ended with nothing said since the previous digest. Not an error — everything spoken is in the digests before this one.'
+                    : 'No new transcript lines in this window. The call is still up — this digest is the heartbeat, not an error.',
         }, {
             reply: {
                 kind: 'call',
