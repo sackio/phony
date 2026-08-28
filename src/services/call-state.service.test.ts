@@ -25,6 +25,23 @@ vi.mock('./twilio/call.service.js', () => ({
     },
 }));
 
+/**
+ * ⛔ PIN THE DURATION CAP. These tests advance timers to specific second marks,
+ * so they assert against whatever `MAX_OUTGOING_CALL_DURATION` happens to be.
+ * That constant reads `process.env`, which dotenv fills from `.env` — so the
+ * suite silently changed meaning when the deployed cap was raised from the
+ * code default of 600 to 1800 on 2026-08-28, and "hangs up when the allowance
+ * runs out" started failing while the code was correct.
+ *
+ * A test whose verdict moves when someone edits deployment config is testing
+ * the config, not the code. Pinned here so it tests the timer wiring.
+ */
+vi.mock('../config/constants.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../config/constants.js')>()),
+    MAX_OUTGOING_CALL_DURATION: 600,
+    MAX_INCOMING_CALL_DURATION: 1800,
+}));
+
 const CALL = 'CAext000000000000000000000000000';
 
 async function freshService() {

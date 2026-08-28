@@ -25,6 +25,15 @@ export class ElevenLabsEventService {
     private onInterruption: () => void;
     private agentOutputFormat: string = 'ulaw_8000';
 
+    /**
+     * Normalised final user transcripts seen on this call, for hold-audio
+     * detection. Bounded — only the recent window can match.
+     */
+    private recentUserLines: string[] = [];
+    /** True while the last thing "said" to us looked like a recording. */
+    private suppressAgentAudio = false;
+    private suppressedChunks = 0;
+
     constructor(
         callState: CallState,
         onEndCall: () => Promise<void>,
@@ -59,6 +68,17 @@ export class ElevenLabsEventService {
      * ElevenLabs Flash 2.5 default).
      */
     public handleAudio(audioBase64: string): void {
+        // ⛔ Drop the agent's audio while we believe we are listening to a
+        // recording. Checked BEFORE the timestamp bookkeeping below so a
+        // suppressed turn does not register as a response that started.
+        if (this.suppressAgentAudio) {
+            this.suppressedChunks++;
+            if (this.suppressedChunks === 1) {
+                console.log('[ElevenLabs Event] 🔇 Suppressing agent audio — last utterance looked like a recording');
+            }
+            return;
+        }
+
         if (this.callState.responseStartTimestampTwilio === null) {
             this.callState.responseStartTimestampTwilio = this.callState.latestMediaTimestamp;
             console.log('[ElevenLabs Event] Response started at timestamp:', this.callState.responseStartTimestampTwilio);
@@ -71,6 +91,59 @@ export class ElevenLabsEventService {
         } else {
             // ulaw_8000 (pass-through) or unknown format — best-effort forward
             this.sendAudioToTwilio(audioBase64);
+        }
+    }
+
+    /**
+     * Decide whether what we just heard is a recording, and mute the agent if so.
+     *
+     * ⛔ WHY: the agent cannot tell hold audio from a person. Measured
+     * 2026-08-28 on a Pyle queue — it delivered its full request to the hold
+     * announcement three times and to the queue-position recording once,
+     * including AFTER an injection telling it to stay silent until a live human
+     * spoke. Every one of those is billed voice-AI time spent pitching a tape,
+     * and on a long queue it repeats indefinitely.
+     *
+     * ⭐ The signal is repetition: recordings loop near-verbatim, people do not.
+     * ASR renders the same announcement differently each pass ("A. Dewey Pyle"
+     * / "A2E Pile"), so this compares token overlap rather than exact strings.
+     *
+     * ⚠️ FAILS OPEN, DELIBERATELY. Staying silent at a human who has just picked
+     * up loses the whole call; pitching a recording only wastes money. So a
+     * single non-repeating utterance releases the mute immediately — which is
+     * exactly what a human saying anything at all produces.
+     *
+     * ⚠️ Short lines are EXEMPT. "Okay", "No", "Thank you" recur naturally in
+     * real conversation; muting on those would gag the agent mid-dialogue.
+     */
+    private updateHoldAudioState(text: string): void {
+        const norm = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+        const tokens = norm.split(' ').filter(Boolean);
+
+        // Too short to judge: never mute on it, and never let it release a
+        // mute either — a queue's "position one" interjection is short, and
+        // treating it as fresh human speech would unmute on the recording.
+        if (tokens.length < 8) return;
+
+        const isRepeat = this.recentUserLines.some(prev => {
+            const prevTokens = new Set(prev.split(' '));
+            const overlap = tokens.filter(t => prevTokens.has(t)).length;
+            return overlap / Math.max(tokens.length, prevTokens.size) >= 0.8;
+        });
+
+        if (isRepeat) {
+            if (!this.suppressAgentAudio) {
+                console.log(`[ElevenLabs Event] 🔇 HOLD AUDIO detected (repeat of an earlier line) — muting agent: "${text.slice(0, 70)}"`);
+            }
+            this.suppressAgentAudio = true;
+        } else {
+            if (this.suppressAgentAudio) {
+                console.log(`[ElevenLabs Event] 🔊 New speech after ${this.suppressedChunks} suppressed chunks — unmuting agent`);
+                this.suppressedChunks = 0;
+            }
+            this.suppressAgentAudio = false;
+            this.recentUserLines.push(norm);
+            if (this.recentUserLines.length > 12) this.recentUserLines.shift();
         }
     }
 
@@ -92,6 +165,8 @@ export class ElevenLabsEventService {
                 isPartial: !isFinal
             });
         }
+
+        if (isFinal) this.updateHoldAudioState(text);
 
         // Only add final transcripts to conversation history
         if (isFinal) {
