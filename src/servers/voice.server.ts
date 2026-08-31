@@ -22,7 +22,7 @@ import { CallTranscriptService } from '../services/database/call-transcript.serv
 import { SessionManagerService } from '../services/session-manager.service.js';
 import { createMCPRouter } from '../mcp/router.js';
 import { VoicemailService } from '../services/voicemail/voicemail.service.js';
-import { TempMediaService } from '../services/temp-media.service.js';
+import { TempMediaService, verifyMediaSignature, resignMediaUrlsDeep } from '../services/temp-media.service.js';
 import { WebhookDispatcher } from '../services/webhook-dispatcher.service.js';
 dotenv.config();
 
@@ -102,12 +102,39 @@ export class VoiceServer {
         console.log('[Voice Server] Serving public files from:', publicPath);
         this.app.use('/audio', express.static(path.join(publicPath, 'audio')));
 
-        // Serve temp media files (for base64 → public URL MMS support)
+        // Serve temp media files (for base64 → public URL MMS support).
+        // ⛔ Capability token required. nginx leaves /media/ open because Twilio
+        // must fetch attachments at send time, so this handler is the ONLY thing
+        // standing between a media file and the open internet. Checked identically
+        // from every ingress — no IP is trusted here, because at the nginx layer
+        // "internal" turned out not to be observable (hairpin and the WireGuard
+        // relay peer both matched the LAN allow-rules).
+        this.app.use('/media/temp', (req: express.Request, res: express.Response, next: express.NextFunction) => {
+            const verdict = verifyMediaSignature(req.baseUrl + req.path, req.query.exp, req.query.sig);
+            if (verdict.ok) return next();
+            if (verdict.reason === 'invalid') {
+                console.warn(`[Media] ⛔ Rejected ${req.path} — signature did not verify (forged or wrong secret)`);
+            }
+            res.status(403).json({
+                error: 'Media URL requires a valid capability token',
+                reason: verdict.reason,
+                hint: 'Fetch a fresh URL from the message record; tokens expire.',
+            });
+        });
         this.app.use('/media/temp', express.static('/tmp/phony-media'));
         // A missing media file must 404, not fall through to the SPA shell —
         // a 200 text/html response silently corrupts naive `curl -o x.jpg` saves
         this.app.use('/media/temp', (_req: express.Request, res: express.Response) => {
             res.status(404).json({ error: 'Media file not found (expired, or lost to a container rebuild before /tmp/phony-media was volume-backed)' });
+        });
+
+        // Every /api response leaves with live media tokens. Registered here so
+        // it precedes all route handlers — they return raw documents from
+        // several paths and would otherwise each have to remember.
+        this.app.use('/api', (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+            const sendJson = res.json.bind(res);
+            res.json = (body: any) => sendJson(resignMediaUrlsDeep(body));
+            next();
         });
 
         // Serve frontend static files

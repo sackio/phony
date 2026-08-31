@@ -4,7 +4,7 @@ import { TwilioSmsService } from '../../services/twilio/sms.service.js';
 import { TwilioConversationsService } from '../../services/twilio/conversations.service.js';
 import { SmsStorageService } from '../../services/sms/storage.service.js';
 import { ConversationService } from '../../services/sms/conversation.service.js';
-import { TempMediaService } from '../../services/temp-media.service.js';
+import { TempMediaService, signMediaUrl, signMediaUrls } from '../../services/temp-media.service.js';
 import twilio from 'twilio';
 import { SmsDirection, SmsStatus } from '../../types.js';
 
@@ -652,7 +652,9 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
                         errorMessage: message.errorMessage,
                         errorCode: message.errorCode,
                         numMedia: message.numMedia,
-                        mediaUrls: message.mediaUrls,
+                        // Re-signed on the way out: the token stored with the row
+                        // has almost certainly expired by now.
+                        mediaUrls: signMediaUrls(message.mediaUrls),
                         createdAt: message.createdAt,
                         updatedAt: message.updatedAt
                     }
@@ -912,7 +914,7 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
                                 status: m.status,
                                 createdAt: m.createdAt,
                                 numMedia: m.numMedia,
-                                mediaUrls: m.mediaUrls,
+                                mediaUrls: signMediaUrls(m.mediaUrls),
                             }))
                         }
                     });
@@ -1143,7 +1145,10 @@ export function createSmsToolHandlers(): Record<string, MCPToolHandler> {
                     }
                     for (const url of mediaUrls!) {
                         try {
-                            const res = await fetch(url, { redirect: 'follow' });
+                            // Sign if it is one of ours — a stored URL's token is
+                            // long expired, and this fetch would 403 against our
+                            // own media gate. Third-party URLs pass through.
+                            const res = await fetch(signMediaUrl(url), { redirect: 'follow' });
                             if (!res.ok) throw new Error(`Fetch ${url}: HTTP ${res.status}`);
                             const contentType = res.headers.get('content-type') || 'application/octet-stream';
                             const buf = Buffer.from(await res.arrayBuffer());
