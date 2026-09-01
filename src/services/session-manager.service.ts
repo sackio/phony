@@ -101,6 +101,24 @@ export class SessionManagerService {
         return true;
     }
 
+    /**
+     * Write DTMF into the live media stream for `callSid`.
+     *
+     * Returns false when no live session owns the call — the caller MUST NOT
+     * fall back to TwilioService.sendDTMF, which tears the call down. False
+     * means "there is no safe way to do this right now", not "try the other one".
+     */
+    public async injectDtmf(callSid: string, digits: string): Promise<boolean> {
+        const handler = this.sessionsByCallSid.get(callSid);
+        if (!handler) {
+            console.warn(`[Session Manager] No session found for DTMF on callSid: ${callSid}`);
+            return false;
+        }
+
+        await handler.injectDtmfNow(digits);
+        return true;
+    }
+
     public unregisterSessionByCallSid(callSid: string): void {
         if (this.sessionsByCallSid.has(callSid)) {
             this.sessionsByCallSid.delete(callSid);

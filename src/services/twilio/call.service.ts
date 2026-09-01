@@ -385,13 +385,42 @@ export class TwilioCallService {
     }
 
     /**
-     * Send DTMF tones to an active call
+     * Send DTMF tones by REDIRECTING the call to new TwiML.
+     *
+     * ⛔ DESTRUCTIVE ON ANY CALL WITH A MEDIA STREAM. `calls.update({twiml})`
+     * moves the call off the live stream to play the digits. Our WebSocket dies,
+     * the redirect below lands on /call/outgoing, and that starts a SECOND
+     * session with a SECOND ElevenLabs conversation holding no history — the
+     * agent begins again mid-call saying "Hello!". The post-call save then
+     * overwrites the real transcript with the new session's one line, and the
+     * record still reads status=completed. Measured 2026-09-01: a live
+     * 10-message call became a single "Hello!", and the call ended.
+     *
+     * ⇒ Use SessionManagerService.injectDtmf, which writes in-band tones into the
+     * existing stream. This method is retained only for a call with NO live
+     * session, and refuses unless the caller states that explicitly.
+     *
      * @param twilioCallSid The Twilio call SID
      * @param digits DTMF digits to send (0-9, *, #, A-D, w, W)
+     * @param opts.acceptStreamTeardown Caller confirms no live media stream will
+     *   be destroyed. Required — omitting it throws rather than wrecking a call.
      */
-    public async sendDTMF(twilioCallSid: string, digits: string): Promise<void> {
+    public async sendDTMF(
+        twilioCallSid: string,
+        digits: string,
+        opts?: { acceptStreamTeardown?: boolean }
+    ): Promise<void> {
         if (!twilioCallSid || !digits) {
             throw new Error('Call SID and digits are required');
+        }
+
+        if (!opts?.acceptStreamTeardown) {
+            throw new Error(
+                'sendDTMF redirects the call off its media stream and destroys the ' +
+                'in-progress conversation and transcript. Use SessionManagerService.injectDtmf ' +
+                'for a call with a live session, or pass { acceptStreamTeardown: true } if ' +
+                'there is genuinely no stream to lose.'
+            );
         }
 
         try {

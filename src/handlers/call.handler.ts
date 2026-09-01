@@ -27,4 +27,17 @@ export interface ICallHandler {
      * Called after Twilio start event provides call context
      */
     startSession(): void;
+
+    /**
+     * Write DTMF tones into the live Twilio media stream as in-band audio.
+     *
+     * ⛔ This is the ONLY safe way to send DTMF on a call that has a media
+     * stream. The Twilio REST alternative (`calls.update({twiml})`) redirects
+     * the call off the stream and is destructive — see TwilioService.sendDTMF.
+     *
+     * ⚠️ Resolving does NOT mean the far end registered the tones. It means we
+     * wrote audio into the stream; whether a given IVR decodes it is not
+     * observable from here.
+     */
+    injectDtmfNow(digits: string): Promise<void>;
 }

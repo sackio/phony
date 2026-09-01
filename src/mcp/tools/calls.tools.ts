@@ -814,12 +814,33 @@ export function createCallToolHandlers(
                     return createToolError(`Call not found or not active: ${args.callSid}`);
                 }
 
-                // Send DTMF tones via Twilio
-                await twilioService.sendDTMF(call.twilioCallSid, args.digits);
+                // In-band injection into the existing media stream. ⛔ Never route
+                // this through TwilioService.sendDTMF: that redirects the call off
+                // its stream, restarts the agent with no history, and overwrites
+                // the transcript — while still reporting success.
+                const injected = await sessionManager.injectDtmf(call.twilioCallSid, args.digits);
+
+                if (!injected) {
+                    return createToolError(
+                        `No live media session for call ${args.callSid} — cannot send DTMF safely`,
+                        {
+                            reason: 'no_live_session',
+                            hint: 'DTMF can only be injected into a call with an active WebSocket stream. ' +
+                                'For digits needed BEFORE the agent connects (IVR menus at pickup), pass ' +
+                                'dtmfPreflight when creating the call — that is carrier-level and does not ' +
+                                'touch the stream.'
+                        }
+                    );
+                }
 
                 return createToolResponse({
                     success: true,
-                    message: `DTMF tones "${args.digits}" sent to call ${args.callSid}`
+                    // ⚠️ Deliberately not "delivered". We wrote tones into the media
+                    // stream; whether the far-end IVR decoded them is not observable
+                    // from here, and claiming otherwise is how a silent DTMF failure
+                    // gets read as a working one.
+                    message: `DTMF tones "${args.digits}" written into the media stream for call ${args.callSid}. ` +
+                        `Far-end registration is not confirmed — check the transcript for the IVR's response.`
                 });
             } catch (error: any) {
                 return createToolError('Failed to send DTMF tones', { message: error.message });
