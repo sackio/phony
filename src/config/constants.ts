@@ -29,6 +29,17 @@ export const GOODBYE_PHRASES = [
     'take care',
 ];
 
+/**
+ * Longest far-end utterance still eligible for goodbye detection.
+ *
+ * ⚠️ This is a length guard, not a style preference. Every phrase above appears
+ * routinely inside IVR hold announcements, which run to hundreds of characters;
+ * a person actually ringing off says a handful of words. Raising this re-opens
+ * the failure where a hold loop containing "hang up now" or "have a nice day"
+ * terminates a call that was about to reach a representative.
+ */
+export const FAR_END_GOODBYE_MAX_CHARS = 60;
+
 // Production Safety Controls - ALWAYS ENFORCED
 // These limits prevent runaway costs and enforce safe operation
 

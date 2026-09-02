@@ -3,6 +3,7 @@ import twilio from 'twilio';
 import dotenv from 'dotenv';
 import { CallState, CallType, ElevenLabsConfig } from '../types.js';
 import { ELEVENLABS_API_KEY, ELEVENLABS_DEFAULT_AGENT_ID, MAX_OUTGOING_CALL_DURATION, MAX_INCOMING_CALL_DURATION, GOODBYE_PHRASES } from '../config/constants.js';
+import { isFarEndGoodbye } from '../utils/call-utils.js';
 import { ElevenLabsWsService } from '../services/elevenlabs/ws.service.js';
 import { ElevenLabsEventService } from '../services/elevenlabs/event.service.js';
 import { TwilioWsService } from '../services/twilio/ws.service.js';
@@ -340,7 +341,7 @@ export class ElevenLabsCallHandler implements ICallHandler {
         else this.lastAgentText = text;
         // Also detect user goodbye immediately — the agent's response_complete
         // may not fire if the user hung up after saying goodbye.
-        if (role === 'user' && this.isGoodbye(text)) {
+        if (role === 'user' && isFarEndGoodbye(text)) {
             console.log(`[ElevenLabs Handler] User goodbye detected: "${text}"`);
             setTimeout(() => this.endCall(), 2000);
         }
@@ -362,6 +363,7 @@ export class ElevenLabsCallHandler implements ICallHandler {
         const lower = (text || '').toLowerCase();
         return GOODBYE_PHRASES.some(phrase => lower.includes(phrase));
     }
+
 
     /**
      * Initialize ElevenLabs session with call context
