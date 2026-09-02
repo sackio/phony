@@ -42,6 +42,12 @@ interface LiveCallPushState {
     nextFlushAt: number;
     toNumber?: string;
     fromNumber?: string;
+    /**
+     * Claimed synchronously by the first `end()` to arrive. The state itself
+     * cannot be removed yet — the final flush still needs it — so this is what
+     * makes a second concurrent `end()` a no-op. See the note on `end()`.
+     */
+    ending?: boolean;
 }
 
 /**
@@ -242,10 +248,33 @@ export class CallEventPushService {
     /**
      * Final flush + stop. Idempotent: a call can be ended by the operator, by
      * the far end, or by the duration cap, and more than one of those can fire.
+     *
+     * ⛔ IDEMPOTENT MEANS CONCURRENTLY, NOT JUST SEQUENTIALLY. Guarding on
+     * `this.calls.get()` alone is a check-then-act race: the map entry is not
+     * removed until after `await this.flush()` below, so a second caller
+     * arriving inside that await window sees the state still present and
+     * proceeds too. Both callers then flush AND both emit `call.stream_complete`.
+     *
+     * Measured 2026-09-02 on CA9de1d2ee…: call-state.service.ts (`local-teardown`)
+     * and voice.server.ts's /call/status handler (`twilio_status`) landed 11ms
+     * apart. The stream emitted seq 18 and 19 as duplicate call-ended digests,
+     * then seq 20 and 21 as two terminators — one claiming `final_seq: 20,
+     * duration_sec: 146`, the other `final_seq: 21, duration_sec: 138`.
+     *
+     * That is worse than a plain duplicate. This event's entire contract is
+     * "seq ran 1..N, and a gap in that range means a delivery was LOST" — so two
+     * terminators disagreeing about N tell a subscriber that checks the range to
+     * go looking for a dropped message that never existed.
+     *
+     * ⇒ The claim below must be SYNCHRONOUS: set before the first await, or the
+     * window simply moves. The state cannot be deleted here instead, because the
+     * final flush still needs `pending` (rule 2 at the top of this file).
      */
     public async end(callSid: string, summary?: Record<string, unknown>): Promise<void> {
         const state = this.calls.get(callSid);
         if (!state) return;
+        if (state.ending) return;
+        state.ending = true;
 
         // clearTimeout, not clearInterval — the cadence became an adaptive
         // self-rescheduling timeout. Leaving the old call here would have left

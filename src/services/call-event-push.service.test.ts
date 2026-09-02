@@ -112,4 +112,50 @@ describe('CallEventPushService cadence', () => {
 
         expect(sent.length).toBe(after);
     });
+
+    // ⛔ The test above only ever covered the SEQUENTIAL case — it awaits the
+    // first end() to completion before starting the second, by which point the
+    // state is gone and the guard trivially holds. It passed throughout, which
+    // is why the real failure shipped: the two callers race in production.
+    //
+    // Measured 2026-09-02 on CA9de1d2ee…: call-state.service.ts (local-teardown)
+    // and voice.server.ts /call/status (twilio_status) arrived 11ms apart, and
+    // the stream emitted TWO terminators disagreeing about final_seq (20 vs 21)
+    // and duration_sec (146 vs 138).
+    it('⛔ end() is idempotent CONCURRENTLY — the two real callers race', async () => {
+        const { sent, svc } = harness();
+        svc.start(CALL);
+
+        // Deliberately not awaited in sequence. This is the production shape:
+        // neither caller knows the other exists, and both enter before either
+        // has removed the state.
+        await Promise.all([
+            svc.end(CALL, { ended_via: 'local-teardown' }),
+            svc.end(CALL, { twilio_status: 'completed' }),
+        ]);
+
+        const terminators = sent.filter(s => s.event === 'call.stream_complete');
+        expect(terminators.length).toBe(1);
+
+        const finals = digests(sent).filter(d => d.reason === 'call-ended');
+        expect(finals.length).toBe(1);
+    });
+
+    it('⛔ the surviving terminator agrees with the seq actually emitted', async () => {
+        // The duplicate was not merely noisy — the two terminators reported
+        // different final_seq, so a subscriber validating "seq ran 1..N" saw a
+        // gap that never happened. Whatever survives must describe the stream.
+        const { sent, svc } = harness();
+        svc.start(CALL);
+
+        svc.recordLine(CALL, 'user', 'October 19th');
+        await Promise.all([
+            svc.end(CALL, { ended_via: 'local-teardown' }),
+            svc.end(CALL, { twilio_status: 'completed' }),
+        ]);
+
+        expect(sent.map(s => s.seq)).toEqual(sent.map((_, i) => i + 1));
+        const terminator = sent.find(s => s.event === 'call.stream_complete')!;
+        expect(terminator.seq).toBe(sent.length);
+    });
 });
