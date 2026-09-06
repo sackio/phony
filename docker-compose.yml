@@ -67,8 +67,12 @@ services:
       # in the phony database).
       MONGODB_URI: mongodb://${MONGODB_USERNAME}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE:-phony}?authSource=admin
 
-      # SMS whitelist
-      SMS_ENABLED_NUMBERS: ${SMS_ENABLED_NUMBERS:-+18575550111}
+      # SMS numbers. No defaults here on purpose — a default would put a real
+      # number in a public file, and would silently hand send rights, failover,
+      # and proxy forwarding to whoever cloned this. Set them in .env.
+      SMS_ENABLED_NUMBERS: ${SMS_ENABLED_NUMBERS:-}
+      SMS_FAILOVER_NUMBERS: ${SMS_FAILOVER_NUMBERS:-}
+      SMS_PROXY_TARGET_NUMBERS: ${SMS_PROXY_TARGET_NUMBERS:-}
 
       # Twilio Messaging Service (optional - auto-created if not set)
       TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}

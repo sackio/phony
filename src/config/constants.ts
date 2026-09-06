@@ -119,18 +119,21 @@ export const CALL_BUDGET_USD = parseFloat(process.env.CALL_BUDGET_USD || '5.00')
 export const ENABLE_TEST_RECEIVER = process.env.ENABLE_TEST_RECEIVER === 'true';
 
 // SMS Configuration - Whitelist of numbers that can send SMS
-// Only these numbers are allowed to send text messages
+// Only these numbers are allowed to send text messages.
+// ⛔ No default. This used to fall back to a hardcoded live number, which put a
+// real number in a public repo and silently granted it send rights to anyone
+// running the project. Unset means "nothing may send" — configure it.
 export const SMS_ENABLED_NUMBERS = process.env.SMS_ENABLED_NUMBERS
     ? process.env.SMS_ENABLED_NUMBERS.split(',').map(n => n.trim())
-    : ['+18575550111']; // Default to 857 number only
+    : [];
 
 // Ordered preference list for automatic failover resends when an outbound
-// SMS bounces (e.g. Twilio 30005). Excludes persona lines (Ben's direct
-// +16175550113) and toll-free numbers by default — failover messages must
-// come from a general-purpose Phony number.
+// SMS bounces (e.g. Twilio 30005). Should exclude persona lines and toll-free
+// numbers — failover messages must come from a general-purpose number.
+// ⛔ No default, same reason as above. Unset means no failover is attempted.
 export const SMS_FAILOVER_NUMBERS: string[] = process.env.SMS_FAILOVER_NUMBERS
     ? process.env.SMS_FAILOVER_NUMBERS.split(',').map(n => n.trim())
-    : ['+19785550112', '+18575550111'];
+    : [];
 
 // Default incoming call redirect message (played when no config exists)
 // Encourages callers to use SMS instead of phone calls
@@ -142,10 +145,13 @@ export const DEFAULT_INCOMING_CALL_VOICE = process.env.DEFAULT_INCOMING_CALL_VOI
 
 // SMS Proxy Configuration
 // When enabled, incoming SMS and voicemail notifications are forwarded to these numbers
-// Uses Twilio Conversations API for native group MMS threads
+// Uses Twilio Conversations API for native group MMS threads.
+// ⛔ No default. These are the operator's own personal numbers; hardcoding them
+// published them and made every clone forward its traffic to strangers.
+// Unset means nothing is forwarded.
 export const SMS_PROXY_TARGET_NUMBERS: string[] = process.env.SMS_PROXY_TARGET_NUMBERS
     ? process.env.SMS_PROXY_TARGET_NUMBERS.split(',').map(n => n.trim())
-    : ['+13015550101', '+13015550102'];
+    : [];
 export const SMS_PROXY_ENABLED = process.env.SMS_PROXY_ENABLED !== 'false'; // Enabled by default
 
 // Twilio Messaging Service SID (optional - auto-created if not set)

@@ -733,7 +733,7 @@ export class TwilioSmsService {
     /**
      * Allocate a slug for a new group Conversation. Prefers the contact slug
      * of the first external participant (e.g. "murilo-grp"); falls back to
-     * last-4 of first external ("9797-grp") and finally "g-<sidSuffix>".
+     * last-4 of first external ("0103-grp") and finally "g-<sidSuffix>".
      */
     private static generateGroupSlug(conversationSid: string, externalAddresses: string[]): string {
         const attempts: string[] = [];
